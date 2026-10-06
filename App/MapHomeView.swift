@@ -33,6 +33,9 @@ struct MapHomeView: View {
     @State private var showSaveFavorite = false
     @State private var newFavoriteName = ""
 
+    /// 地图图层。默认卫星混合图，用户可在地图右上角切换。
+    @State private var mapType: MapTypeOption = .hybrid
+
     @State private var banner: BannerMessage?
     @State private var bannerDismissTask: Task<Void, Never>?
 
@@ -107,6 +110,7 @@ struct MapHomeView: View {
             selectedPair: state.selection,
             coordinateSystem: $state.mapCoordinateSystem,
             viewportMeters: $state.viewportMeters,
+            mapType: mapType.mkMapType,
             showsBluePoint: true,
             onTapCoordinate: { coordinate in
                 handleMapTap(coordinate)
@@ -140,10 +144,39 @@ struct MapHomeView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
             }
+            // 搜索结果展开时就收起图层切换，避免两个浮层挤在一起。
+            if searchResults.isEmpty {
+                HStack {
+                    Spacer(minLength: 0)
+                    mapTypeSwitcher
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .transition(.opacity)
+            }
             Spacer()
             bottomPanel
         }
         .animation(.easeInOut(duration: 0.2), value: banner)
+    }
+
+    /// 地图右上角的玻璃胶囊图层切换。
+    private var mapTypeSwitcher: some View {
+        HStack(spacing: 2) {
+            ForEach(MapTypeOption.allCases) { option in
+                GlassSegmentButton(
+                    systemImage: option.systemImage,
+                    accessibilityLabel: option.displayName,
+                    isSelected: mapType == option
+                ) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        mapType = option
+                    }
+                }
+            }
+        }
+        .padding(4)
+        .glassCard(cornerRadius: 20, shadowRadius: 10)
     }
 
     private var topBar: some View {

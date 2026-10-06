@@ -241,3 +241,45 @@
 "位置 %d" = "Location %d";
 "未检测到已安装的 %@" = "No installed %@ detected";
 "运行模式" = "Runtime mode";
+
+// ---------------------------------------------------------------
+// UI 美化新增（欢迎页 / 设置页分组 / 说明页 / 地图图层）
+// ---------------------------------------------------------------
+
+// 欢迎页
+"欢迎使用 Floc" = "Welcome to Floc";
+"在一张简洁的地图上，选择你的 iPhone 应出现的位置。" = "Pick the place your iPhone should appear on, on a clean and simple map.";
+"选择任意地点" = "Choose any place";
+"搜索目的地或点按地图，然后将其保存为目标位置。" = "Search for a destination or tap the map, then save it as your target location.";
+"一键启用代理" = "Turn on the proxy in one tap";
+"安装证书并开启本机代理，即可开始虚拟定位。" = "Install the certificate and start the on-device proxy to begin spoofing.";
+"继续" = "Continue";
+"开始使用" = "Get started";
+// 设置页新增分组
+"模式" = "Mode";
+"状态" = "Status";
+"本机代理" = "On-device proxy";
+"定位模拟" = "Location simulation";
+"运动状态模拟" = "Motion simulation";
+"实验性功能，默认关闭。开启后会自动模拟定位响应中的运动状态。" = "Experimental, off by default. When enabled, the motion state in location responses is simulated too.";
+"说明" = "Notes";
+"生效说明" = "How it takes effect";
+"失效说明" = "How to turn it off";
+"工作原理" = "How it works";
+"Floc 在本机运行一个代理，拦截并改写系统定位服务返回的坐标。" = "Floc runs a proxy on this device that intercepts and rewrites the coordinates returned by the system location service.";
+"改写只作用于定位响应，其他请求原样转发，不会修改内容。" = "Only location responses are rewritten. Every other request is forwarded untouched.";
+"停止虚拟定位后立即恢复真实位置，不会留下持久改动。" = "Turning spoofing off restores the real location immediately and leaves nothing behind.";
+"证书与环境" = "Certificate & environment";
+"Wi-Fi 代理" = "Wi-Fi proxy";
+// 说明页与提示
+"关闭 WiFi 代理" = "Turn off the Wi-Fi proxy";
+"停止虚拟定位后，请到「设置 → 无线局域网 → 当前网络 → 配置代理」中改回「关闭」，否则流量仍会指向已停止的本机代理。"
+    = "After stopping spoofing, set the proxy back to Off under Settings → Wi-Fi → your network → Configure Proxy, or traffic will keep going to the stopped local proxy.";
+// 地图图层
+"标准" = "Standard";
+"卫星" = "Satellite";
+"混合" = "Hybrid";
+
+// 第三方代理：当前客户端对应的模块文件名
+// 仓库 modules/ 下有 5 个 wloc.* 文件，直接把该用哪个显示出来。
+"模块文件" = "Module file";

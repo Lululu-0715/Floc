@@ -12,8 +12,21 @@ final class SetupCoordinator: ObservableObject {
     @Published private(set) var runtimeMode: RuntimeModeStore
     @Published private(set) var isCompleted: Bool
 
+    /// 三页欢迎页是否已经看过。
+    ///
+    /// 与 `isCompleted` 刻意分开记录：欢迎页只是一段介绍，不承载任何配置。
+    /// 用户在设置页点「重置引导流程」时应该回到配置步骤，而不是被
+    /// 重新塞一遍介绍页面。
+    @Published private(set) var hasSeenWelcome: Bool
+
     /// 引导流程的当前步骤。切换模式时会重置。
     @Published var currentStep: Step = .modeSelection
+
+    private enum Key {
+        static let welcomeSeen = "welcomeOnboardingSeen"
+    }
+
+    private let defaults: UserDefaults
 
     enum Step: Int, CaseIterable, Comparable {
         case modeSelection
@@ -35,13 +48,25 @@ final class SetupCoordinator: ObservableObject {
         }
     }
 
-    init(runtimeMode: RuntimeModeStore = .shared) {
+    init(
+        runtimeMode: RuntimeModeStore = .shared,
+        defaults: UserDefaults = AppGroup.defaults
+    ) {
         self.runtimeMode = runtimeMode
+        self.defaults = defaults
+        self.hasSeenWelcome = defaults.bool(forKey: Key.welcomeSeen)
         self.isCompleted = runtimeMode.hasSelectedMode && runtimeMode.isInitialized(runtimeMode.mode)
 
         if runtimeMode.hasSelectedMode {
             currentStep = .proxySetup
         }
+    }
+
+    /// 记下欢迎页已看过，之后不再展示。
+    func markWelcomeSeen() {
+        guard !hasSeenWelcome else { return }
+        hasSeenWelcome = true
+        defaults.set(true, forKey: Key.welcomeSeen)
     }
 
     /// 选定的运行模式。

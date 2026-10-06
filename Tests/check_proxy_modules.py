@@ -28,6 +28,15 @@ SCRIPTS = ROOT / "ThirdParty" / "ProxyScripts"
 FAILURES: list[str] = []
 WARNINGS: list[str] = []
 
+# 只有这些扩展名才是「给客户端导入的模块文件」。
+# 目录里还放着 README.md（对照表）之类的说明文档，它们不该按模块规则校验——
+# 否则文档里举例写的 `DOMAIN,...,DIRECT` 反例会被当成真的 DIRECT 规则报错。
+MODULE_SUFFIXES = {".module", ".sgmodule", ".conf", ".lpx", ".stoverride"}
+
+
+def is_module_file(path: Path) -> bool:
+    return path.is_file() and path.suffix in MODULE_SUFFIXES
+
 
 def fail(message: str) -> None:
     FAILURES.append(message)
@@ -116,10 +125,11 @@ def check_client_coverage() -> None:
                 f"（用户导入时会 404）"
             )
 
-    # 反向：目录里有没有用不上的文件
+    # 反向：目录里有没有用不上的模块文件
+    # （说明文档如 README.md 不属于模块文件，跳过）
     used = {f"wloc.{ext}" for ext in mapping.values()}
     for path in MODULES.iterdir():
-        if path.is_file() and path.name not in used:
+        if is_module_file(path) and path.name not in used:
             warn(f"模块文件 {path.name} 未被任何客户端引用")
 
 
@@ -132,7 +142,7 @@ def check_module_files() -> None:
         fail(f"模块目录不存在: {MODULES.relative_to(ROOT)}")
         return
 
-    files = sorted(p for p in MODULES.iterdir() if p.is_file())
+    files = sorted(p for p in MODULES.iterdir() if is_module_file(p))
     if not files:
         fail("模块目录为空")
         return

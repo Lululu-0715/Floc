@@ -234,7 +234,12 @@ final class ThirdPartyProxyManager: ObservableObject {
         return url
     }
 
-    private var moduleFileName: String {
+    /// 当前客户端需要导入的模块文件名，例如 `wloc.sgmodule`。
+    ///
+    /// 仓库 `ThirdParty/ProxyScripts/modules/` 下躺着 5 个 `wloc.*` 文件，
+    /// 光看目录根本分不清哪个配哪个客户端。设置页把这行显示出来，
+    /// 用户复制地址时就能对上号。
+    var moduleFileName: String {
         "wloc.\(selectedClient.moduleFileExtension)"
     }
 

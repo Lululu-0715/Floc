@@ -1,6 +1,21 @@
-name: Floc WLOC
-desc: 配合「Floc」应用改写 Apple 定位服务响应。使用说明见应用内引导。
+name: Floc WLOC (Stash)
+desc: 配合「Floc」应用改写 Apple 定位服务响应。本文件适用于 Stash。
 author: Floc
+
+# ─────────────────────────────────────────────────────────────
+#  本文件仅供 Stash 导入。
+#  格式特征：YAML override（http.mitm / http.script）。
+#
+#  其他客户端请改用对应文件（功能完全一致，只是格式不同）：
+#    Shadowrocket    → wloc.module
+#    Surge / Egern   → wloc.sgmodule
+#    Quantumult X    → wloc.conf
+#    Loon            → wloc.lpx
+#  对照表见同目录的 README.md
+#
+#  导入后请开启本模块，并确认 MITM 已启用。切勿给下方主机名添加
+#  DIRECT 规则——那会让流量绕过代理，规则永远不会触发。
+# ─────────────────────────────────────────────────────────────
 
 http:
   mitm:

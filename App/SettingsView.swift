@@ -1,6 +1,13 @@
 import SwiftUI
 
 /// 设置页。
+///
+/// 版式参照参考图：`List` + `.insetGrouped` 给出独立的白色卡片，
+/// 每行以 36×36 的蓝色圆形图标起头，右侧按内容性质给出四种控件——
+/// 勾选（模式）/ 开关（可切换项）/ 只读状态文字（无箭头）/ 跳转箭头。
+///
+/// 背景不额外铺色：`.insetGrouped` 的底色本来就是 `systemGroupedBackground`，
+/// 自己再叠一层反而会和系统色在深色模式下打架。
 struct SettingsView: View {
 
     @ObservedObject var setup: SetupCoordinator
@@ -19,22 +26,31 @@ struct SettingsView: View {
     @State private var showModuleURLSheet = false
     @State private var moduleURLInput = ""
     @State private var selfCheckResult: String?
+    /// 启停代理过程中的错误，展示在「状态」分组里而不是弹窗——
+    /// 用户正在这页操作，内联提示比模态弹窗少一次点击。
+    @State private var statusMessage: String?
 
     var body: some View {
         NavigationView {
-            Form {
+            List {
                 modeSection
+                statusSection
+                simulationSection
+                notesSection
+                principlesSection
+
                 if runtimeMode.mode == .localProxy {
-                    localProxySection
+                    environmentSection
                 } else {
                     thirdPartySection
                 }
-                spoofSection
+
                 favoritesSection
                 languageSection
                 supportSection
                 aboutSection
             }
+            .listStyle(.insetGrouped)
             .navigationTitle(AppLocalization.string("设置"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -78,43 +94,219 @@ struct SettingsView: View {
 
     private var modeSection: some View {
         Section {
-            Picker(AppLocalization.string("运行模式"), selection: Binding(
-                get: { runtimeMode.mode },
-                set: { newMode in
-                    guard newMode != runtimeMode.mode else { return }
-                    // 切换模式前先停掉当前链路，避免两套代理同时生效。
-                    if proxy.status.isRunning { proxy.stop() }
-                    runtimeMode.select(newMode)
-                    setup.reset()
-                    dismiss()
-                }
-            )) {
-                ForEach(ProxyRuntimeMode.allCases) { mode in
-                    Text(mode.displayName).tag(mode)
-                }
-            }
-            .pickerStyle(.inline)
-            .labelsHidden()
+            Text(AppLocalization.string("模式"))
 
-            Text(runtimeMode.mode.summary)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+            ForEach(ProxyRuntimeMode.allCases) { mode in
+                modeOptionRow(mode)
+            }
         } header: {
             Text(AppLocalization.string("运行模式"))
         } footer: {
-            Text(AppLocalization.string("切换后会重新进入配置引导，两种模式的配置互不影响。"))
+            Text(runtimeMode.mode.summary)
         }
     }
 
-    // MARK: - 应用内代理
+    /// 模式选项行：普通文字 + 选中项右侧的蓝色勾选。
+    private func modeOptionRow(_ mode: ProxyRuntimeMode) -> some View {
+        let isSelected = runtimeMode.mode == mode
+        return Button {
+            switchMode(to: mode)
+        } label: {
+            HStack {
+                Text(mode.displayName)
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(Color.blue)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? AccessibilityTraits.isSelected : AccessibilityTraits())
+    }
 
-    private var localProxySection: some View {
+    // MARK: - 状态
+
+    private var statusSection: some View {
         Section {
-            KeyValueRow(AppLocalization.string("代理状态"), value: proxy.status.displayText)
-            KeyValueRow(AppLocalization.string("证书信任"), value: proxy.certificateTrustState.displayText)
-            KeyValueRow(AppLocalization.string("Wi-Fi 代理"), value: proxy.wiFiProxyState.displayText)
+            if runtimeMode.mode == .localProxy {
+                SettingsToggleRow(
+                    systemImage: "play.circle.fill",
+                    title: AppLocalization.string("本机代理"),
+                    isOn: Binding(
+                        get: { proxy.status.isRunning },
+                        set: { setLocalProxy(enabled: $0) }
+                    )
+                )
+            } else {
+                SettingsStatusRow(
+                    systemImage: "link",
+                    title: thirdParty.selectedClient.displayName,
+                    value: thirdParty.state.displayText
+                )
+            }
+
+            SettingsStatusRow(
+                systemImage: "location.north.line",
+                title: AppLocalization.string("虚拟定位"),
+                value: state.isEnabled
+                    ? AppLocalization.string("已开启")
+                    : AppLocalization.string("已关闭")
+            )
+
+            if let statusMessage {
+                Text(statusMessage)
+                    .font(.footnote)
+                    .foregroundStyle(Color.red)
+            }
+        } header: {
+            Text(AppLocalization.string("状态"))
+        }
+    }
+
+    // MARK: - 定位模拟
+
+    private var simulationSection: some View {
+        Section {
+            HStack(spacing: 12) {
+                SettingsIconBadge(systemImage: "scope")
+
+                Text(AppLocalization.string("精度"))
+
+                Spacer(minLength: 8)
+
+                Picker(AppLocalization.string("精度"), selection: $state.accuracy) {
+                    Text("10 m").tag(10)
+                    Text("25 m").tag(25)
+                    Text("50 m").tag(50)
+                    Text("100 m").tag(100)
+                    Text("500 m").tag(500)
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+            }
+
+            SettingsToggleRow(
+                systemImage: "figure.walk",
+                title: AppLocalization.string("运动状态模拟"),
+                subtitle: AppLocalization.string("实验性功能，默认关闭。开启后会自动模拟定位响应中的运动状态。"),
+                isOn: $state.motionSimulationEnabled,
+                isEnabled: runtimeMode.mode == .localProxy
+            )
+
+            Button {
+                selfCheckResult = proxy.runSelfCheck(
+                    latitude: state.selection?.wgs84.latitude ?? 22.281508,
+                    longitude: state.selection?.wgs84.longitude ?? 114.174700,
+                    accuracy: state.accuracy
+                )
+            } label: {
+                SettingsLabel(
+                    systemImage: "checkmark.seal",
+                    title: AppLocalization.string("运行改写引擎自检")
+                )
+            }
+
+            if let selfCheckResult {
+                Text(selfCheckResult)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(selfCheckResult.hasPrefix("ok:") ? Color.green : Color.red)
+            }
+        } header: {
+            Text(AppLocalization.string("定位模拟"))
+        } footer: {
+            Text(runtimeMode.mode == .thirdParty
+                 ? AppLocalization.string("精度会写入客户端配置；运动状态模拟仅在应用内代理模式下可用。")
+                 : AppLocalization.string("精度直接影响系统对定位可信度的判断，通常 25 米较为自然。"))
+        }
+    }
+
+    // MARK: - 说明
+
+    private var notesSection: some View {
+        Section {
+            tipLink(kind: .enableSpoofing, systemImage: "checkmark.circle")
+            tipLink(kind: .disableSpoofing, systemImage: "arrow.uturn.backward.circle")
+            tipLink(kind: .disableWiFiProxy, systemImage: "wifi.slash")
+        } header: {
+            Text(AppLocalization.string("说明"))
+        }
+    }
+
+    private func tipLink(kind: TipCard.Kind, systemImage: String) -> some View {
+        NavigationLink {
+            TipDetailView(kind: kind)
+        } label: {
+            SettingsLabel(
+                systemImage: systemImage,
+                title: kind.settingsLabel,
+                isSecondary: true
+            )
+        }
+    }
+
+    // MARK: - 工作原理
+
+    private var principlesSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(Self.principles, id: \.self) { line in
+                    HStack(alignment: .top, spacing: 8) {
+                        Circle()
+                            .fill(Color.blue)
+                            .frame(width: 5, height: 5)
+                            .padding(.top, 6)
+                        Text(line)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        } header: {
+            Text(AppLocalization.string("工作原理"))
+        }
+    }
+
+    private static var principles: [String] {
+        [
+            AppLocalization.string("Floc 在本机运行一个代理，拦截并改写系统定位服务返回的坐标。"),
+            AppLocalization.string("改写只作用于定位响应，其他请求原样转发，不会修改内容。"),
+            AppLocalization.string("停止虚拟定位后立即恢复真实位置，不会留下持久改动。"),
+        ]
+    }
+
+    // MARK: - 证书与环境（应用内代理）
+
+    private var environmentSection: some View {
+        Section {
+            SettingsStatusRow(
+                systemImage: "checkmark.shield.fill",
+                title: AppLocalization.string("证书信任"),
+                value: proxy.certificateTrustState.displayText,
+                valueColor: proxy.certificateTrustState.isTrusted ? .green : .orange
+            )
+            SettingsStatusRow(
+                systemImage: "wifi.router",
+                title: AppLocalization.string("代理状态"),
+                value: proxy.status.displayText
+            )
+            SettingsStatusRow(
+                systemImage: "link",
+                title: AppLocalization.string("Wi-Fi 代理"),
+                value: proxy.wiFiProxyState.displayText,
+                valueColor: proxy.wiFiProxyState == .configured ? .green : .orange
+            )
             if !proxy.currentWiFiName.isEmpty {
-                KeyValueRow(AppLocalization.string("当前网络"), value: proxy.currentWiFiName)
+                SettingsStatusRow(
+                    systemImage: "wifi",
+                    title: AppLocalization.string("当前网络"),
+                    value: proxy.currentWiFiName
+                )
             }
 
             Button {
@@ -123,38 +315,56 @@ struct SettingsView: View {
                     await proxy.verifyWiFiProxy()
                 }
             } label: {
-                Label(AppLocalization.string("重新检测环境"), systemImage: "arrow.clockwise")
+                SettingsLabel(
+                    systemImage: "arrow.clockwise",
+                    title: AppLocalization.string("重新检测环境")
+                )
             }
 
             if let url = proxy.certificateDownloadURL {
                 Button {
                     CertificateTrustVerifier.openCertificateDownload(url: url)
                 } label: {
-                    Label(AppLocalization.string("下载 CA 证书"), systemImage: "arrow.down.circle")
+                    SettingsLabel(
+                        systemImage: "arrow.down.circle",
+                        title: AppLocalization.string("下载 CA 证书")
+                    )
                 }
             }
 
             Button {
                 SystemSettingsNavigator.openCertificateTrustSettings()
             } label: {
-                Label(AppLocalization.string("打开证书信任设置"), systemImage: "lock.shield")
+                SettingsLabel(
+                    systemImage: "lock.shield",
+                    title: AppLocalization.string("打开证书信任设置")
+                )
             }
 
             Button {
                 SystemSettingsNavigator.openWiFiSettings()
             } label: {
-                Label(AppLocalization.string("打开 Wi-Fi 设置"), systemImage: "wifi")
+                SettingsLabel(
+                    systemImage: "wifi",
+                    title: AppLocalization.string("打开 Wi-Fi 设置")
+                )
             }
 
             Button(role: .destructive) {
                 CertificateAuthorityStore.delete()
                 proxy.stop()
+                BackgroundKeepAlive.shared.stop()
+                state.disable()
                 RuntimeLogger.info("APP", "Settings", "已重置本机证书")
             } label: {
-                Label(AppLocalization.string("重置本机证书"), systemImage: "trash")
+                SettingsLabel(
+                    systemImage: "trash",
+                    title: AppLocalization.string("重置本机证书"),
+                    tint: .red
+                )
             }
         } header: {
-            Text(AppLocalization.string("应用内代理"))
+            Text(AppLocalization.string("证书与环境"))
         } footer: {
             Text(AppLocalization.string("重置证书后需要重新下载并在系统设置中再次信任。"))
         }
@@ -164,20 +374,40 @@ struct SettingsView: View {
 
     private var thirdPartySection: some View {
         Section {
-            Picker(AppLocalization.string("客户端"), selection: $thirdParty.selectedClient) {
-                ForEach(ThirdPartyProxyClient.allCases) { client in
-                    Text(client.displayName).tag(client)
+            HStack(spacing: 12) {
+                SettingsIconBadge(systemImage: "shield.lefthalf.filled")
+
+                Text(AppLocalization.string("客户端"))
+
+                Spacer(minLength: 8)
+
+                Picker(AppLocalization.string("客户端"), selection: $thirdParty.selectedClient) {
+                    ForEach(ThirdPartyProxyClient.allCases) { client in
+                        Text(client.displayName).tag(client)
+                    }
                 }
+                .pickerStyle(.menu)
+                .labelsHidden()
             }
 
-            KeyValueRow(AppLocalization.string("连接状态"), value: thirdParty.state.displayText)
+            // 仓库里有 5 个 wloc.* 模块文件，把当前客户端该用哪个直接写出来，
+            // 省得用户对着文件名猜。
+            SettingsStatusRow(
+                systemImage: "doc.text",
+                title: AppLocalization.string("模块文件"),
+                value: thirdParty.moduleFileName,
+                monospacedValue: true
+            )
 
             if let url = thirdParty.moduleSubscriptionURL {
                 Button {
                     UIPasteboard.general.string = url.absoluteString
                     RuntimeLogger.info("APP", "Settings", "模块地址已复制")
                 } label: {
-                    Label(AppLocalization.string("复制模块订阅地址"), systemImage: "doc.on.doc")
+                    SettingsLabel(
+                        systemImage: "doc.on.doc",
+                        title: AppLocalization.string("复制模块订阅地址")
+                    )
                 }
 
                 Text(url.absoluteString)
@@ -190,27 +420,39 @@ struct SettingsView: View {
                 moduleURLInput = ThirdPartyProxyManager.defaultModuleBaseURL
                 showModuleURLSheet = true
             } label: {
-                Label(AppLocalization.string("自定义模块托管地址"), systemImage: "link")
+                SettingsLabel(
+                    systemImage: "link",
+                    title: AppLocalization.string("自定义模块托管地址")
+                )
             }
 
             Button {
                 thirdParty.selectedClient.open()
             } label: {
-                Label(AppLocalization.string("打开 %@", thirdParty.selectedClient.displayName),
-                      systemImage: "arrow.up.forward.app")
+                SettingsLabel(
+                    systemImage: "arrow.up.forward.app",
+                    title: AppLocalization.string("打开 %@", thirdParty.selectedClient.displayName)
+                )
             }
             .disabled(!thirdParty.selectedClient.isInstalled)
 
             Button {
                 Task { await thirdParty.refresh() }
             } label: {
-                Label(AppLocalization.string("重新检测连通性"), systemImage: "arrow.clockwise")
+                SettingsLabel(
+                    systemImage: "arrow.clockwise",
+                    title: AppLocalization.string("重新检测连通性")
+                )
             }
 
             Button(role: .destructive) {
                 Task { await thirdParty.clear() }
             } label: {
-                Label(AppLocalization.string("清除客户端坐标"), systemImage: "xmark.circle")
+                SettingsLabel(
+                    systemImage: "xmark.circle",
+                    title: AppLocalization.string("清除客户端坐标"),
+                    tint: .red
+                )
             }
         } header: {
             Text(AppLocalization.string("第三方代理"))
@@ -221,7 +463,7 @@ struct SettingsView: View {
 
     private var moduleURLSheet: some View {
         NavigationView {
-            Form {
+            List {
                 Section {
                     TextField(AppLocalization.string("托管地址前缀"), text: $moduleURLInput)
                         .textInputAutocapitalization(.never)
@@ -231,6 +473,7 @@ struct SettingsView: View {
                     Text(AppLocalization.string("填写模块文件所在目录的地址前缀，不带文件名。"))
                 }
             }
+            .listStyle(.insetGrouped)
             .navigationTitle(AppLocalization.string("模块托管地址"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -247,58 +490,24 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - 虚拟定位参数
-
-    private var spoofSection: some View {
-        Section {
-            Picker(AppLocalization.string("模拟精度"), selection: $state.accuracy) {
-                Text("10 m").tag(10)
-                Text("25 m").tag(25)
-                Text("50 m").tag(50)
-                Text("100 m").tag(100)
-                Text("500 m").tag(500)
-            }
-
-            Toggle(
-                AppLocalization.string("模拟静止状态"),
-                isOn: $state.motionSimulationEnabled
-            )
-            .disabled(runtimeMode.mode == .thirdParty)
-
-            Button {
-                selfCheckResult = proxy.runSelfCheck(
-                    latitude: state.selection?.wgs84.latitude ?? 22.281508,
-                    longitude: state.selection?.wgs84.longitude ?? 114.174700,
-                    accuracy: state.accuracy
-                )
-            } label: {
-                Label(AppLocalization.string("运行改写引擎自检"), systemImage: "checkmark.seal")
-            }
-
-            if let selfCheckResult {
-                Text(selfCheckResult)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(selfCheckResult.hasPrefix("ok:") ? Color.green : Color.red)
-            }
-        } header: {
-            Text(AppLocalization.string("虚拟定位参数"))
-        } footer: {
-            Text(runtimeMode.mode == .thirdParty
-                 ? AppLocalization.string("精度会写入客户端配置；运动状态模拟仅在应用内代理模式下可用。")
-                 : AppLocalization.string("精度直接影响系统对定位可信度的判断，通常 25 米较为自然。"))
-        }
-    }
-
     // MARK: - 收藏
 
     private var favoritesSection: some View {
         Section {
-            KeyValueRow(AppLocalization.string("已收藏"), value: "\(favorites.favorites.count)")
+            SettingsStatusRow(
+                systemImage: "star.fill",
+                title: AppLocalization.string("已收藏"),
+                value: "\(favorites.favorites.count)"
+            )
             if !favorites.favorites.isEmpty {
                 Button(role: .destructive) {
                     showClearFavoritesConfirmation = true
                 } label: {
-                    Label(AppLocalization.string("清空全部收藏"), systemImage: "trash")
+                    SettingsLabel(
+                        systemImage: "trash",
+                        title: AppLocalization.string("清空全部收藏"),
+                        tint: .red
+                    )
                 }
             }
         } header: {
@@ -310,17 +519,27 @@ struct SettingsView: View {
 
     private var languageSection: some View {
         Section {
-            Picker(AppLocalization.string("界面语言"), selection: Binding(
-                get: { AppLocalization.overrideLanguage ?? "system" },
-                set: { newValue in
-                    AppLocalization.overrideLanguage = newValue == "system" ? nil : newValue
-                    NotificationCenter.default.post(name: AppLocalization.didChangeNotification, object: nil)
+            HStack(spacing: 12) {
+                SettingsIconBadge(systemImage: "globe")
+
+                Text(AppLocalization.string("界面语言"))
+
+                Spacer(minLength: 8)
+
+                Picker(AppLocalization.string("界面语言"), selection: Binding(
+                    get: { AppLocalization.overrideLanguage ?? "system" },
+                    set: { newValue in
+                        AppLocalization.overrideLanguage = newValue == "system" ? nil : newValue
+                        NotificationCenter.default.post(name: AppLocalization.didChangeNotification, object: nil)
+                    }
+                )) {
+                    Text(AppLocalization.string("跟随系统")).tag("system")
+                    ForEach(AppLocalization.supportedLanguages, id: \.code) { language in
+                        Text(language.name).tag(language.code)
+                    }
                 }
-            )) {
-                Text(AppLocalization.string("跟随系统")).tag("system")
-                ForEach(AppLocalization.supportedLanguages, id: \.code) { language in
-                    Text(language.name).tag(language.code)
-                }
+                .pickerStyle(.menu)
+                .labelsHidden()
             }
         } header: {
             Text(AppLocalization.string("语言"))
@@ -336,19 +555,28 @@ struct SettingsView: View {
             NavigationLink {
                 DiagnosticsView(state: state)
             } label: {
-                Label(AppLocalization.string("运行日志与诊断"), systemImage: "doc.text.magnifyingglass")
+                SettingsLabel(
+                    systemImage: "doc.text.magnifyingglass",
+                    title: AppLocalization.string("运行日志与诊断")
+                )
             }
 
             NavigationLink {
                 BugReportView()
             } label: {
-                Label(AppLocalization.string("生成问题报告"), systemImage: "exclamationmark.bubble")
+                SettingsLabel(
+                    systemImage: "exclamationmark.bubble",
+                    title: AppLocalization.string("生成问题报告")
+                )
             }
 
             Button {
                 showResetConfirmation = true
             } label: {
-                Label(AppLocalization.string("重置引导流程"), systemImage: "arrow.counterclockwise")
+                SettingsLabel(
+                    systemImage: "arrow.counterclockwise",
+                    title: AppLocalization.string("重置引导流程")
+                )
             }
         } header: {
             Text(AppLocalization.string("支持"))
@@ -359,11 +587,24 @@ struct SettingsView: View {
 
     private var aboutSection: some View {
         Section {
-            KeyValueRow(AppLocalization.string("应用版本"), value: Bundle.main.appVersion)
-            KeyValueRow(AppLocalization.string("构建号"), value: Bundle.main.buildNumber)
-            KeyValueRow(AppLocalization.string("内核版本"), value: CoreBridge.coreVersion)
-            KeyValueRow(
-                AppLocalization.string("数据共享"),
+            SettingsStatusRow(
+                systemImage: "info.circle",
+                title: AppLocalization.string("应用版本"),
+                value: Bundle.main.appVersion
+            )
+            SettingsStatusRow(
+                systemImage: "hammer",
+                title: AppLocalization.string("构建号"),
+                value: Bundle.main.buildNumber
+            )
+            SettingsStatusRow(
+                systemImage: "cpu",
+                title: AppLocalization.string("内核版本"),
+                value: CoreBridge.coreVersion
+            )
+            SettingsStatusRow(
+                systemImage: "square.stack.3d.up",
+                title: AppLocalization.string("数据共享"),
                 value: AppGroup.isAvailable
                     ? AppLocalization.string("已启用")
                     : AppLocalization.string("不可用")
@@ -382,6 +623,59 @@ struct SettingsView: View {
             Text(AppLocalization.string(
                 "本应用用于定位服务的开发测试与研究，请仅在你拥有或获得授权的设备与网络环境中使用。"
             ))
+        }
+    }
+
+    // MARK: - 操作
+
+    /// 切换运行模式。两套链路不能同时开着，所以先停掉当前代理再切。
+    private func switchMode(to mode: ProxyRuntimeMode) {
+        guard mode != runtimeMode.mode else { return }
+        if proxy.status.isRunning { proxy.stop() }
+        BackgroundKeepAlive.shared.stop()
+        runtimeMode.select(mode)
+        setup.reset()
+        dismiss()
+    }
+
+    /// 启停本机代理。
+    ///
+    /// 与主界面「开启/停止虚拟定位」保持同一套动作顺序：先改改写配置、
+    /// 再停代理、最后复位开关，避免关闭过程中的请求仍被改写。
+    private func setLocalProxy(enabled isOn: Bool) {
+        statusMessage = nil
+
+        guard isOn else {
+            proxy.updateCoordinates(
+                latitude: 0,
+                longitude: 0,
+                enabled: false,
+                accuracy: state.accuracy,
+                motionEnabled: false
+            )
+            proxy.stop()
+            BackgroundKeepAlive.shared.stop()
+            state.disable()
+            return
+        }
+
+        // 没有选点时也允许只启动代理——安装证书本身就需要证书服务在跑。
+        let pair = state.selection
+        Task {
+            do {
+                try await proxy.start(
+                    latitude: pair?.wgs84.latitude ?? 0,
+                    longitude: pair?.wgs84.longitude ?? 0,
+                    enabled: state.isEnabled,
+                    accuracy: state.accuracy,
+                    motionEnabled: state.motionSimulationEnabled
+                )
+                BackgroundKeepAlive.shared.start()
+                await proxy.verifyCertificateTrust()
+                await proxy.verifyWiFiProxy()
+            } catch {
+                statusMessage = error.localizedDescription
+            }
         }
     }
 }

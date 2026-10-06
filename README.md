@@ -26,6 +26,18 @@ iOS 虚拟定位工具。通过本机 MITM 代理拦截 Apple 定位服务响应
 
 ## 快速开始
 
+### 直接下载（不编译）
+
+到 **[Releases](https://github.com/Lululu-0715/Floc/releases)** 下载已经打好的
+`Floc-unsigned.ipa`，跳过下面的编译步骤。
+
+下载到的是**未签名**包，iOS 不会直接运行，需要自签工具（TrollStore / AltStore /
+Sideloadly / 爱思助手），签名与安装的完整流程见
+**[快速上手.md](快速上手.md)** 第 3 步。
+
+> ⚠️ **免费 Apple ID 自签不支持 App Group**，装上后第三方代理模式不可用。
+> 用 TrollStore 或开发者账号签则不受影响。权衡与改法见快速上手第 3 步。
+
 ### 前置条件
 
 - macOS 13+ 与 Xcode 15+
@@ -94,12 +106,36 @@ Floc/
 ├── ThirdParty/ProxyScripts/    第三方代理脚本与模块
 │   ├── wloc.js                 响应改写脚本
 │   ├── wloc-settings.js        配置接口脚本
-│   └── modules/                6 种客户端模块
+│   └── modules/                6 种客户端模块（对照表见该目录 README.md）
 │
 ├── Resources/                  本地化、图标、Info.plist
 ├── Scripts/                    构建脚本
 └── Tests/                      测试脚本
 ```
+
+---
+
+## 第三方代理模块对照
+
+`ThirdParty/ProxyScripts/modules/` 下的 5 个文件是**同一份改写规则写成的 5 种格式**，
+用哪个只看你手机上装的是哪个客户端，功能完全一致。
+
+**App 会自动按你选中的客户端挑对应文件**——在「设置 → 第三方代理」里选好客户端后，
+点「复制模块订阅地址」拿到的就是对的。下表供手动导入时对照：
+
+| 模块文件 | 对应客户端 | 格式特征 |
+|---|---|---|
+| `wloc.module` | **Shadowrocket**（小火箭） | `[Rewrite]` + `url script-response-body` |
+| `wloc.sgmodule` | **Surge**、**Egern** | `[Script]` + `type=http-response,pattern=...` |
+| `wloc.conf` | **Quantumult X** | `[rewrite_local]` + `[mitm]` |
+| `wloc.lpx` | **Loon** | `#!name=` 开头的插件格式 |
+| `wloc.stoverride` | **Stash** | YAML override |
+
+> Surge 与 Egern 共用 `wloc.sgmodule`：两者都实现了 Surge 的模块格式。
+
+导入后必须**开启模块 + 开启 MITM**，并且**每个客户端要各自生成一次 CA**——
+CA 混用时 MITM 会静默失败、不报错。完整说明、导入地址与排查见
+**[ThirdParty/ProxyScripts/modules/README.md](ThirdParty/ProxyScripts/modules/README.md)**。
 
 ---
 

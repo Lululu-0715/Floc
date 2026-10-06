@@ -1,6 +1,22 @@
-#!name=Floc WLOC
-#!desc=配合「Floc」应用改写 Apple 定位服务响应。使用说明见应用内引导。
+#!name=Floc WLOC (Surge / Egern)
+#!desc=配合「Floc」应用改写 Apple 定位服务响应。本文件适用于 Surge 与 Egern。
 #!author=Floc
+#!homepage=https://github.com/Lululu-0715/Floc
+
+# ─────────────────────────────────────────────────────────────
+#  本文件供 Surge 与 Egern 导入（两者都实现了 Surge 模块格式，共用此文件）。
+#  格式特征：[Script] 段 + type=http-response,pattern=...
+#
+#  其他客户端请改用对应文件（功能完全一致，只是格式不同）：
+#    Shadowrocket    → wloc.module
+#    Quantumult X    → wloc.conf
+#    Loon            → wloc.lpx
+#    Stash           → wloc.stoverride
+#  对照表见同目录的 README.md
+#
+#  导入后请开启本模块，并确认 MITM 已启用。切勿给下方主机名添加
+#  DIRECT 规则——那会让流量绕过代理，规则永远不会触发。
+# ─────────────────────────────────────────────────────────────
 
 [Script]
 wloc-rewrite = type=http-response,pattern=^https?:\/\/(?:gs-loc(?:-cn)?\.apple\.com|gsp-ssl\.ls\.apple\.com|bluedot\.is\.autonavi\.com(?:\.gds\.alibabadns\.com)?)\/clls\/wloc,requires-body=1,max-size=1048576,script-path=https://raw.githubusercontent.com/Lululu-0715/Floc/main/ThirdParty/ProxyScripts/wloc.js

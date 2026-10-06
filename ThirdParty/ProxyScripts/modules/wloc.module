@@ -1,7 +1,22 @@
-#!name=Floc WLOC
-#!desc=配合「Floc」应用改写 Apple 定位服务响应。使用说明见应用内引导。
+#!name=Floc WLOC (Shadowrocket)
+#!desc=配合「Floc」应用改写 Apple 定位服务响应。本文件适用于 Shadowrocket（小火箭）。
 #!author=Floc
 #!homepage=https://github.com/Lululu-0715/Floc
+
+# ─────────────────────────────────────────────────────────────
+#  本文件仅供 Shadowrocket（小火箭）导入。
+#  格式特征：[Rewrite] 段 + url script-response-body
+#
+#  其他客户端请改用对应文件（功能完全一致，只是格式不同）：
+#    Surge / Egern   → wloc.sgmodule
+#    Quantumult X    → wloc.conf
+#    Loon            → wloc.lpx
+#    Stash           → wloc.stoverride
+#  对照表见同目录的 README.md
+#
+#  导入后请开启本模块，并确认 MITM 已启用。切勿给下方主机名添加
+#  DIRECT 规则——那会让流量绕过代理，规则永远不会触发。
+# ─────────────────────────────────────────────────────────────
 
 [Rewrite]
 # 定位响应改写：拦下 Apple 定位服务返回的经纬度并替换成目标坐标。

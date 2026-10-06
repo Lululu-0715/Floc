@@ -35,6 +35,43 @@ final class MapViewBridge: ObservableObject {
     }
 }
 
+/// 地图图层类型。
+///
+/// 默认用 `.hybrid`：卫星底图叠路网与地名标注，比纯标准图更容易确认
+/// 选中的位置究竟是建筑、街区还是空地——虚拟定位选点最怕选到水面上。
+enum MapTypeOption: String, CaseIterable, Identifiable {
+
+    case standard
+    case satellite
+    case hybrid
+
+    var id: String { rawValue }
+
+    var mkMapType: MKMapType {
+        switch self {
+        case .standard: return .standard
+        case .satellite: return .satellite
+        case .hybrid: return .hybrid
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .standard: return AppLocalization.string("标准")
+        case .satellite: return AppLocalization.string("卫星")
+        case .hybrid: return AppLocalization.string("混合")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .standard: return "map"
+        case .satellite: return "globe"
+        case .hybrid: return "square.on.square"
+        }
+    }
+}
+
 struct MapViewRepresentable: UIViewRepresentable {
 
     @ObservedObject var bridge: MapViewBridge
@@ -43,6 +80,10 @@ struct MapViewRepresentable: UIViewRepresentable {
     let selectedPair: CoordinateConverter.CoordinatePair?
     @Binding var coordinateSystem: CoordinateConverter.MapCoordinateSystem
     @Binding var viewportMeters: Double
+
+    /// 地图图层类型。默认交给调用方决定，切到卫星图后要继续生效，
+    /// 所以 updateUIView 里也要跟着同步。
+    let mapType: MKMapType
 
     let showsBluePoint: Bool
     let onTapCoordinate: (CLLocationCoordinate2D) -> Void
@@ -55,7 +96,7 @@ struct MapViewRepresentable: UIViewRepresentable {
         mapView.showsCompass = true
         mapView.showsScale = true
         mapView.pointOfInterestFilter = .excludingAll
-        mapView.mapType = .standard
+        mapView.mapType = mapType
 
         // 点击手势：用于在地图上点选位置。
         let tap = UITapGestureRecognizer(
@@ -95,6 +136,12 @@ struct MapViewRepresentable: UIViewRepresentable {
 
         if mapView.showsUserLocation != showsBluePoint {
             mapView.showsUserLocation = showsBluePoint
+        }
+
+        // 先比较再赋值：MKMapView 的 mapType 赋值会触发瓦片重载，
+        // 每次都写会导致拖动地图时反复闪白。
+        if mapView.mapType != mapType {
+            mapView.mapType = mapType
         }
 
         context.coordinator.syncAnnotation(
