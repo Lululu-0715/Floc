@@ -32,7 +32,14 @@ final class MapLocationState: ObservableObject {
     @Published var motionDriftRadius: Int = 0
 
     /// 上次选点时的地图缩放级别（米），用于恢复现场。
-    @Published var viewportMeters: Double = 1500
+    @Published var viewportMeters: Double = MapLocationState.defaultViewportMeters
+
+    /// 默认视野（米）。
+    ///
+    /// 200 米大约是「一条街」的尺度：虚拟定位选点通常就是要精确到某个
+    /// 楼或某个路口，进应用先给到这个精度，比默认给几公里再手动放大省事。
+    /// 也是「实时位置」跳转时统一使用的缩放级别。
+    static let defaultViewportMeters: Double = 200
 
     // MARK: - 选点
 
@@ -120,7 +127,7 @@ final class MapLocationState: ObservableObject {
             defaults.object(forKey: Key.motionDrift) as? Int ?? 0
         ).rawValue
         let storedViewport = defaults.double(forKey: Key.viewport)
-        viewportMeters = storedViewport > 0 ? storedViewport : 1500
+        viewportMeters = storedViewport > 0 ? storedViewport : Self.defaultViewportMeters
         selection = Self.loadCoordinate(from: defaults, key: Key.lastCoordinate)
         // 注意：不恢复 isEnabled。重启后代理状态已失效，必须让用户重新开启，
         // 否则界面会显示「已开启」但实际定位并未被改写。

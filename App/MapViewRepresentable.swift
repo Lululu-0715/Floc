@@ -24,12 +24,19 @@ final class MapViewBridge: ObservableObject {
     }
 
     /// 把地图中心移动到指定坐标。
-    func center(on coordinate: CLLocationCoordinate2D, animated: Bool = true) {
+    ///
+    /// `meters` 为 nil 时保持当前缩放级别（只是平移）；传值则同时缩放。
+    /// 「实时位置」和启动时的初始视野都要落到 200 米，靠传这个参数实现。
+    func center(on coordinate: CLLocationCoordinate2D,
+                animated: Bool = true,
+                meters: Double? = nil) {
         guard let mapView else { return }
+        let latitudinal = meters ?? mapView.region.span.latitudeDelta * 111_000
+        let longitudinal = meters ?? mapView.region.span.longitudeDelta * 111_000
         let region = MKCoordinateRegion(
             center: coordinate,
-            latitudinalMeters: mapView.region.span.latitudeDelta * 111_000,
-            longitudinalMeters: mapView.region.span.longitudeDelta * 111_000
+            latitudinalMeters: max(latitudinal, 200),
+            longitudinalMeters: max(longitudinal, 200)
         )
         mapView.setRegion(region, animated: animated)
     }
@@ -37,8 +44,8 @@ final class MapViewBridge: ObservableObject {
 
 /// 地图图层类型。
 ///
-/// 默认用 `.hybrid`：卫星底图叠路网与地名标注，比纯标准图更容易确认
-/// 选中的位置究竟是建筑、街区还是空地——虚拟定位选点最怕选到水面上。
+/// 默认用 `.standard`：进应用先看到一张干净的标准图，街道和地名一眼能认；
+/// 需要确认选中的点究竟是建筑、街区还是水面时，再切到卫星或混合更合适。
 enum MapTypeOption: String, CaseIterable, Identifiable {
 
     case standard

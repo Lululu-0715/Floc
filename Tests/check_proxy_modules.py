@@ -205,6 +205,62 @@ def check_module_files() -> None:
     check_client_coverage()
 
 
+def check_quantumultx_format() -> None:
+    """Quantumult X 的远程重写资源必须是「裸列表」，不能带段名。
+
+    QX 有两种长得很像的格式，极易混淆：
+
+      1. 主配置（.conf 导入 App 里手动粘贴）—— 有 `[rewrite_local]` /
+         `[mitm]` 段名；
+      2. **远程重写资源**（设置 → 重写 → 引用添加的 URL）—— 官方示例
+         `sample-import-rewrite.snippet` 里是**没有段名**的，只有一行可选的
+         `hostname = ...` 加上若干条重写规则。
+
+    我们的 wloc.conf 是给第 2 种用的。早期版本写成了第 1 种的样子，
+    结果 QX 导入直接报「配置失败、未生效」——模块装了但规则一条没跑。
+    这条检查就是防止它再被改回去。
+    """
+    path = MODULES / "wloc.conf"
+    if not path.exists():
+        fail("缺少 wloc.conf")
+        return
+
+    content = path.read_text(encoding="utf-8")
+
+    section = re.search(r"^\s*\[[^\]]+\]", content, re.M)
+    if section:
+        fail(
+            f"wloc.conf 出现了段名 {section.group(0).strip()}："
+            f"Quantumult X 的远程重写资源不支持 [rewrite_local] / [mitm] 段名，"
+            f"会导致导入报「配置失败」而完全不生效。\n"
+            f"      应改为「hostname = ... 一行 + 裸重写规则」的格式，"
+            f"参考官方 sample-import-rewrite.snippet"
+        )
+
+    if not re.search(r"^\s*hostname\s*=", content, re.M):
+        fail("wloc.conf 缺少 `hostname = ...` 行，Quantumult X 不会对定位主机做 MITM")
+
+    # 注释必须是分号开头。井号在 .conf 主配置里能用，但在重写资源里
+    # 不属于官方示例的写法，容易被解析成规则行。
+    for number, line in enumerate(content.splitlines(), 1):
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            fail(
+                f"wloc.conf:{number} 用了 `#` 注释；Quantumult X 重写资源"
+                f"统一用分号 `;` 开头"
+            )
+
+    rules = [
+        line for line in content.splitlines()
+        if line.strip() and not line.strip().startswith(";")
+        and not re.match(r"^\s*hostname\s*=", line)
+    ]
+    if len(rules) != 2:
+        fail(f"wloc.conf 期望 2 条重写规则，实际 {len(rules)} 条")
+
+    print(f"  Quantumult X 重写资源：{len(rules)} 条规则，无段名")
+
+
 def check_script_syntax() -> None:
     """粗查脚本里的括号配平，避免语法错误导致整个改写静默失效。"""
     for name in ("wloc.js", "wloc-settings.js"):
@@ -283,13 +339,16 @@ def main() -> int:
     print("第三方代理模块一致性检查")
     print("=" * 60)
 
-    print("\n[1/3] 模块文件")
+    print("\n[1/4] 模块文件")
     check_module_files()
 
-    print("\n[2/3] 脚本语法")
+    print("\n[2/4] Quantumult X 重写资源格式")
+    check_quantumultx_format()
+
+    print("\n[3/4] 脚本语法")
     check_script_syntax()
 
-    print("\n[3/3] 脚本间约定")
+    print("\n[4/4] 脚本间约定")
     check_settings_key_alignment()
 
     print("\n" + "=" * 60)

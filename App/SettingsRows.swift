@@ -7,26 +7,31 @@ import SwiftUI
 /// 之后调整只改这里。
 enum SettingsMetrics {
 
-    /// 行标题字号。比系统默认 body 稍大一点，配合 medium 字重更清楚。
-    static let titleFont = Font.system(size: 17, weight: .medium)
+    /// 行标题字号。
+    ///
+    /// 上一版做到了 17pt + medium，摆成一列之后比系统设置项明显粗一圈，
+    /// 存在感盖过了内容本身。回落到 16pt regular——比系统 body（17pt）
+    /// 略小，扫视时更安静。
+    static let titleFont = Font.system(size: 16)
 
-    /// 行尾状态文字字号。
-    static let valueFont = Font.system(size: 16)
+    /// 行尾状态文字字号。跟着标题一起收一档，免得右边比左边还抢眼。
+    static let valueFont = Font.system(size: 15)
 
     /// 行标题下方说明文字字号。
-    static let subtitleFont = Font.system(size: 13)
+    static let subtitleFont = Font.system(size: 12)
 
-    /// 分组标题字号。系统默认的分组标题只有 13pt，太弱。
-    static let sectionHeaderFont = Font.system(size: 15, weight: .semibold)
+    /// 分组标题字号。回到系统默认的 13pt——之前放大到 15pt 是为了「看得见」，
+    /// 但分组标题本来就该是弱层级，比行标题还大反而乱。
+    static let sectionHeaderFont = Font.system(size: 13, weight: .semibold)
 
-    /// 行内上下留白。旧版贴着分隔线，行与行之间没有呼吸感。
-    static let rowVerticalPadding: CGFloat = 5
+    /// 行内上下留白。
+    static let rowVerticalPadding: CGFloat = 4
 
     /// 行首图标与文字之间的间距。
-    static let iconSpacing: CGFloat = 12
+    static let iconSpacing: CGFloat = 10
 
-    /// 行首图标尺寸。
-    static let iconSize: CGFloat = 36
+    /// 行首图标尺寸。跟着字号一起收，36 显得笨重。
+    static let iconSize: CGFloat = 30
 }
 
 /// 设置页分组标题。
@@ -61,7 +66,7 @@ struct SettingsIconBadge: View {
                 .fill(tint)
                 .frame(width: SettingsMetrics.iconSize, height: SettingsMetrics.iconSize)
             Image(systemName: systemImage)
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.white)
         }
         .accessibilityHidden(true)
@@ -92,7 +97,7 @@ struct SettingsStatusRow: View {
 
             Text(value)
                 .font(monospacedValue
-                      ? .system(size: 16, design: .monospaced)
+                      ? .system(size: 15, design: .monospaced)
                       : SettingsMetrics.valueFont)
                 .foregroundStyle(valueColor)
                 .multilineTextAlignment(.trailing)

@@ -19,7 +19,7 @@ App 写入的坐标）。本目录的模块文件只是「外壳」——告诉�
 |---|---|---|
 | [`wloc.module`](wloc.module) | **Shadowrocket**（小火箭） | `[Rewrite]` 段 + `url script-response-body` |
 | [`wloc.sgmodule`](wloc.sgmodule) | **Surge**、**Egern** | `[Script]` 段 + `type=http-response,pattern=...` |
-| [`wloc.conf`](wloc.conf) | **Quantumult X** | `[rewrite_local]` + `[mitm]` 两段 |
+| [`wloc.conf`](wloc.conf) | **Quantumult X** | 远程重写资源：`hostname =` 行 + 裸重写规则（**不能带段名**） |
 | [`wloc.lpx`](wloc.lpx) | **Loon** | `#!name=` 开头的插件格式 |
 | [`wloc.stoverride`](wloc.stoverride) | **Stash** | YAML override（`http.mitm` / `http.script`） |
 
@@ -74,7 +74,39 @@ Apple 地图在国内使用的蓝点定位（高德）端点。
 
 `wloc.module`（Shadowrocket）、`wloc.sgmodule`（Surge / Egern）两个文件的
 `hostname` 用的是 `%APPEND%` 前缀，导入时会**追加**到你的 MITM 名单，
-不会覆盖已有配置；其余三个文件是直接列出的，导入后建议自己核对一眼。
+不会覆盖已有配置；`wloc.lpx`（Loon）、`wloc.stoverride`（Stash）是直接列出的，
+导入后建议自己核对一眼。
+
+---
+
+## Quantumult X 特别注意
+
+Quantumult X 有两种长得很像、但**互不兼容**的格式，装错了就是「配置失败、未生效」：
+
+| 格式 | 长什么样 | 用在哪 |
+|---|---|---|
+| 主配置 `.conf` | 有 `[rewrite_local]`、`[mitm]` 等段名 | 手动复制粘贴进 QX 主配置 |
+| **远程重写资源** | **没有段名**，只有一行可选 `hostname = ...` 加若干条规则 | 设置 → 重写 → 引用 |
+
+本仓库的 `wloc.conf` 是给**第二种**用的（直接用 URL 导入），所以里面
+**故意不带段名**。这是 QX 官方 `sample-import-rewrite.snippet` 的格式：
+
+```text
+; hostname line is optional.
+hostname = *.example.com, *.sample.com
+^http://example\.com/resource2/ url 302 http://example.com/new-resource2/
+```
+
+正确导入步骤：
+
+1. 打开 Quantumult X → **设置 → 重写 → 引用 → 添加订阅**；
+2. 粘贴 `.../modules/wloc.conf` 的完整 raw 地址，确认添加；
+3. 回到 **设置 → MITM**，确认 **MITM 开关已打开**，并检查主机名列表里
+   有没有上面的 14 个域名（导入时会自动并入，个别版本需要手动补）；
+4. 在主界面的「重写」里确认这条引用处于**启用**状态。
+
+> 如果 QX 提示「配置失败」，八成是文件里带上了 `[rewrite_local]` 之类的段名。
+> `python3 Tests/check_proxy_modules.py` 会拦住这种写法。
 
 ---
 

@@ -13,12 +13,12 @@ FORBIDDEN_UNESCAPED = re.compile(r'(?<!\\)"')
 
 
 def check_file(path):
-    """返回 (错误列表, 条目数)。"""
+    """返回 (错误列表, 条目数, key 集合)。"""
     errors = []
     try:
         text = open(path, encoding='utf-8').read()
     except Exception as exc:  # noqa: BLE001
-        return [f'无法读取: {exc}'], 0
+        return [f'无法读取: {exc}'], 0, set()
 
     # 逐条匹配 "key" = "value"; 允许 value 里出现转义引号
     pattern = re.compile(
@@ -26,6 +26,7 @@ def check_file(path):
     )
 
     entries = 0
+    keys = set()
     buffer = ''
     start_line = 0
 
@@ -42,16 +43,18 @@ def check_file(path):
         if not buffer.endswith(';'):
             continue
 
-        if not pattern.match(buffer):
+        match = pattern.match(buffer)
+        if not match:
             errors.append(f'{path}:{start_line} 语法错误: {buffer[:90]}')
         else:
             entries += 1
+            keys.add(match.group(1))
         buffer = ''
 
     if buffer:
         errors.append(f'{path}:{start_line} 末尾缺少分号: {buffer[:90]}')
 
-    return errors, entries
+    return errors, entries, keys
 
 
 def main():
@@ -62,25 +65,50 @@ def main():
         print('未找到任何 Localizable.strings')
         return 1
 
-    # 以简体中文为基准，检查各语言条目数是否一致
+    # 以简体中文为基准，检查各语言的条目数与 **key 集合** 是否一致。
+    #
+    # 只比对条目数是不够的：繁体和英文目前是人工维护的（生成脚本的
+    # 简→繁字符表覆盖不全，跑一遍反而会把已经写好的繁体打回简体，
+    # 所以 zh-Hant 不能靠自动生成）。这种情况下「条数一样但换了个 key」
+    # 会静默漏过，用户看到的是某一条文案突然变回 key 原文。
     baseline = None
     baseline_name = None
+    baseline_keys = set()
     all_errors = []
     summary = []
+    parsed = []
 
     for path in files:
-        errors, entries = check_file(path)
+        errors, entries, keys = check_file(path)
         name = os.path.basename(os.path.dirname(path))
         summary.append((name, entries))
+        parsed.append((name, keys))
         all_errors.extend(errors)
 
         if baseline is None:
-            baseline, baseline_name = entries, name
+            baseline, baseline_name, baseline_keys = entries, name, keys
 
     for name, entries in summary:
         if entries != baseline:
             all_errors.append(
                 f'{name} 条目数 {entries} 与基准语言 {baseline_name} 的 {baseline} 不一致'
+            )
+
+    # key 集合必须与基准语言完全一致
+    for name, keys in parsed:
+        missing = sorted(baseline_keys - keys)
+        extra = sorted(keys - baseline_keys)
+        if missing:
+            all_errors.append(
+                f'{name} 缺少 {len(missing)} 个 key（未翻译）：'
+                + '、'.join(missing[:5])
+                + ('…' if len(missing) > 5 else '')
+            )
+        if extra:
+            all_errors.append(
+                f'{name} 多出 {len(extra)} 个基准语言没有的 key：'
+                + '、'.join(extra[:5])
+                + ('…' if len(extra) > 5 else '')
             )
 
     if all_errors:
@@ -89,7 +117,7 @@ def main():
             print('  ' + error)
         return 1
 
-    print(f'文案校验通过，共 {len(files)} 种语言，各 {baseline} 条')
+    print(f'文案校验通过，共 {len(files)} 种语言，各 {baseline} 条，key 完全一致')
     for name, entries in summary:
         print(f'  {name}: {entries}')
     return 0

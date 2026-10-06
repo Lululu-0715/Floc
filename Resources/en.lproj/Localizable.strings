@@ -241,50 +241,35 @@
 "位置 %d" = "Location %d";
 "未检测到已安装的 %@" = "No installed %@ detected";
 "运行模式" = "Runtime mode";
-
-// ---------------------------------------------------------------
-// UI 美化新增（欢迎页 / 设置页分组 / 说明页 / 地图图层）
-// ---------------------------------------------------------------
-
-// 欢迎页
 "欢迎使用 Floc" = "Welcome to Floc";
-"在一张简洁的地图上，选择你的 iPhone 应出现的位置。" = "Pick the place your iPhone should appear on, on a clean and simple map.";
-"选择任意地点" = "Choose any place";
+"在一张简洁的地图上，选择你的 iPhone 应出现的位置。" = "On a clean map, choose where your iPhone should appear to be.";
+"选择任意地点" = "Choose any location";
 "搜索目的地或点按地图，然后将其保存为目标位置。" = "Search for a destination or tap the map, then save it as your target location.";
-"一键启用代理" = "Turn on the proxy in one tap";
+"一键启用代理" = "Enable proxy in one tap";
 "安装证书并开启本机代理，即可开始虚拟定位。" = "Install the certificate and start the on-device proxy to begin spoofing.";
 "继续" = "Continue";
 "开始使用" = "Get started";
-// 设置页新增分组
 "模式" = "Mode";
 "状态" = "Status";
 "本机代理" = "On-device proxy";
-"定位模拟" = "Location simulation";
+"定位模拟" = "Spoofing";
 "运动状态模拟" = "Motion simulation";
 "在选定位置附近轻微漂移，更接近真实 GPS。" = "Drifts slightly around the selected point, closer to real GPS.";
 "说明" = "Notes";
-"生效说明" = "How it takes effect";
-"失效说明" = "How to turn it off";
+"生效说明" = "When it takes effect";
+"失效说明" = "When it stops working";
 "工作原理" = "How it works";
 "Floc 在本机运行一个代理，拦截并改写系统定位服务返回的坐标。" = "Floc runs a proxy on this device that intercepts and rewrites the coordinates returned by the system location service.";
-"改写只作用于定位响应，其他请求原样转发，不会修改内容。" = "Only location responses are rewritten. Every other request is forwarded untouched.";
-"停止虚拟定位后立即恢复真实位置，不会留下持久改动。" = "Turning spoofing off restores the real location immediately and leaves nothing behind.";
+"改写只作用于定位响应，其他请求原样转发，不会修改内容。" = "Rewriting applies only to location responses; every other request is forwarded untouched.";
+"停止虚拟定位后立即恢复真实位置，不会留下持久改动。" = "Stopping spoofing immediately restores your real location and leaves nothing behind.";
 "证书与环境" = "Certificate & environment";
 "Wi-Fi 代理" = "Wi-Fi proxy";
-// 说明页与提示
 "关闭 WiFi 代理" = "Turn off the Wi-Fi proxy";
-"停止虚拟定位后，请到「设置 → 无线局域网 → 当前网络 → 配置代理」中改回「关闭」，否则流量仍会指向已停止的本机代理。"
-    = "After stopping spoofing, set the proxy back to Off under Settings → Wi-Fi → your network → Configure Proxy, or traffic will keep going to the stopped local proxy.";
-// 地图图层
+"停止虚拟定位后，请到「设置 → 无线局域网 → 当前网络 → 配置代理」中改回「关闭」，否则流量仍会指向已停止的本机代理。" = "After stopping, set Settings → Wi-Fi → current network → Configure Proxy back to Off, otherwise traffic still points at the stopped on-device proxy.";
 "标准" = "Standard";
 "卫星" = "Satellite";
 "混合" = "Hybrid";
-
-// 第三方代理：当前客户端对应的模块文件名
-// 仓库 modules/ 下有 5 个 wloc.* 文件，直接把该用哪个显示出来。
 "模块文件" = "Module file";
-
-// 地图页：实时位置
 "实时位置" = "Current location";
 "长按回到已选点" = "Long press to return to the selected point";
 "已回到选点" = "Back to the selected point";
@@ -293,6 +278,20 @@
 "获取真实位置失败：%@" = "Could not get your real location: %@";
 "定位权限未开启，请在系统设置中允许访问位置。" = "Location access is off. Allow it in Settings.";
 "当前设备限制了定位功能，无法获取真实位置。" = "Location is restricted on this device.";
-
-// 运动状态模拟：原地抖动半径的档位
 "%d 米" = "%d m";
+"外观" = "Appearance";
+"显示模式" = "Display mode";
+"白天" = "Light";
+"黑暗" = "Dark";
+"使用方法" = "How to use";
+"让虚拟定位立刻生效" = "Make spoofing take effect right away";
+"配置完成后按下面四步走一遍。" = "Once configured, walk through these four steps.";
+"选好位置并开启" = "Pick a location and enable";
+"在地图上选好目标位置，然后点「开启虚拟定位」。" = "Choose the target location on the map, then tap \"Enable spoofing\".";
+"关掉定位服务总开关" = "Turn off the Location Services master switch";
+"打开「设置 → 隐私与安全性 → 定位服务」，把最上面的总开关关掉。" = "Open Settings → Privacy & Security → Location Services and turn off the master switch at the top.";
+"等 5–10 秒再打开" = "Wait 5–10 seconds, then turn it back on";
+"停顿 5–10 秒后重新打开。定位服务会重新查询当前坐标，这时拿到的就是改写后的位置。" = "Wait 5–10 seconds before switching it back on. Location Services re-queries your position, and this time it receives the rewritten coordinate.";
+"关闭时同样操作一次" = "Do the same when turning spoofing off";
+"要恢复真实位置时，先关掉虚拟定位，再重复第 2、3 步。" = "To restore your real location, turn spoofing off first, then repeat steps 2 and 3.";
+"定位服务重启后，已经打开的 App 可能需要退出重进才会刷新位置；系统级的位置（如「查找」）生效会更快。" = "After Location Services restarts, apps that are already open may need to be relaunched before they pick up the new position; system-level features such as Find My update sooner.";

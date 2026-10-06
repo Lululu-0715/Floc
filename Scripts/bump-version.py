@@ -10,12 +10,12 @@
 
 版本号的唯一事实来源是 `project.yml` 的 `MARKETING_VERSION`：
 
-  - Xcode 构建时由 Info.plist 的 `$(MARKETING_VERSION)` 注入到 App；
-  - 应用显示名拼上它（`Floc 1.0.1`），手机上装多个构建时一眼能区分；
+  - Xcode 构建时由 Info.plist 的 `$(MARKETING_VERSION)` 注入到 App，
+    在「设置 → 关于 → 应用版本」里显示；
   - 导出的 IPA 文件名也用它（`Floc-1.0.1-unsigned.ipa`）。
 
-每次出包自增一位（1.0.0 → 1.0.1）而不是覆盖同名文件，是为了让「装在
-手机上的是哪一次构建」有据可查——自签安装后从图标上完全看不出区别。
+注意：App 显示名（桌面图标）恒为 `Floc`，**不带**版本号。想让多个自签构建
+可区分，靠的是 IPA 文件名和 App 内的版本号，而不是图标名字。
 
 `--bump` 会连带自增 `CURRENT_PROJECT_VERSION`（Xcode 内部 build 号）。
 所以构建失败时两个号都得回退，否则失败的那次会白白吃掉一个 build 号，

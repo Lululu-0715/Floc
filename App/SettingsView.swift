@@ -18,6 +18,7 @@ struct SettingsView: View {
     @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
     @ObservedObject private var runtimeMode = RuntimeModeStore.shared
     @ObservedObject private var remoteConfiguration = AppRemoteConfigurationStore.shared
+    @ObservedObject private var appearance = AppearanceStore.shared
 
     @Environment(\.dismiss) private var dismiss
 
@@ -47,15 +48,19 @@ struct SettingsView: View {
                 }
 
                 simulationSection
-                notesSection
-                principlesSection
 
                 if runtimeMode.mode == .localProxy {
                     environmentSection
                 }
 
                 favoritesSection
+                appearanceSection
                 languageSection
+
+                // 「说明」「工作原理」紧挨着「支持」：这三块都是
+                // 「出问题了再回来查」的内容，放在一起不用来回翻。
+                notesSection
+                principlesSection
                 supportSection
                 aboutSection
             }
@@ -557,6 +562,39 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - 外观
+
+    /// 外观：白天 / 黑暗 / 跟随系统。
+    ///
+    /// 分段控件横排占满一行，而不是挤进「行首图标 + 标题 + 控件」的单行里——
+    /// 一个图标加三个中文标签，横向空间不够会被压成「跟…统」。
+    /// 实际生效靠根节点上的 `.preferredColorScheme`（见 FlocApp）。
+    private var appearanceSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: SettingsMetrics.iconSpacing) {
+                    SettingsIconBadge(systemImage: appearance.mode.systemImage)
+
+                    Text(AppLocalization.string("显示模式"))
+                        .font(SettingsMetrics.titleFont)
+
+                    Spacer(minLength: 0)
+                }
+
+                Picker(AppLocalization.string("显示模式"), selection: $appearance.mode) {
+                    ForEach(AppearanceStore.Mode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+            .padding(.vertical, SettingsMetrics.rowVerticalPadding)
+        } header: {
+            SettingsSectionHeader(title: AppLocalization.string("外观"))
+        }
+    }
+
     // MARK: - 语言
 
     private var languageSection: some View {
@@ -596,6 +634,15 @@ struct SettingsView: View {
 
     private var supportSection: some View {
         Section {
+            NavigationLink {
+                UsageGuideView()
+            } label: {
+                SettingsLabel(
+                    systemImage: "book",
+                    title: AppLocalization.string("使用方法")
+                )
+            }
+
             NavigationLink {
                 DiagnosticsView(state: state)
             } label: {

@@ -35,6 +35,34 @@ struct GlassCardModifier: ViewModifier {
     }
 }
 
+/// 地图浮层的玻璃背景。
+///
+/// 比 `glassCard()` 更不透明。卫星底图的纹理很碎，单靠 `.regularMaterial`
+/// 透出来的瓦片细节会把文字吃掉，尤其是小字号的坐标和状态胶囊；
+/// 所以在材质之上再压一层半透明的系统底色把内容衬出来。
+///
+/// 底色用 `systemBackground` 而不是写死白色：浅色模式下压白、
+/// 深色模式下压黑，两种外观下都是「更实」的方向。
+struct MapGlassSurfaceModifier: ViewModifier {
+
+    var cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        content
+            .background(
+                ZStack {
+                    shape.fill(.regularMaterial)
+                    shape.fill(Color(.systemBackground).opacity(GlassMetrics.mapSurfaceTint))
+                }
+            )
+            .overlay(
+                shape.stroke(Color.white.opacity(0.18), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.18), radius: GlassMetrics.mapShadowRadius, y: 4)
+    }
+}
+
 extension View {
 
     /// 套用玻璃卡片外观。
@@ -49,7 +77,7 @@ extension View {
     /// 各自写一套很快就会走形（之前就出现过 12 / 14 / 20 混用、材质在
     /// regular 与 ultraThin 之间跳的情况）。统一从这里取。
     func mapGlassSurface(cornerRadius: CGFloat = GlassMetrics.mapCornerRadius) -> some View {
-        glassCard(cornerRadius: cornerRadius, shadowRadius: GlassMetrics.mapShadowRadius)
+        modifier(MapGlassSurfaceModifier(cornerRadius: cornerRadius))
     }
 }
 
@@ -67,6 +95,12 @@ enum GlassMetrics {
 
     /// 地图页浮层的投影半径。比卡片稍小，浮起感够用又不至于发糊。
     static let mapShadowRadius: CGFloat = 10
+
+    /// 地图页浮层在材质之上再压一层的系统底色不透明度。
+    ///
+    /// 0 就是纯 material（旧版的行为，卫星图上小字会被纹理吃掉），
+    /// 1 就是完全实心、没有玻璃感。0.55 是「看得清」和「还像玻璃」的折中。
+    static let mapSurfaceTint: Double = 0.55
 }
 
 /// 玻璃胶囊按钮组里的单个按钮。

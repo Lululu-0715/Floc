@@ -34,8 +34,8 @@ struct MapHomeView: View {
     @State private var showSaveFavorite = false
     @State private var newFavoriteName = ""
 
-    /// 地图图层。默认卫星混合图，用户可在地图右上角切换。
-    @State private var mapType: MapTypeOption = .hybrid
+    /// 地图图层。默认标准图，用户可在地图左上角切换。
+    @State private var mapType: MapTypeOption = .standard
 
     @State private var banner: BannerMessage?
     @State private var bannerDismissTask: Task<Void, Never>?
@@ -129,7 +129,7 @@ struct MapHomeView: View {
         VStack(spacing: 0) {
             topBar
             if let banner {
-                InlineAlert(text: banner.text, style: banner.style)
+                InlineAlert(text: banner.text, style: banner.style, presentation: .mapBanner)
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -221,12 +221,14 @@ struct MapHomeView: View {
                 Button {
                     activeSheet = .settings
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.headline)
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.primary)
                         .frame(width: 42, height: 42)
                         .mapGlassSurface()
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(AppLocalization.string("设置"))
             }
 
             if !searchResults.isEmpty {
@@ -438,9 +440,13 @@ struct MapHomeView: View {
 
     /// 底部两个动作按钮。
     ///
-    /// 主按钮固定 44pt 高——之前用 `padding(.vertical, 15)` 撑到了 50+，
-    /// 加上选点卡片和状态胶囊，整块面板几乎顶到屏幕中间。44pt 是 iOS
-    /// 的最小可靠点击高度，够用且不臃肿。
+    /// 两个都走 `mapGlassSurface()`，与上方的搜索框、设置按钮是同一套外观，
+    /// 而且**各自独立成卡片**（原来是「实心主按钮 + 淡蓝小按钮」拼在一行，
+    /// 和地图页其他浮层看起来不是一套东西）。
+    ///
+    /// 层级改由**颜色**区分而不是面积：主按钮用强调色/红色，实时位置用
+    /// 次级灰。这样两者长得一样，轻重仍然分得清。
+    /// 高度固定 44pt——iOS 的最小可靠点击高度，够用且不臃肿。
     private var actionButtons: some View {
         HStack(spacing: 10) {
             Button {
@@ -448,30 +454,45 @@ struct MapHomeView: View {
             } label: {
                 HStack(spacing: 7) {
                     if state.isBusy {
-                        ProgressView().tint(.white)
+                        ProgressView().controlSize(.small)
                     } else {
                         Image(systemName: state.isEnabled ? "stop.circle.fill" : "location.fill")
+                            .font(.system(size: 15, weight: .semibold))
                     }
                     Text(state.isEnabled
                          ? AppLocalization.string("停止虚拟定位")
                          : AppLocalization.string("开启虚拟定位"))
-                        .fontWeight(.semibold)
+                        .font(.system(size: 15, weight: .semibold))
+                        .lineLimit(1)
                 }
+                .foregroundStyle(spoofButtonTint)
                 .frame(maxWidth: .infinity)
                 .frame(height: 44)
+                .mapGlassSurface()
+                .contentShape(RoundedRectangle(cornerRadius: GlassMetrics.mapCornerRadius,
+                                               style: .continuous))
             }
-            .buttonStyle(.borderedProminent)
-            .tint(state.isEnabled ? .red : .accentColor)
+            .buttonStyle(.plain)
             .disabled(state.selection == nil || state.isBusy)
+            .accessibilityLabel(state.isEnabled
+                                ? AppLocalization.string("停止虚拟定位")
+                                : AppLocalization.string("开启虚拟定位"))
 
             realLocationButton
         }
     }
 
+    /// 主按钮的着色：未选点时置灰（点了也没用），开启后用红色表示「再点就是关」。
+    private var spoofButtonTint: Color {
+        guard state.selection != nil else { return .secondary }
+        return state.isEnabled ? .red : .accentColor
+    }
+
     /// 「实时位置」按钮。
     ///
-    /// 点一下把地图跳回设备当前真实位置；长按回到已选点（选点才是这个
-    /// 应用的主角，所以回到它比回到真实位置更"次级"，放在长按上）。
+    /// 点一下把地图跳回设备当前真实位置（并拉到 200 米，和初始视野一致）；
+    /// 长按回到已选点——选点才是这个应用的主角，所以「回到选点」比
+    /// 「回到真实位置」更次级，放在长按上。
     private var realLocationButton: some View {
         Button {
             goToRealLocation()
@@ -486,12 +507,9 @@ struct MapHomeView: View {
                 Text(AppLocalization.string("实时位置"))
                     .font(.system(size: 10, weight: .medium))
             }
-            .frame(width: 62, height: 44)
-            .background(
-                RoundedRectangle(cornerRadius: GlassMetrics.mapCornerRadius, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.14))
-            )
             .foregroundStyle(Color.accentColor)
+            .frame(width: 62, height: 44)
+            .mapGlassSurface()
             .contentShape(RoundedRectangle(cornerRadius: GlassMetrics.mapCornerRadius,
                                            style: .continuous))
         }
@@ -510,7 +528,10 @@ struct MapHomeView: View {
             showBanner(AppLocalization.string("请先在地图上选择位置"), style: .warning)
             return
         }
-        mapBridge.center(on: pair.coordinate(for: state.mapCoordinateSystem))
+        mapBridge.center(
+            on: pair.coordinate(for: state.mapCoordinateSystem),
+            meters: MapLocationState.defaultViewportMeters
+        )
         showBanner(AppLocalization.string("已回到选点"), style: .info)
     }
 
@@ -518,6 +539,7 @@ struct MapHomeView: View {
     ///
     /// 定位回调给的是 WGS-84，必须按当前地图体系换算后再居中，
     /// 否则国内会偏出几百米——和选点走的是同一套换算。
+    /// 缩放固定到 200 米，和进应用时的初始视野保持一致。
     private func goToRealLocation() {
         realLocation.requestOnce { result in
             switch result {
@@ -526,7 +548,10 @@ struct MapHomeView: View {
                     wgs84Latitude: coordinate.latitude,
                     wgs84Longitude: coordinate.longitude
                 )
-                mapBridge.center(on: pair.coordinate(for: state.mapCoordinateSystem))
+                mapBridge.center(
+                    on: pair.coordinate(for: state.mapCoordinateSystem),
+                    meters: MapLocationState.defaultViewportMeters
+                )
                 showBanner(AppLocalization.string("已定位到当前真实位置"), style: .info)
 
             case .failure(let failure):

@@ -4,6 +4,7 @@ import SwiftUI
 struct FlocApp: App {
 
     @StateObject private var setup = SetupCoordinator()
+    @StateObject private var appearance = AppearanceStore.shared
 
     init() {
         // 启动时清理过期日志，避免容器无限增长。
@@ -20,6 +21,9 @@ struct FlocApp: App {
         WindowGroup {
             ContentView(setup: setup)
                 .environmentObject(setup)
+                // 外观在根节点统一施加：设置页里改一档，整个应用（含已经
+                // 打开的 sheet 和导航栈）立刻跟着变，不用逐页传值。
+                .preferredColorScheme(appearance.mode.colorScheme)
                 .onAppear {
                     Task {
                         await AppRemoteConfigurationStore.shared.refresh()

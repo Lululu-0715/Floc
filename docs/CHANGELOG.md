@@ -2,6 +2,69 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.2] - 2026-10-07
+
+界面精修 + 修复 Quantumult X 模块无法导入 + 新增打包前的模块联通性检查。
+
+### 品牌与版本号
+
+- **桌面显示名恢复为 `Floc`（不带版本号）**。1.0.1 曾把版本号拼进显示名
+  （`Floc 1.0.1`），但显示名应保持稳定；版本号改由 **IPA 文件名**和
+  **App 内「设置 → 关于 → 应用版本」**体现。`Tests/check_branding.py`
+  已改为「显示名必须是裸 `Floc`」，并继续禁止 `InfoPlist.strings` 里出现
+  `CFBundleDisplayName`（该键优先级更高，会把主 `Info.plist` 的值盖掉）
+
+### 修复 Quantumult X 模块「配置失败、未生效」
+
+- **根因**：`wloc.conf` 写成了 **主配置格式**（带 `[rewrite_local]` /
+  `[mitm]` 段名），而 Quantumult X 的「远程重写资源」是**另一种格式**——
+  裸规则列表（可选 `hostname = ...` 行 + 若干规则），注释用 `;` 而非 `#`，
+  不能出现任何段名。格式不对会被 QX 直接拒绝导入
+- 重写 `ThirdParty/ProxyScripts/modules/wloc.conf` 为正确的重写资源格式
+- `Tests/check_proxy_modules.py` 新增 `check_quantumultx_format()`：
+  禁止段名、要求 `hostname =` 声明、禁止 `#` 注释、恰好 2 条规则
+- 模块 `README.md` 补充「Quantumult X 特别注意」：两种格式对照表 + 4 步导入流程
+
+### 打包前新增模块联通性检查
+
+- 新增 `Tests/check_module_reachability.py`（约 330 行），作为 `build.sh`
+  的第 7 项静态检查，**打包前必跑**：
+  - 本地：7 个模块/脚本文件存在；模块内 raw 地址指向真实文件；
+    URL 仓库与 `git remote origin` 一致；配置地址同源
+  - 联网：远端 200 且非空；**远端内容与本地逐字节比对**——本地改了没推，
+    会明确报「内容漂移」，避免用户导入到旧版本
+  - 离线时用 `SKIP_MODULE_REACHABILITY=1` 跳过；`--offline` / `--allow-drift`
+    为脚本级开关
+
+### 地图页
+
+- **初始地图样式为「标准」**，初始缩放与「点实时位置」都收敛到 **200 米**比例
+- **玻璃浮层提高不透明度**：新增 `MapGlassSurfaceModifier`
+  （`regularMaterial` + `systemBackground` 0.55 叠色），比原来的
+  `glassCard` 更实，文字不再被地图背景干扰
+- 设置入口图标由 `ellipsis` 改为**齿轮**（`gearshape`）
+- 「开启虚拟定位 / 实时位置」两个按钮统一为 `.mapGlassSurface()` 材质，
+  主按钮按下状态用 `spoofButtonTint` 着色（未选点=灰、已启用=红、待启用=强调色）
+- 地图页横幅（开启成功 / 失败提示）改为**居中大圆角**卡片，圆角与地图浮层一致
+
+### 设置页
+
+- 行标题 17 → **16（regular）**、数值 16 → 15、副标题 13 → 12、
+  分组头 15 → **13 semibold**、图标 36 → 30，整体更紧凑
+- **新增「外观」分组**：横向分段选择 **跟随系统 / 白天 / 黑暗**，
+  由 `AppearanceStore` 统一持久化（`appearanceMode`），App 根部
+  `.preferredColorScheme` 生效
+- **「说明」「工作原理」上移到「支持」分组之上**
+- 「支持」分组新增 **「使用方法」** 入口（`UsageGuideView`），
+  4 步图文步骤 + 注意事项卡片
+- 新增 16 条三语文案（外观 / 显示模式 / 白天 / 黑暗 / 使用方法等）
+
+### 已知问题
+
+- **改好定位后偶尔跳回真实位置**：初步判断是 iOS 把静音保活进程挂起，
+  导致 MITM 代理停止工作、系统回落到真实定位；也可能是系统定位缓存过期。
+  已列入下个版本排查（代理存活探测、Wi-Fi 切换/IP 变更监听）
+
 ## [1.0.1] - 2026-10-07
 
 界面重排 + 运动模拟做可用 + 扩大定位端点拦截范围，并引入每次出包自动递增的版本号。
@@ -49,11 +112,12 @@
 
 - **每次出包版本号末位 +1**（`1.0.0` → `1.0.1`），并同步写进 App 显示名
   （`Floc 1.0.1`）与 IPA 文件名（`Floc-1.0.1-unsigned.ipa`）
+  —— *（该「显示名带版本号」的做法在 1.0.2 已回退，显示名恒为 `Floc`）*
 - 新增 `Scripts/bump-version.py`：`--bump` / `--set` / `--show-build` / `--set-build`
 - `build.sh` 构建失败会同时回退 `MARKETING_VERSION` 与
   `CURRENT_PROJECT_VERSION`，不会凭空跳号
 - 三语言 `InfoPlist.strings` 移除 `CFBundleDisplayName` 覆盖，
-  否则会盖掉带版本号的显示名
+  否则会盖掉显示名（1.0.2 起显示名本身就是裸 `Floc`，该键依旧禁止出现）
 - 不再删除 `build/DerivedData`（增量编译更快，Release 产物是覆盖写入的，
   不会拿到旧包）；需要全量重编用 `FULL_CLEAN=1 ./build.sh`
 - `#Preview` 用 `#if DEBUG` 包起来，Release 出包不再依赖预览宏插件
@@ -69,9 +133,10 @@
    回滚逻辑只还原 `MARKETING_VERSION`，`CURRENT_PROJECT_VERSION` 留在自增后的值。
    **修复**：回滚时两个号一起还原。
 
-3. **带版本号的显示名会被语言包盖掉**
+3. **显示名会被语言包盖掉**
    `InfoPlist.strings` 里的 `CFBundleDisplayName` 优先级高于主 `Info.plist`。
    **修复**：删除语言包中的该键，并在 `check_branding.py` 里禁止再次出现。
+   （1.0.2 进一步把显示名固定为裸 `Floc`。）
 
 ### 测试
 

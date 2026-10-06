@@ -61,7 +61,8 @@ chmod +x build.sh Scripts/*.sh
 
 产物在 `dist/Floc-<版本号>-unsigned.ipa`（另有固定名副本 `dist/Floc-unsigned.ipa`），
 用 AltStore / Sideloadly 等工具自签后安装。每次构建版本号末位自动 +1，
-App 显示名也带版本号，方便区分多个自签构建。
+版本号体现在 IPA 文件名和 App 内的「设置 → 关于 → 应用版本」里；
+桌面图标名字恒为 `Floc`，不随版本变化。
 完整说明见 **[docs/BUILD.md](docs/BUILD.md)**。
 
 > **第三方模块的脚本地址写死在本仓库的 raw 地址上**（`Lululu-0715/Floc`）。

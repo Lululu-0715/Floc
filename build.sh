@@ -22,12 +22,17 @@ usage() {
   dist/Floc-1.0.1-unsigned.ipa   带版本号，用于区分不同构建
   dist/Floc-unsigned.ipa         固定名字的副本，供发布链接引用
 
-版本号同时写进 App 显示名（桌面上显示为「Floc 1.0.1」），
-这样可以同时装多个构建并一眼区分。构建失败会自动回退版本号。
+版本号写进 IPA 文件名，并在 App 内的「设置 → 关于 → 应用版本」里显示。
+桌面图标的显示名恒为 Floc，不随版本号变化——要区分多个自签构建，
+看 IPA 文件名或 App 内版本号即可。构建失败会自动回退版本号。
 
 选项:
   --test    构建完成后运行 iOS 模拟器单元测试
   --check   只跑静态检查，不构建（Go 测试 + 脚本测试 + 源码一致性）
+
+环境变量:
+  SKIP_MODULE_REACHABILITY=1   跳过打包前的模块联通性联网检查（离线时用）
+  FULL_CLEAN=1                 连编译缓存一起清掉，强制全量重编
 USAGE
 }
 
@@ -55,8 +60,9 @@ run_simulator_tests() {
 #   - 第三方代理脚本测试
 #   - 本地化条目对齐
 #   - Swift 源码一致性（括号、桥接头、测试引用）
-#   - 代理模块一致性（脚本 URL、路径、主机名）
+#   - 代理模块一致性（脚本 URL、路径、主机名、QX 重写资源格式）
 #   - 品牌命名一致性（Bundle ID、显示名、证书主题）
+#   - 模块联通性（远端地址可达 + 与本地内容一致）
 run_static_checks() {
   echo "==> 静态检查"
 
@@ -85,6 +91,20 @@ run_static_checks() {
 
   python3 "$ROOT/Tests/check_branding.py" >/dev/null
   echo "    品牌命名一致性通过"
+
+  # 模块联通性：确认用户设备上客户端会去拉的那几个地址真的能拉到东西。
+  # 上面那几项都只看仓库内部自洽，查不出「地址 404」或「改了脚本忘了 push」——
+  # 而那两种情况的线上表现都是「模块装了但定位不变」，几乎没法排查。
+  # 需要离线构建时用 SKIP_MODULE_REACHABILITY=1 跳过。
+  if [ "${SKIP_MODULE_REACHABILITY:-0}" = "1" ]; then
+    echo "    跳过模块联通性检查（SKIP_MODULE_REACHABILITY=1）"
+  elif python3 "$ROOT/Tests/check_module_reachability.py" >/dev/null 2>&1; then
+    echo "    模块联通性检查通过"
+  else
+    echo "    模块联通性检查未通过：" >&2
+    python3 "$ROOT/Tests/check_module_reachability.py" >&2 || true
+    exit 1
+  fi
 }
 
 run_tests=0
@@ -102,7 +122,9 @@ if [ "$#" -gt 1 ]; then
   exit 2
 fi
 
-# --check 不构建，只跑检查，因此在沙箱 / CI 上也能执行
+# --check 不构建，只跑检查。
+# 注意其中「模块联通性」这一项要联网，纯离线环境下用
+# SKIP_MODULE_REACHABILITY=1 ./build.sh --check 跳过。
 if [ "$check_only" -eq 1 ]; then
   run_static_checks
   echo
@@ -120,7 +142,8 @@ echo
 
 # 版本号自增：1.0.0 → 1.0.1。
 #
-# 版本号进 App 显示名和 IPA 文件名，手机上装多个自签构建时才能区分。
+# 版本号进 IPA 文件名和 App 内「关于」页，用来区分多次构建。
+# 桌面图标的显示名恒为 Floc，不带版本号。
 # 构建失败要回退——否则会出现「版本号涨了但没有对应产物」，
 # 下次再构建就凭空跳过了一个版本。
 # CURRENT_PROJECT_VERSION（Xcode build 号）也会被一起自增，所以回退时两个都得还回去，

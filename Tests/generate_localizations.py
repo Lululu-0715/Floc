@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """从简体中文文案生成英文与繁体中文文案。
 
-繁体部分做字符级转换（简→繁），英文部分使用显式映射表。
-好处是能严格保证三种语言的 key 集合完全一致，避免漏翻。
+简体中文（`Resources/zh-Hans.lproj/Localizable.strings`）是唯一真源。
+英文从下面的 `EN` 表取（表不全会直接报错，逼着补齐）；
+繁体默认**不动**——简→繁字符表覆盖不全，整份重生成会把人工写好的
+繁体打回简体，需要时显式加 `--hant`。
 """
 import os
 import re
@@ -160,6 +162,9 @@ S2T = {
     '书': '書', '信': '信', '任': '任',
     # 地图页：实时位置与运动状态模拟
     '长': '長', '轻': '輕', '许': '許', '访': '訪',
+    # 设置页：外观与使用方法
+    '观': '觀', '让': '讓', '总': '總', '隐': '隱',
+    '顿': '頓', '样': '樣',
 }
 
 # 简 → 繁 词组映射（优先于单字映射，处理「内/裡」这类上下文相关的转换）
@@ -169,6 +174,9 @@ PHRASES = {
     # 单字表里 '制' 映射成 '製'（为「复制」准备的），但「限制」在繁体里是
     # 「限制」，不换字。词组映射优先于单字映射，用它把这两种情况分开。
     '限制': '限制',
+    # 同理：'复' 一律映射成 '復'（为「恢复」「复位」准备的），
+    # 但「重复」在繁体里写「重複」——復/複 是两个不同的字，必须用词组修正。
+    '重复': '重複',
 }
 
 # 英文文案映射。key 与简体中文的 key 完全一致。
@@ -493,6 +501,68 @@ EN = {
         'Location is restricted on this device.',
     '%d 米': '%d m',
 
+    # 地图页：外观与使用方法
+    '外观': 'Appearance',
+    '显示模式': 'Display mode',
+    '白天': 'Light',
+    '黑暗': 'Dark',
+    '使用方法': 'How to use',
+    '让虚拟定位立刻生效': 'Make spoofing take effect right away',
+    '配置完成后按下面四步走一遍。': 'Once configured, walk through these four steps.',
+    '选好位置并开启': 'Pick a location and enable',
+    '在地图上选好目标位置，然后点「开启虚拟定位」。':
+        'Choose the target location on the map, then tap "Enable spoofing".',
+    '关掉定位服务总开关': 'Turn off the Location Services master switch',
+    '打开「设置 → 隐私与安全性 → 定位服务」，把最上面的总开关关掉。':
+        'Open Settings → Privacy & Security → Location Services and turn off the master switch at the top.',
+    '等 5–10 秒再打开': 'Wait 5–10 seconds, then turn it back on',
+    '停顿 5–10 秒后重新打开。定位服务会重新查询当前坐标，这时拿到的就是改写后的位置。':
+        'Wait 5–10 seconds before switching it back on. Location Services re-queries your position, and this time it receives the rewritten coordinate.',
+    '关闭时同样操作一次': 'Do the same when turning spoofing off',
+    '要恢复真实位置时，先关掉虚拟定位，再重复第 2、3 步。':
+        'To restore your real location, turn spoofing off first, then repeat steps 2 and 3.',
+    '定位服务重启后，已经打开的 App 可能需要退出重进才会刷新位置；系统级的位置（如「查找」）生效会更快。':
+        'After Location Services restarts, apps that are already open may need to be relaunched before they pick up the new position; system-level features such as Find My update sooner.',
+
+    # 补全：这些 key 之前只写了简体，一直没进过 EN 表，
+    # 导致 generate_localizations.py 每次都报「缺少英文翻译」而跑不完——
+    # 只能用写死的方式改 en/zh-Hant，很容易两边漏改。补齐后脚本可以正常生成。
+    '模式': 'Mode',
+    '状态': 'Status',
+    '说明': 'Notes',
+    '工作原理': 'How it works',
+    '定位模拟': 'Spoofing',
+    '证书与环境': 'Certificate & environment',
+    '本机代理': 'On-device proxy',
+    'Wi-Fi 代理': 'Wi-Fi proxy',
+    '模块文件': 'Module file',
+    '生效说明': 'When it takes effect',
+    '失效说明': 'When it stops working',
+    '关闭 WiFi 代理': 'Turn off the Wi-Fi proxy',
+    '运动状态模拟': 'Motion simulation',
+    '标准': 'Standard',
+    '卫星': 'Satellite',
+    '混合': 'Hybrid',
+    '欢迎使用 Floc': 'Welcome to Floc',
+    '开始使用': 'Get started',
+    '继续': 'Continue',
+    '一键启用代理': 'Enable proxy in one tap',
+    '选择任意地点': 'Choose any location',
+    '在一张简洁的地图上，选择你的 iPhone 应出现的位置。':
+        'On a clean map, choose where your iPhone should appear to be.',
+    '搜索目的地或点按地图，然后将其保存为目标位置。':
+        'Search for a destination or tap the map, then save it as your target location.',
+    '安装证书并开启本机代理，即可开始虚拟定位。':
+        'Install the certificate and start the on-device proxy to begin spoofing.',
+    'Floc 在本机运行一个代理，拦截并改写系统定位服务返回的坐标。':
+        'Floc runs a proxy on this device that intercepts and rewrites the coordinates returned by the system location service.',
+    '改写只作用于定位响应，其他请求原样转发，不会修改内容。':
+        'Rewriting applies only to location responses; every other request is forwarded untouched.',
+    '停止虚拟定位后立即恢复真实位置，不会留下持久改动。':
+        'Stopping spoofing immediately restores your real location and leaves nothing behind.',
+    '停止虚拟定位后，请到「设置 → 无线局域网 → 当前网络 → 配置代理」中改回「关闭」，否则流量仍会指向已停止的本机代理。':
+        'After stopping, set Settings → Wi-Fi → current network → Configure Proxy back to Off, otherwise traffic still points at the stopped on-device proxy.',
+
     # 其它
     '位置 %d': 'Location %d',
     '未检测到已安装的 %@': 'No installed %@ detected',
@@ -515,7 +585,8 @@ def write_file(path, header, entries):
         handle.write('\n'.join(lines))
 
 
-def main():
+def main(argv=None):
+    argv = argv or []
     source = os.path.join(RESOURCES, 'zh-Hans.lproj', 'Localizable.strings')
     entries = parse(source)
     keys = {key for key, _ in entries}
@@ -527,7 +598,7 @@ def main():
             print('  ' + key)
         return 1
 
-    # 英文
+    # 英文：EN 表是完整映射，可以安全地整体重生成。
     en_entries = [(key, EN[key]) for key, _ in entries]
     write_file(
         os.path.join(RESOURCES, 'en.lproj', 'Localizable.strings'),
@@ -535,7 +606,19 @@ def main():
         en_entries,
     )
 
-    # 繁体
+    # 繁体：**默认不生成**。
+    #
+    # 下面的 S2T 表只覆盖了文案里出现过的字，覆盖不全。整份重生成会
+    # 把人工写好的繁体打回简体——例如「歡迎使用」会变成「欢迎使用」、
+    # 「系統」会变成「係統」。zh-Hant 目前是人工维护的，改动请直接改
+    # Resources/zh-Hant.lproj/Localizable.strings，
+    # `Tests/check_localization.py` 会校验 key 与简体一致。
+    if '--hant' not in argv:
+        print(f'已生成 en，共 {len(entries)} 条')
+        print('zh-Hant 未改动（简→繁字符表覆盖不全，自动生成会打回简体）。')
+        print('确实要整体重生成时加 --hant，生成后务必人工复查。')
+        return 0
+
     zh_hant_entries = [(key, to_traditional(value)) for key, value in entries]
     write_file(
         os.path.join(RESOURCES, 'zh-Hant.lproj', 'Localizable.strings'),
@@ -544,8 +627,9 @@ def main():
     )
 
     print(f'已生成 en 与 zh-Hant，各 {len(entries)} 条')
+    print('⚠️ 请人工复查 zh-Hant 里被打回简体的字。')
     return 0
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

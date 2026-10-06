@@ -285,20 +285,54 @@ struct InlineAlert: View {
         }
     }
 
+    /// 提示条的呈现方式。
+    enum Presentation {
+        /// 表单 / 引导页里的内联提示：图标在左、文字左对齐、贴在页面里。
+        case inline
+        /// 地图页浮层上的横幅：整体居中，圆角与地图页其他浮层一致，
+        /// 并套同一层玻璃底——否则贴在卫星图上读不清。
+        case mapBanner
+    }
+
     let text: String
     let style: Style
+    var presentation: Presentation = .inline
 
+    @ViewBuilder
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: style.icon)
-                .foregroundStyle(style.color)
-            Text(text)
-                .font(.footnote)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
+        switch presentation {
+        case .inline:
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: style.icon)
+                    .foregroundStyle(style.color)
+                Text(text)
+                    .font(.footnote)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(12)
+            .background(style.color.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+
+        case .mapBanner:
+            VStack(spacing: 6) {
+                Image(systemName: style.icon)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(style.color)
+                Text(text)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: GlassMetrics.mapCornerRadius, style: .continuous)
+                    .fill(style.color.opacity(0.10))
+            )
+            .mapGlassSurface()
         }
-        .padding(12)
-        .background(style.color.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 

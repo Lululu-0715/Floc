@@ -167,20 +167,25 @@ def check_file_references(app_name: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 3. 显示名带版本号
+# 3. 显示名必须为纯品牌名（不带版本号）
 # ---------------------------------------------------------------------------
 
 def check_display_name(app_name: str) -> None:
-    """显示名必须是「品牌名 + 版本号」，且版本号由构建时注入。
+    """显示名必须是纯品牌名，**不带版本号**。
 
-    自签安装的构建在桌面上长得一模一样，用户装了两版也分不出哪个新；
-    所以显示名统一写成 `Floc $(MARKETING_VERSION)`，由 Xcode 在构建时
-    替换成实际版本号。
+    版本号只出现在两个地方：
 
-    也正因为如此，三语言的 InfoPlist.strings **不允许**再定义
-    CFBundleDisplayName——它会盖掉 Info.plist 里的动态值，版本号就没了。
+      - App 内部：设置 → 关于 → 应用版本（读 `CFBundleShortVersionString`）
+      - IPA 文件名：`build.sh` 按 `MARKETING_VERSION` 命名
+
+    早期版本把版本号拼进了显示名（`Floc 1.0.1`），想的是「桌面上能区分
+    多个自签构建」，但那等于让**应用名称**跟着版本号走，不是要的效果。
+    现在显示名固定为品牌名。
+
+    三语言 `InfoPlist.strings` 依然**不允许**定义 `CFBundleDisplayName`，
+    保证品牌名在任何语言下都一致。
     """
-    expected = f"{app_name} $(MARKETING_VERSION)"
+    expected = app_name
 
     plist = read("Resources/Info.plist")
     match = re.search(
@@ -190,9 +195,12 @@ def check_display_name(app_name: str) -> None:
     if not match:
         fail("Info.plist 缺少 CFBundleDisplayName")
     elif match.group(1) != expected:
+        extra = ""
+        if "MARKETING_VERSION" in match.group(1):
+            extra = "（显示名不应带版本号，版本号放在 App 内部和 IPA 文件名里）"
         fail(
             f"Info.plist 的 CFBundleDisplayName 是 '{match.group(1)}'，"
-            f"应为 '{expected}'"
+            f"应为 '{expected}'{extra}"
         )
 
     for code in ("zh-Hans", "zh-Hant", "en"):
@@ -204,12 +212,13 @@ def check_display_name(app_name: str) -> None:
         if re.search(r"CFBundleDisplayName\s*=", content):
             fail(
                 f"{code}.lproj/InfoPlist.strings 不应定义 CFBundleDisplayName："
-                f"它会把 Info.plist 里带版本号的显示名覆盖掉"
+                f"它会让品牌名随语言变化"
             )
         if not re.search(r'CFBundleName\s*=\s*"([^"]+)"', content):
             fail(f"{code}.lproj/InfoPlist.strings 缺少 CFBundleName")
 
-    print(f"  显示名：{expected}（版本号由构建注入）")
+    print(f"  显示名：{expected}（不带版本号）")
+    print("  版本号：仅出现在 App 内部与 IPA 文件名")
 
 
 # ---------------------------------------------------------------------------
