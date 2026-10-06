@@ -1,0 +1,85 @@
+name: Floc
+options:
+  bundleIdPrefix: com.fff
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+  developmentLanguage: zh-Hans
+
+knownRegions:
+  - en
+  - zh-Hans
+  - zh-Hant
+  - Base
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # 未签名构建：签名由用户在 Impactor / 爱思助手中完成
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGNING_ALLOWED: "NO"
+    CODE_SIGNING_REQUIRED: "NO"
+    ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+  configs:
+    Debug:
+      # @testable import Floc 要求被测模块在 Debug 下开启可测试性。
+      # XcodeGen 不会自动补这一项，缺了单元测试会报
+      # "module 'Floc' was not compiled for testing"。
+      # 只影响 Debug；Release 不开，不会影响出包。
+      ENABLE_TESTABILITY: "YES"
+
+targets:
+  Floc:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+      - path: Shared
+      - path: Resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.fff.loc
+        PRODUCT_NAME: Floc
+        INFOPLIST_FILE: Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Resources/Floc.entitlements
+        TARGETED_DEVICE_FAMILY: "1"
+        HEADER_SEARCH_PATHS: "$(PROJECT_DIR)/Core"
+        SWIFT_OBJC_BRIDGING_HEADER: App/Floc-Bridging-Header.h
+        OTHER_LDFLAGS: "$(inherited) -llocationcore"
+        LIBRARY_SEARCH_PATHS: "$(PROJECT_DIR)/Core/build/$(PLATFORM_NAME)"
+
+  FlocTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/FlocTests
+    settings:
+      base:
+        # 必须显式指定：不写的话 PRODUCT_NAME 会解析成空串，
+        # 测试产物变成 ".xctest"，Xcode 会报
+        # "Multiple commands produce .../Floc.app/PlugIns/.xctest"。
+        PRODUCT_NAME: FlocTests
+        # 宿主 App 模式下的单元测试必须同时给 TEST_HOST 和 BUNDLE_LOADER，
+        # 否则测试 bundle 链接不到 App 模块的符号（Undefined symbols: Floc.CoreBridge...）。
+        # TEST_HOST 由 XcodeGen 按下方的 target 依赖自动生成，这里只需补 BUNDLE_LOADER。
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        HEADER_SEARCH_PATHS: "$(PROJECT_DIR)/Core"
+        SWIFT_OBJC_BRIDGING_HEADER: App/Floc-Bridging-Header.h
+    dependencies:
+      - target: Floc
+
+schemes:
+  Floc:
+    build:
+      targets:
+        Floc: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - FlocTests
+    archive:
+      config: Release

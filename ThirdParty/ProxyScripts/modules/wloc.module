@@ -1,0 +1,19 @@
+#!name=Floc WLOC
+#!desc=配合「Floc」应用改写 Apple 定位服务响应。使用说明见应用内引导。
+#!author=Floc
+#!homepage=https://github.com/Lululu-0715/Floc
+
+[Rewrite]
+# 定位响应改写：拦下 Apple 定位服务返回的经纬度并替换成目标坐标。
+^https?:\/\/(?:gs-loc(?:-cn)?\.apple\.com|gsp-ssl\.ls\.apple\.com|bluedot\.is\.autonavi\.com(?:\.gds\.alibabadns\.com)?)\/clls\/wloc url script-response-body https://raw.githubusercontent.com/Lululu-0715/Floc/main/ThirdParty/ProxyScripts/wloc.js
+
+# 配置接口：应用通过这个请求把目标坐标写进客户端存储。
+^https?:\/\/gs-loc(-cn)?\.apple\.com\/wloc-settings\/save url script-echo-response https://raw.githubusercontent.com/Lululu-0715/Floc/main/ThirdParty/ProxyScripts/wloc-settings.js
+
+[MITM]
+# %APPEND% 保证不覆盖用户已有的 MITM 配置。
+#
+# 重要：这些主机名必须经过 MITM 才能被拦截。
+# 绝不要给它们加 DOMAIN,...,DIRECT 规则——那会让流量绕过代理，
+# 改写规则看起来装好了却永远不会触发。
+hostname = %APPEND% gs-loc.apple.com, gs-loc-cn.apple.com, gsp-ssl.ls.apple.com, bluedot.is.autonavi.com, bluedot.is.autonavi.com.gds.alibabadns.com

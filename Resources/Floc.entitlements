@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- App Group：让 App 与后续可能加入的扩展共享 UserDefaults 和日志 -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.fff.loc</string>
+	</array>
+	<!-- 读取当前 Wi-Fi 名称，用于提示用户在正确的网络下手动配置代理 -->
+	<key>com.apple.developer.networking.wifi-info</key>
+	<true/>
+</dict>
+</plist>

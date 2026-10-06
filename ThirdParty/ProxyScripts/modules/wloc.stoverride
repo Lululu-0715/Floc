@@ -1,0 +1,23 @@
+name: Floc WLOC
+desc: 配合「Floc」应用改写 Apple 定位服务响应。使用说明见应用内引导。
+author: Floc
+
+http:
+  mitm:
+    - gs-loc.apple.com
+    - gs-loc-cn.apple.com
+    - gsp-ssl.ls.apple.com
+    - bluedot.is.autonavi.com
+    - bluedot.is.autonavi.com.gds.alibabadns.com
+  script:
+    - name: wloc-rewrite
+      match: ^https?:\/\/(?:gs-loc(?:-cn)?\.apple\.com|gsp-ssl\.ls\.apple\.com|bluedot\.is\.autonavi\.com(?:\.gds\.alibabadns\.com)?)\/clls\/wloc
+      type: response
+      require-body: true
+      max-size: 1048576
+      script: https://raw.githubusercontent.com/Lululu-0715/Floc/main/ThirdParty/ProxyScripts/wloc.js
+    - name: wloc-settings
+      match: ^https?:\/\/gs-loc(-cn)?\.apple\.com\/wloc-settings\/save
+      type: request
+      require-body: false
+      script: https://raw.githubusercontent.com/Lululu-0715/Floc/main/ThirdParty/ProxyScripts/wloc-settings.js
