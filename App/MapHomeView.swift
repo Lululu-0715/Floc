@@ -11,6 +11,8 @@ import SwiftUI
 ///   4. 环境状态展示与快捷入口
 struct MapHomeView: View {
 
+    @Environment(\.scenePhase) private var scenePhase
+
     @ObservedObject var setup: SetupCoordinator
     @ObservedObject private var proxy = ProxyManager.shared
     @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
@@ -86,6 +88,9 @@ struct MapHomeView: View {
         }
         .onAppear(perform: handleAppear)
         .onDisappear(perform: handleDisappear)
+        .onChange(of: scenePhase) { newPhase in
+            handleScenePhase(newPhase)
+        }
         .onChange(of: state.selection) { _ in
             state.persist()
             refreshDisplayName()
@@ -629,6 +634,42 @@ struct MapHomeView: View {
                 accuracy: state.accuracy,
                 motionRadius: state.motionDriftRadius
             )
+        }
+    }
+
+    // MARK: - 生命周期
+
+    /// 回到前台时自愈。
+    ///
+    /// 应用一旦被 iOS 挂起，进程内的拦截代理就不再接受新连接；而 Wi-Fi 里的
+    /// 手动代理配置还指着 127.0.0.1:8888，于是定位请求全部落空，系统随即退回
+    /// 真实定位——这正是「用着用着跳回真实位置」最常见的原因。
+    ///
+    /// 关键点：`proxy.status` 是我们自己维护的状态，进程被挂起时它**不会**
+    /// 变成 `.stopped`，所以这里必须实际探一次代理是否还活着，不能只看状态。
+    private func handleScenePhase(_ phase: ScenePhase) {
+        guard phase == .active else { return }
+        guard state.isEnabled, runtimeMode.mode == .localProxy else { return }
+
+        // 保活可能被系统中断（音频会话被其他应用抢占等），回前台重新拉起。
+        // `start()` 是幂等的，已在运行时会直接返回。
+        BackgroundKeepAlive.shared.start()
+
+        Task {
+            await proxy.verifyWiFiProxy()
+            guard proxy.wiFiProxyState != .configured else { return }
+
+            RuntimeLogger.warn("APP", "Proxy", "回到前台时代理无响应，重新启动")
+            proxy.stop()
+
+            // 停掉之后 `status` 变成 `.stopped`，`restoreActiveState` 会把它重新拉起来。
+            guard runtimeMode.mode == .localProxy, let pair = state.selection else { return }
+            await restoreActiveState(pair: pair)
+
+            await proxy.verifyWiFiProxy()
+            if proxy.wiFiProxyState != .configured {
+                showBanner(AppLocalization.string("Wi-Fi 代理未生效，请检查代理配置"), style: .error)
+            }
         }
     }
 

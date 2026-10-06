@@ -12,6 +12,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -202,6 +203,26 @@ func normalizeHost(host string) string {
 	return host
 }
 
+// locationHostPattern 匹配「疑似 Apple 定位端点」的主机名形态。
+//
+// 白名单是静态枚举的，但 Apple 的定位服务会在一大批带编号的主机之间轮换
+// （gsp13-ssl、gsp27-ssl、gspe42-ssl……），永远枚举不完。没被拦下的那一台
+// 会原样透传，系统拿到的就是**真实坐标**——表现正是「用着用着跳回真实位置」。
+//
+// 这里**不做拦截**（拦截要靠白名单，否则会把无关流量拉进中间人），
+// 只在 spoofing 开启时把这情况记进运行日志，让用户在「运行日志与诊断」里
+// 一眼看出是不是这个原因，而不是对着「定位不生效」干猜。
+var locationHostPattern = regexp.MustCompile(`^(gspe?|gs-loc)[0-9-]*(-ssl)?(\.ls)?\.apple\.com$`)
+
+// looksLikeLocationHost 判断主机名像不像定位端点但不在白名单里。
+func looksLikeLocationHost(host string) bool {
+	host = normalizeHost(host)
+	if isLocationHost(host) {
+		return false
+	}
+	return locationHostPattern.MatchString(host)
+}
+
 // isProxyProbeHost 判断是否是「代理连通性验证」用的主机。
 func isProxyProbeHost(host string) bool {
 	host = normalizeHost(host)
@@ -261,6 +282,12 @@ func newProxyServer(caCert *tls.Certificate) *goproxy.ProxyHttpServer {
 			if isProxyProbeHost(host) {
 				logEvent("CONNECT " + host + " → 中间人（代理验证）")
 				return mitmAction, host
+			}
+			// 疑似定位端点却没进白名单：会把真实坐标放过去，必须留痕。
+			if looksLikeLocationHost(host) {
+				if _, _, enabled, _, _ := currentSpoofConfig(); enabled {
+					logEvent("⚠ 疑似定位端点未在白名单，已透传（可能拿到真实位置）: " + host)
+				}
 			}
 			// 全局代理模式下会有大量无关 HTTPS 流量经过这里。
 			// 逐条记录既产生噪声又可能泄露浏览目标，因此只记录定位与验证流量。

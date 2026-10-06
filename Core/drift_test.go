@@ -120,3 +120,48 @@ func TestLocationHostNormalization(t *testing.T) {
 		t.Fatal("不应把裸 apple.com 拉进中间人")
 	}
 }
+
+func TestLooksLikeLocationHostCatchesRotatingEndpoints(t *testing.T) {
+	// Apple 会在一大批带编号的 gsp/gspe 主机之间轮换，白名单不可能穷举。
+	// 漏掉的那些会把真实坐标原样透传，必须能被识别出来并留日志，
+	// 否则「用着用着跳回真实位置」这件事在设备上完全不可见。
+	rotating := []string{
+		"gsp13-ssl.ls.apple.com",
+		"gsp27-ssl.apple.com",
+		"gspe42-ssl.ls.apple.com",
+		"gspe7-2-ssl.ls.apple.com",
+	}
+	for _, host := range rotating {
+		if isLocationHost(host) {
+			t.Fatalf("%s 已进白名单，用例需要换一个未收录的主机", host)
+		}
+		if !looksLikeLocationHost(host) {
+			t.Fatalf("应识别为疑似定位端点: %s", host)
+		}
+	}
+
+	// 白名单里的主机由 isLocationHost 负责，不该再被当成「漏网」。
+	for _, host := range locationHosts {
+		if looksLikeLocationHost(host) {
+			t.Fatalf("已在白名单中的 %s 不应被判定为漏网", host)
+		}
+	}
+}
+
+func TestLooksLikeLocationHostDoesNotOverreach(t *testing.T) {
+	// 形状相近的非定位域名不能被误判，否则日志会被噪声淹没。
+	unrelated := []string{
+		"www.apple.com",
+		"apple.com",
+		"id.apple.com",
+		"push.apple.com",
+		"gs-loc.apple.com.evil.com",
+		"notgspe-ssl.ls.apple.com",
+	}
+	for _, host := range unrelated {
+		if looksLikeLocationHost(host) {
+			t.Fatalf("不应误判为定位端点: %s", host)
+		}
+	}
+}
+
