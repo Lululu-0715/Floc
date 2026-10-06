@@ -1,3 +1,6 @@
-/* 应用显示名称 */
-CFBundleDisplayName = "Floc";
+/* App name.
+   CFBundleDisplayName is intentionally not defined here: a hard-coded value
+   would override the versioned display name in Info.plist and the version
+   number would disappear from the home screen. Only CFBundleName (the short
+   internal name) is kept. */
 CFBundleName = "Floc";

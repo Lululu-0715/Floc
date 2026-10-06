@@ -489,6 +489,47 @@ function toFiniteNumber(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+// ---------------------------------------------------------------------------
+// 运动状态模拟（原地抖动）
+// ---------------------------------------------------------------------------
+
+/** 抖动半径只认这几档，与 MapLocationState.MotionDriftOption 保持一致。 */
+const DRIFT_STEPS = [0, 5, 10, 20];
+
+/** 纬度方向 1 度对应的米数（地球平均半径估算）。 */
+const METERS_PER_DEGREE_LATITUDE = 111320;
+
+/**
+ * 在同一位置附近的抖动半径内随机取一个偏移点。
+ *
+ * 开启后每次改写都会重新取点，系统看到的是「同一个位置附近的微小漂移」，
+ * 这正是真实 GPS 的表现；死钉在一个坐标上反而容易被判定为伪造。
+ * 关闭（半径 0）时原样返回。
+ */
+function driftTarget(target) {
+  const radiusMeters = DRIFT_STEPS.includes(target.driftRadius) ? target.driftRadius : 0;
+  if (radiusMeters <= 0) return target;
+
+  // 半径按 sqrt(u) 取样，点在圆面积上才是均匀分布，否则会明显偏向圆心。
+  const radius = Math.sqrt(Math.random()) * radiusMeters;
+  const angle = Math.random() * 2 * Math.PI;
+
+  const deltaLat = (radius * Math.cos(angle)) / METERS_PER_DEGREE_LATITUDE;
+  const cosLat = Math.cos((target.latitude * Math.PI) / 180);
+
+  // 极点附近 cos(lat) 趋近 0，经度差会发散，此时只抖纬度。
+  if (Math.abs(cosLat) < 1e-6) {
+    return { ...target, latitude: target.latitude + deltaLat };
+  }
+
+  const deltaLon = (radius * Math.sin(angle)) / (METERS_PER_DEGREE_LATITUDE * cosLat);
+  return {
+    ...target,
+    latitude: target.latitude + deltaLat,
+    longitude: target.longitude + deltaLon,
+  };
+}
+
 function main() {
   const settings = readSettings();
   if (!settings || settings.enabled !== true) {
@@ -501,6 +542,7 @@ function main() {
     latitude: toFiniteNumber(settings.latitude),
     longitude: toFiniteNumber(settings.longitude),
     accuracy: toFiniteNumber(settings.accuracy) || 25,
+    driftRadius: toFiniteNumber(settings.driftRadius) || 0,
   };
 
   if (target.latitude === null || target.longitude === null) {
@@ -527,7 +569,7 @@ function main() {
   }
 
   try {
-    const result = patchWlocBody(bodyBytes, target);
+    const result = patchWlocBody(bodyBytes, driftTarget(target));
     if (!result) {
       log('未找到可改写的位置数据，放行原始响应');
       $done({});

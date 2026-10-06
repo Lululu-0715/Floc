@@ -4,8 +4,10 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<!-- 桌面显示名带版本号：手机上同时装多个自签构建时，
+	     光看图标完全分不清哪个是哪个。版本号由 Xcode 在构建时替换。 -->
 	<key>CFBundleDisplayName</key>
-	<string>Floc</string>
+	<string>Floc $(MARKETING_VERSION)</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

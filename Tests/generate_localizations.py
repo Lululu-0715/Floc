@@ -158,12 +158,17 @@ S2T = {
     '第': '第', '三': '三', '方': '方', '模': '模', '式': '式',
     '说': '說', '明': '明', '关': '關', '于': '於', '证': '證',
     '书': '書', '信': '信', '任': '任',
+    # 地图页：实时位置与运动状态模拟
+    '长': '長', '轻': '輕', '许': '許', '访': '訪',
 }
 
 # 简 → 繁 词组映射（优先于单字映射，处理「内/裡」这类上下文相关的转换）
 PHRASES = {
     '里面': '裡面',
     '内在': '內在',
+    # 单字表里 '制' 映射成 '製'（为「复制」准备的），但「限制」在繁体里是
+    # 「限制」，不换字。词组映射优先于单字映射，用它把这两种情况分开。
+    '限制': '限制',
 }
 
 # 英文文案映射。key 与简体中文的 key 完全一致。
@@ -375,8 +380,8 @@ EN = {
     '模拟精度': 'Simulated accuracy',
     '模拟静止状态': 'Simulate stationary state',
     '运行改写引擎自检': 'Run rewrite engine self-check',
-    '精度会写入客户端配置；运动状态模拟仅在应用内代理模式下可用。':
-        'Accuracy is written to the client configuration. Motion simulation is available in in-app proxy mode only.',
+    '精度与运动状态模拟都会写入客户端配置。':
+        'Accuracy and motion drift are both written to the client configuration.',
     '精度直接影响系统对定位可信度的判断，通常 25 米较为自然。':
         'Accuracy affects how the system judges location reliability. 25 m usually looks natural.',
     '收藏位置': 'Favorites',
@@ -472,6 +477,21 @@ EN = {
     '无法构造查询地址': 'Could not build the query URL',
     '无法构造保存地址': 'Could not build the save URL',
     '客户端拒绝保存': 'The client rejected the save',
+
+    # 地图页：实时位置与运动状态模拟
+    '在选定位置附近轻微漂移，更接近真实 GPS。':
+        'Drifts slightly around the selected point, closer to real GPS.',
+    '实时位置': 'Current location',
+    '长按回到已选点': 'Long press to return to the selected point',
+    '已回到选点': 'Back to the selected point',
+    '已定位到当前真实位置': 'Centered on your current real location',
+    '获取真实位置失败': 'Could not get your real location',
+    '获取真实位置失败：%@': 'Could not get your real location: %@',
+    '定位权限未开启，请在系统设置中允许访问位置。':
+        'Location access is off. Allow it in Settings.',
+    '当前设备限制了定位功能，无法获取真实位置。':
+        'Location is restricted on this device.',
+    '%d 米': '%d m',
 
     # 其它
     '位置 %d': 'Location %d',

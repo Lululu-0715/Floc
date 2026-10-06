@@ -1,3 +1,5 @@
-/* 应用显示名称 */
-CFBundleDisplayName = "Floc";
+/* 应用名称。
+   CFBundleDisplayName 刻意不在这里定义——它写死就盖掉了 Info.plist 里
+   带 $(MARKETING_VERSION) 的显示名，桌面上就看不到版本号了。
+   这里只保留 CFBundleName（短名，系统内部用）。 */
 CFBundleName = "Floc";

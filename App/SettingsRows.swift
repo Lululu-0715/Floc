@@ -1,5 +1,51 @@
 import SwiftUI
 
+/// 设置页的排版尺寸。
+///
+/// 之前行标题用系统默认字号、行内上下几乎不留白，一屏堆下来很挤，
+/// 分组标题更是小到快看不见。这里把字号和留白都提到一处，
+/// 之后调整只改这里。
+enum SettingsMetrics {
+
+    /// 行标题字号。比系统默认 body 稍大一点，配合 medium 字重更清楚。
+    static let titleFont = Font.system(size: 17, weight: .medium)
+
+    /// 行尾状态文字字号。
+    static let valueFont = Font.system(size: 16)
+
+    /// 行标题下方说明文字字号。
+    static let subtitleFont = Font.system(size: 13)
+
+    /// 分组标题字号。系统默认的分组标题只有 13pt，太弱。
+    static let sectionHeaderFont = Font.system(size: 15, weight: .semibold)
+
+    /// 行内上下留白。旧版贴着分隔线，行与行之间没有呼吸感。
+    static let rowVerticalPadding: CGFloat = 5
+
+    /// 行首图标与文字之间的间距。
+    static let iconSpacing: CGFloat = 12
+
+    /// 行首图标尺寸。
+    static let iconSize: CGFloat = 36
+}
+
+/// 设置页分组标题。
+///
+/// 系统默认的大写小字标题在中文环境下既小又难读，这里统一换成
+/// 15pt 半粗的自定义标题。
+struct SettingsSectionHeader: View {
+
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(SettingsMetrics.sectionHeaderFont)
+            .foregroundStyle(.secondary)
+            .textCase(nil)
+            .padding(.top, 4)
+    }
+}
+
 /// 设置页行首的蓝色圆形图标。
 ///
 /// 36×36 的实心圆 + 白色 SF Symbol。所有设置行都以它开头，扫视时
@@ -13,7 +59,7 @@ struct SettingsIconBadge: View {
         ZStack {
             Circle()
                 .fill(tint)
-                .frame(width: 36, height: 36)
+                .frame(width: SettingsMetrics.iconSize, height: SettingsMetrics.iconSize)
             Image(systemName: systemImage)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.white)
@@ -36,18 +82,22 @@ struct SettingsStatusRow: View {
     var monospacedValue: Bool = false
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: SettingsMetrics.iconSpacing) {
             SettingsIconBadge(systemImage: systemImage)
 
             Text(title)
+                .font(SettingsMetrics.titleFont)
 
             Spacer(minLength: 8)
 
             Text(value)
-                .font(monospacedValue ? .body.monospaced() : .body)
+                .font(monospacedValue
+                      ? .system(size: 16, design: .monospaced)
+                      : SettingsMetrics.valueFont)
                 .foregroundStyle(valueColor)
                 .multilineTextAlignment(.trailing)
         }
+        .padding(.vertical, SettingsMetrics.rowVerticalPadding)
     }
 }
 
@@ -62,19 +112,21 @@ struct SettingsToggleRow: View {
     var isEnabled: Bool = true
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: SettingsMetrics.iconSpacing) {
             SettingsIconBadge(systemImage: systemImage)
 
             if let subtitle {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
+                        .font(SettingsMetrics.titleFont)
                     Text(subtitle)
-                        .font(.footnote)
+                        .font(SettingsMetrics.subtitleFont)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
                 Text(title)
+                    .font(SettingsMetrics.titleFont)
             }
 
             Spacer(minLength: 8)
@@ -84,6 +136,7 @@ struct SettingsToggleRow: View {
                 .tint(.blue)
                 .disabled(!isEnabled)
         }
+        .padding(.vertical, SettingsMetrics.rowVerticalPadding)
     }
 }
 
@@ -100,10 +153,12 @@ struct SettingsLabel: View {
     var tint: Color = .blue
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: SettingsMetrics.iconSpacing) {
             SettingsIconBadge(systemImage: systemImage, tint: tint)
             Text(title)
+                .font(SettingsMetrics.titleFont)
                 .foregroundStyle(isSecondary ? Color.secondary : Color.primary)
         }
+        .padding(.vertical, SettingsMetrics.rowVerticalPadding)
     }
 }

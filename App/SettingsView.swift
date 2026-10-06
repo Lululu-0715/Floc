@@ -29,20 +29,29 @@ struct SettingsView: View {
     /// 启停代理过程中的错误，展示在「状态」分组里而不是弹窗——
     /// 用户正在这页操作，内联提示比模态弹窗少一次点击。
     @State private var statusMessage: String?
+    /// 「复制模块订阅地址」的即时回馈。复制本身没有界面变化，不给反馈
+    /// 用户会怀疑到底点上没有。
+    @State private var didCopyModuleURL = false
+    @State private var copyFeedbackTask: Task<Void, Never>?
 
     var body: some View {
         NavigationView {
             List {
                 modeSection
                 statusSection
+
+                // 「第三方代理」紧跟「状态」：用户在这一步最想确认的就是
+                // 客户端到底连上没有，排在下面的说明文字之后要翻很久。
+                if runtimeMode.mode == .thirdParty {
+                    thirdPartySection
+                }
+
                 simulationSection
                 notesSection
                 principlesSection
 
                 if runtimeMode.mode == .localProxy {
                     environmentSection
-                } else {
-                    thirdPartySection
                 }
 
                 favoritesSection
@@ -94,13 +103,11 @@ struct SettingsView: View {
 
     private var modeSection: some View {
         Section {
-            Text(AppLocalization.string("模式"))
-
             ForEach(ProxyRuntimeMode.allCases) { mode in
                 modeOptionRow(mode)
             }
         } header: {
-            Text(AppLocalization.string("运行模式"))
+            SettingsSectionHeader(title: AppLocalization.string("运行模式"))
         } footer: {
             Text(runtimeMode.mode.summary)
         }
@@ -114,6 +121,7 @@ struct SettingsView: View {
         } label: {
             HStack {
                 Text(mode.displayName)
+                    .font(SettingsMetrics.titleFont)
                     .foregroundStyle(.primary)
                 Spacer(minLength: 8)
                 if isSelected {
@@ -122,6 +130,7 @@ struct SettingsView: View {
                         .foregroundStyle(Color.blue)
                 }
             }
+            .padding(.vertical, SettingsMetrics.rowVerticalPadding)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -163,7 +172,7 @@ struct SettingsView: View {
                     .foregroundStyle(Color.red)
             }
         } header: {
-            Text(AppLocalization.string("状态"))
+            SettingsSectionHeader(title: AppLocalization.string("状态"))
         }
     }
 
@@ -171,10 +180,11 @@ struct SettingsView: View {
 
     private var simulationSection: some View {
         Section {
-            HStack(spacing: 12) {
+            HStack(spacing: SettingsMetrics.iconSpacing) {
                 SettingsIconBadge(systemImage: "scope")
 
                 Text(AppLocalization.string("精度"))
+                    .font(SettingsMetrics.titleFont)
 
                 Spacer(minLength: 8)
 
@@ -188,14 +198,31 @@ struct SettingsView: View {
                 .pickerStyle(.menu)
                 .labelsHidden()
             }
+            .padding(.vertical, SettingsMetrics.rowVerticalPadding)
 
-            SettingsToggleRow(
-                systemImage: "figure.walk",
-                title: AppLocalization.string("运动状态模拟"),
-                subtitle: AppLocalization.string("实验性功能，默认关闭。开启后会自动模拟定位响应中的运动状态。"),
-                isOn: $state.motionSimulationEnabled,
-                isEnabled: runtimeMode.mode == .localProxy
-            )
+            HStack(spacing: SettingsMetrics.iconSpacing) {
+                SettingsIconBadge(systemImage: "figure.walk")
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(AppLocalization.string("运动状态模拟"))
+                        .font(SettingsMetrics.titleFont)
+                    Text(AppLocalization.string("在选定位置附近轻微漂移，更接近真实 GPS。"))
+                        .font(SettingsMetrics.subtitleFont)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                Picker(AppLocalization.string("运动状态模拟"), selection: motionDriftBinding) {
+                    ForEach(MotionDriftOption.allCases) { option in
+                        Text(option.displayName).tag(option.rawValue)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+            }
+            .padding(.vertical, SettingsMetrics.rowVerticalPadding)
 
             Button {
                 selfCheckResult = proxy.runSelfCheck(
@@ -216,12 +243,21 @@ struct SettingsView: View {
                     .foregroundStyle(selfCheckResult.hasPrefix("ok:") ? Color.green : Color.red)
             }
         } header: {
-            Text(AppLocalization.string("定位模拟"))
+            SettingsSectionHeader(title: AppLocalization.string("定位模拟"))
         } footer: {
             Text(runtimeMode.mode == .thirdParty
-                 ? AppLocalization.string("精度会写入客户端配置；运动状态模拟仅在应用内代理模式下可用。")
+                 ? AppLocalization.string("精度与运动状态模拟都会写入客户端配置。")
                  : AppLocalization.string("精度直接影响系统对定位可信度的判断，通常 25 米较为自然。"))
         }
+    }
+
+    /// 「运动状态模拟」的选择：界面上下拉给的是档位原始值（0 / 5 / 10 / 20），
+    /// 写回前收敛一次，避免脏值传进 Core。
+    private var motionDriftBinding: Binding<Int> {
+        Binding(
+            get: { state.motionDriftRadius },
+            set: { state.motionDriftRadius = MotionDriftOption.normalized($0).rawValue }
+        )
     }
 
     // MARK: - 说明
@@ -232,7 +268,7 @@ struct SettingsView: View {
             tipLink(kind: .disableSpoofing, systemImage: "arrow.uturn.backward.circle")
             tipLink(kind: .disableWiFiProxy, systemImage: "wifi.slash")
         } header: {
-            Text(AppLocalization.string("说明"))
+            SettingsSectionHeader(title: AppLocalization.string("说明"))
         }
     }
 
@@ -268,7 +304,7 @@ struct SettingsView: View {
             }
             .padding(.vertical, 4)
         } header: {
-            Text(AppLocalization.string("工作原理"))
+            SettingsSectionHeader(title: AppLocalization.string("工作原理"))
         }
     }
 
@@ -364,7 +400,7 @@ struct SettingsView: View {
                 )
             }
         } header: {
-            Text(AppLocalization.string("证书与环境"))
+            SettingsSectionHeader(title: AppLocalization.string("证书与环境"))
         } footer: {
             Text(AppLocalization.string("重置证书后需要重新下载并在系统设置中再次信任。"))
         }
@@ -374,10 +410,11 @@ struct SettingsView: View {
 
     private var thirdPartySection: some View {
         Section {
-            HStack(spacing: 12) {
+            HStack(spacing: SettingsMetrics.iconSpacing) {
                 SettingsIconBadge(systemImage: "shield.lefthalf.filled")
 
                 Text(AppLocalization.string("客户端"))
+                    .font(SettingsMetrics.titleFont)
 
                 Spacer(minLength: 8)
 
@@ -389,6 +426,7 @@ struct SettingsView: View {
                 .pickerStyle(.menu)
                 .labelsHidden()
             }
+            .padding(.vertical, SettingsMetrics.rowVerticalPadding)
 
             // 仓库里有 5 个 wloc.* 模块文件，把当前客户端该用哪个直接写出来，
             // 省得用户对着文件名猜。
@@ -403,10 +441,14 @@ struct SettingsView: View {
                 Button {
                     UIPasteboard.general.string = url.absoluteString
                     RuntimeLogger.info("APP", "Settings", "模块地址已复制")
+                    showCopyFeedback()
                 } label: {
                     SettingsLabel(
-                        systemImage: "doc.on.doc",
-                        title: AppLocalization.string("复制模块订阅地址")
+                        systemImage: didCopyModuleURL ? "checkmark.circle.fill" : "doc.on.doc",
+                        title: didCopyModuleURL
+                            ? AppLocalization.string("已复制到剪贴板")
+                            : AppLocalization.string("复制模块订阅地址"),
+                        tint: didCopyModuleURL ? .green : .blue
                     )
                 }
 
@@ -455,7 +497,7 @@ struct SettingsView: View {
                 )
             }
         } header: {
-            Text(AppLocalization.string("第三方代理"))
+            SettingsSectionHeader(title: AppLocalization.string("第三方代理"))
         } footer: {
             Text(AppLocalization.string("模块由第三方客户端执行拦截，本应用只负责写入坐标。"))
         }
@@ -511,7 +553,7 @@ struct SettingsView: View {
                 }
             }
         } header: {
-            Text(AppLocalization.string("收藏位置"))
+            SettingsSectionHeader(title: AppLocalization.string("收藏位置"))
         }
     }
 
@@ -519,10 +561,11 @@ struct SettingsView: View {
 
     private var languageSection: some View {
         Section {
-            HStack(spacing: 12) {
+            HStack(spacing: SettingsMetrics.iconSpacing) {
                 SettingsIconBadge(systemImage: "globe")
 
                 Text(AppLocalization.string("界面语言"))
+                    .font(SettingsMetrics.titleFont)
 
                 Spacer(minLength: 8)
 
@@ -541,8 +584,9 @@ struct SettingsView: View {
                 .pickerStyle(.menu)
                 .labelsHidden()
             }
+            .padding(.vertical, SettingsMetrics.rowVerticalPadding)
         } header: {
-            Text(AppLocalization.string("语言"))
+            SettingsSectionHeader(title: AppLocalization.string("语言"))
         } footer: {
             Text(AppLocalization.string("切换语言后部分界面需要重新进入才会完全生效。"))
         }
@@ -579,7 +623,7 @@ struct SettingsView: View {
                 )
             }
         } header: {
-            Text(AppLocalization.string("支持"))
+            SettingsSectionHeader(title: AppLocalization.string("支持"))
         }
     }
 
@@ -618,7 +662,7 @@ struct SettingsView: View {
                 .foregroundStyle(.orange)
             }
         } header: {
-            Text(AppLocalization.string("关于"))
+            SettingsSectionHeader(title: AppLocalization.string("关于"))
         } footer: {
             Text(AppLocalization.string(
                 "本应用用于定位服务的开发测试与研究，请仅在你拥有或获得授权的设备与网络环境中使用。"
@@ -627,6 +671,19 @@ struct SettingsView: View {
     }
 
     // MARK: - 操作
+
+    /// 展示一次「已复制」回馈，2 秒后自动恢复。
+    private func showCopyFeedback() {
+        copyFeedbackTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.15)) { didCopyModuleURL = true }
+        copyFeedbackTask = Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.15)) { didCopyModuleURL = false }
+            }
+        }
+    }
 
     /// 切换运行模式。两套链路不能同时开着，所以先停掉当前代理再切。
     private func switchMode(to mode: ProxyRuntimeMode) {
@@ -651,7 +708,7 @@ struct SettingsView: View {
                 longitude: 0,
                 enabled: false,
                 accuracy: state.accuracy,
-                motionEnabled: false
+                motionRadius: 0
             )
             proxy.stop()
             BackgroundKeepAlive.shared.stop()
@@ -668,7 +725,7 @@ struct SettingsView: View {
                     longitude: pair?.wgs84.longitude ?? 0,
                     enabled: state.isEnabled,
                     accuracy: state.accuracy,
-                    motionEnabled: state.motionSimulationEnabled
+                    motionRadius: state.motionDriftRadius
                 )
                 BackgroundKeepAlive.shared.start()
                 await proxy.verifyCertificateTrust()

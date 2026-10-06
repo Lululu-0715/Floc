@@ -121,7 +121,7 @@ struct ProxySetupStep: View {
                 longitude: 0,
                 enabled: false,
                 accuracy: 25,
-                motionEnabled: false
+                motionRadius: 0
             )
         } catch {
             errorMessage = error.localizedDescription

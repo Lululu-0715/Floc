@@ -20,8 +20,15 @@ command -v xcodegen >/dev/null 2>&1 || {
 echo "==> 生成 Xcode 工程"
 xcodegen generate
 
-echo "==> 清理旧的构建产物"
-rm -rf build/UnsignedIPA build/DerivedData
+# 打包目录每次都要重建，否则旧的 Payload 会和新产物混在一起。
+rm -rf build/UnsignedIPA
+
+# DerivedData 特意保留：Release 产物是覆盖写入的，留着编译缓存只会更快，
+# 不会拿到上一版的包。确实需要全量重编时用 FULL_CLEAN=1 ./build.sh。
+if [ "${FULL_CLEAN:-0}" = "1" ]; then
+  echo "==> 全量清理编译缓存（FULL_CLEAN=1）"
+  rm -rf build/DerivedData
+fi
 
 echo "==> 构建 Release 版本"
 xcodebuild \
@@ -44,19 +51,18 @@ echo "==> 打包 IPA"
 mkdir -p build/UnsignedIPA/Payload dist
 cp -R "$APP_BUNDLE" "build/UnsignedIPA/Payload/$APP_NAME.app"
 
-BUILD_TIMESTAMP="${BUILD_TIMESTAMP:-$(date '+%Y%m%d-%H%M%S')}"
-case "$BUILD_TIMESTAMP" in
-  [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]) ;;
-  *) echo "BUILD_TIMESTAMP 必须形如 yyyyMMdd-HHmmss" >&2; exit 2 ;;
-esac
+# 版本号由 build.sh 维护（每次出包末位 +1），这里读出来给产物命名。
+# 不带版本号的话，dist/ 里只剩一个固定名字，分不清哪次构建对应哪一版；
+# 光用时间戳也不行——手机上装的是哪个版本仍然看不出来。
+VERSION="${VERSION:-$(python3 "$ROOT/Scripts/bump-version.py")}"
 
-IPA="$ROOT/dist/$APP_NAME-unsigned.ipa"
-TIMESTAMPED_IPA="$ROOT/dist/$APP_NAME-${BUILD_TIMESTAMP}-unsigned.ipa"
+STABLE_IPA="$ROOT/dist/$APP_NAME-unsigned.ipa"
+VERSIONED_IPA="$ROOT/dist/$APP_NAME-${VERSION}-unsigned.ipa"
 
-rm -f "$IPA"
+rm -f "$STABLE_IPA"
 cd build/UnsignedIPA
-zip -qry "$IPA" Payload
-cp "$IPA" "$TIMESTAMPED_IPA"
+zip -qry "$STABLE_IPA" Payload
+cp "$STABLE_IPA" "$VERSIONED_IPA"
 
-echo "输出: $IPA"
-echo "带时间戳输出: $TIMESTAMPED_IPA"
+echo "输出: $VERSIONED_IPA"
+echo "固定名副本: $STABLE_IPA"

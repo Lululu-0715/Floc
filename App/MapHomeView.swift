@@ -20,6 +20,7 @@ struct MapHomeView: View {
     @StateObject private var state = MapLocationState()
     @StateObject private var favorites = FavoriteLocationStore()
     @StateObject private var mapBridge = MapViewBridge()
+    @StateObject private var realLocation = RealLocationProvider()
 
     @State private var searchText = ""
     @State private var searchResults: [SearchResult] = []
@@ -96,7 +97,7 @@ struct MapHomeView: View {
             state.persist()
             pushConfigurationToBackend()
         }
-        .onChange(of: state.motionSimulationEnabled) { _ in
+        .onChange(of: state.motionDriftRadius) { _ in
             state.persist()
             pushConfigurationToBackend()
         }
@@ -146,9 +147,9 @@ struct MapHomeView: View {
             }
             // 搜索结果展开时就收起图层切换，避免两个浮层挤在一起。
             if searchResults.isEmpty {
-                HStack {
-                    Spacer(minLength: 0)
+                HStack(alignment: .top) {
                     mapTypeSwitcher
+                    Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
@@ -160,14 +161,19 @@ struct MapHomeView: View {
         .animation(.easeInOut(duration: 0.2), value: banner)
     }
 
-    /// 地图右上角的玻璃胶囊图层切换。
+    /// 地图左上角的玻璃图层切换（竖排）。
+    ///
+    /// 竖排是有意的：横排时三个图标占满一行，会和上方的搜索框、展开的
+    /// 搜索结果抢纵向空间；竖排后每个按钮 36×34，热区够大又不压地图。
+    /// 圆角与材质全部走 `mapGlassSurface()`，和地图页其他浮层保持一致。
     private var mapTypeSwitcher: some View {
-        HStack(spacing: 2) {
+        VStack(spacing: 2) {
             ForEach(MapTypeOption.allCases) { option in
                 GlassSegmentButton(
                     systemImage: option.systemImage,
                     accessibilityLabel: option.displayName,
-                    isSelected: mapType == option
+                    isSelected: mapType == option,
+                    itemSize: CGSize(width: 36, height: 34)
                 ) {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         mapType = option
@@ -176,7 +182,7 @@ struct MapHomeView: View {
             }
         }
         .padding(4)
-        .glassCard(cornerRadius: 20, shadowRadius: 10)
+        .mapGlassSurface()
     }
 
     private var topBar: some View {
@@ -209,8 +215,8 @@ struct MapHomeView: View {
                     }
                 }
                 .padding(.horizontal, 14)
-                .padding(.vertical, 11)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .padding(.vertical, 10)
+                .mapGlassSurface()
 
                 Button {
                     activeSheet = .settings
@@ -218,7 +224,7 @@ struct MapHomeView: View {
                     Image(systemName: "ellipsis")
                         .font(.headline)
                         .frame(width: 42, height: 42)
-                        .background(.regularMaterial, in: Circle())
+                        .mapGlassSurface()
                 }
                 .buttonStyle(.plain)
             }
@@ -267,7 +273,7 @@ struct MapHomeView: View {
                 }
             }
         }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .mapGlassSurface()
         .frame(maxHeight: 280)
     }
 
@@ -290,8 +296,8 @@ struct MapHomeView: View {
             statusRow
             actionButtons
         }
-        .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+        .padding(14)
+        .mapGlassSurface()
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
     }
@@ -363,8 +369,11 @@ struct MapHomeView: View {
                 .labelsHidden()
             }
         }
-        .padding(14)
-        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 14))
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: GlassMetrics.mapCornerRadius, style: .continuous)
+                .fill(Color.primary.opacity(0.06))
+        )
     }
 
     private var favoritesRow: some View {
@@ -427,12 +436,17 @@ struct MapHomeView: View {
         }
     }
 
+    /// 底部两个动作按钮。
+    ///
+    /// 主按钮固定 44pt 高——之前用 `padding(.vertical, 15)` 撑到了 50+，
+    /// 加上选点卡片和状态胶囊，整块面板几乎顶到屏幕中间。44pt 是 iOS
+    /// 的最小可靠点击高度，够用且不臃肿。
     private var actionButtons: some View {
         HStack(spacing: 10) {
             Button {
                 toggleSpoofing()
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: 7) {
                     if state.isBusy {
                         ProgressView().tint(.white)
                     } else {
@@ -444,25 +458,81 @@ struct MapHomeView: View {
                         .fontWeight(.semibold)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 15)
+                .frame(height: 44)
             }
             .buttonStyle(.borderedProminent)
             .tint(state.isEnabled ? .red : .accentColor)
             .disabled(state.selection == nil || state.isBusy)
 
-            Button {
-                guard let pair = state.selection else {
-                    showBanner(AppLocalization.string("请先在地图上选择位置"), style: .warning)
-                    return
+            realLocationButton
+        }
+    }
+
+    /// 「实时位置」按钮。
+    ///
+    /// 点一下把地图跳回设备当前真实位置；长按回到已选点（选点才是这个
+    /// 应用的主角，所以回到它比回到真实位置更"次级"，放在长按上）。
+    private var realLocationButton: some View {
+        Button {
+            goToRealLocation()
+        } label: {
+            VStack(spacing: 1) {
+                if realLocation.isLocating {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "location.viewfinder")
+                        .font(.system(size: 15, weight: .semibold))
                 }
-                mapBridge.center(on: pair.coordinate(for: state.mapCoordinateSystem))
-            } label: {
-                Image(systemName: "location.circle")
-                    .font(.title3)
-                    .frame(width: 50, height: 50)
+                Text(AppLocalization.string("实时位置"))
+                    .font(.system(size: 10, weight: .medium))
             }
-            .buttonStyle(.bordered)
-            .disabled(state.selection == nil)
+            .frame(width: 62, height: 44)
+            .background(
+                RoundedRectangle(cornerRadius: GlassMetrics.mapCornerRadius, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.14))
+            )
+            .foregroundStyle(Color.accentColor)
+            .contentShape(RoundedRectangle(cornerRadius: GlassMetrics.mapCornerRadius,
+                                           style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(realLocation.isLocating)
+        .accessibilityLabel(AppLocalization.string("实时位置"))
+        .accessibilityHint(AppLocalization.string("长按回到已选点"))
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.5).onEnded { _ in centerOnSelection() }
+        )
+    }
+
+    /// 回到当前选中的虚拟位置。
+    private func centerOnSelection() {
+        guard let pair = state.selection else {
+            showBanner(AppLocalization.string("请先在地图上选择位置"), style: .warning)
+            return
+        }
+        mapBridge.center(on: pair.coordinate(for: state.mapCoordinateSystem))
+        showBanner(AppLocalization.string("已回到选点"), style: .info)
+    }
+
+    /// 读取设备真实位置并把地图移过去。
+    ///
+    /// 定位回调给的是 WGS-84，必须按当前地图体系换算后再居中，
+    /// 否则国内会偏出几百米——和选点走的是同一套换算。
+    private func goToRealLocation() {
+        realLocation.requestOnce { result in
+            switch result {
+            case .success(let coordinate):
+                let pair = CoordinateConverter.CoordinatePair(
+                    wgs84Latitude: coordinate.latitude,
+                    wgs84Longitude: coordinate.longitude
+                )
+                mapBridge.center(on: pair.coordinate(for: state.mapCoordinateSystem))
+                showBanner(AppLocalization.string("已定位到当前真实位置"), style: .info)
+
+            case .failure(let failure):
+                showBanner(failure.errorDescription
+                           ?? AppLocalization.string("获取真实位置失败"), style: .warning)
+            }
         }
     }
 
@@ -521,7 +591,7 @@ struct MapHomeView: View {
                         longitude: pair.wgs84.longitude,
                         enabled: true,
                         accuracy: state.accuracy,
-                        motionEnabled: state.motionSimulationEnabled
+                        motionRadius: state.motionDriftRadius
                     )
                 } catch {
                     state.disable()
@@ -529,7 +599,11 @@ struct MapHomeView: View {
                 }
             }
         case .thirdParty:
-            await thirdParty.save(pair: pair, accuracy: state.accuracy)
+            await thirdParty.save(
+                pair: pair,
+                accuracy: state.accuracy,
+                motionRadius: state.motionDriftRadius
+            )
         }
     }
 
@@ -595,7 +669,7 @@ struct MapHomeView: View {
                     longitude: pair.wgs84.longitude,
                     enabled: true,
                     accuracy: state.accuracy,
-                    motionEnabled: state.motionSimulationEnabled
+                    motionRadius: state.motionDriftRadius
                 )
                 BackgroundKeepAlive.shared.start()
                 state.enable()
@@ -616,7 +690,11 @@ struct MapHomeView: View {
             }
 
         case .thirdParty:
-            let success = await thirdParty.save(pair: pair, accuracy: state.accuracy)
+            let success = await thirdParty.save(
+                pair: pair,
+                accuracy: state.accuracy,
+                motionRadius: state.motionDriftRadius
+            )
             if success {
                 state.enable()
                 showBanner(AppLocalization.string("坐标已写入客户端"), style: .info)
@@ -634,7 +712,7 @@ struct MapHomeView: View {
                 latitude: 0, longitude: 0,
                 enabled: false,
                 accuracy: state.accuracy,
-                motionEnabled: false
+                motionRadius: 0
             )
             proxy.stop()
             BackgroundKeepAlive.shared.stop()
@@ -656,7 +734,7 @@ struct MapHomeView: View {
             longitude: pair?.wgs84.longitude ?? 0,
             enabled: state.isEnabled,
             accuracy: state.accuracy,
-            motionEnabled: state.motionSimulationEnabled
+            motionRadius: state.motionDriftRadius
         )
     }
 

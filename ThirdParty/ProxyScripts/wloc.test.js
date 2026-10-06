@@ -449,3 +449,123 @@ test('配置接口可以清除坐标', () => {
   assert.strictEqual(payload.success, true);
   assert.strictEqual(JSON.parse(stored).enabled, false);
 });
+
+// ---------------------------------------------------------------------------
+// 运动状态模拟（原地抖动）
+// ---------------------------------------------------------------------------
+
+test('配置接口保存并回读抖动半径', () => {
+  let stored = null;
+
+  const result = runScript(SETTINGS_SOURCE, {
+    $request: {
+      url: 'https://gs-loc.apple.com/wloc-settings/save'
+        + '?lon=113.264435&lat=23.129163&acc=25&drift=10',
+    },
+    $persistentStore: {
+      read: () => stored,
+      write: (value) => { stored = value; return true; },
+    },
+  });
+
+  const payload = JSON.parse(result.response.body);
+  assert.strictEqual(payload.success, true);
+  assert.strictEqual(payload.driftRadius, 10);
+  assert.strictEqual(JSON.parse(stored).driftRadius, 10);
+});
+
+test('不支持的抖动半径一律归零', () => {
+  let stored = null;
+
+  runScript(SETTINGS_SOURCE, {
+    $request: {
+      url: 'https://gs-loc.apple.com/wloc-settings/save'
+        + '?lon=113.264435&lat=23.129163&acc=25&drift=7',
+    },
+    $persistentStore: {
+      read: () => stored,
+      write: (value) => { stored = value; return true; },
+    },
+  });
+
+  // 7 米不在 0/5/10/20 三档里，不能原样落盘——否则 Core 侧会拒绝这个值，
+  // 界面显示的档位和实际生效的就对不上了。
+  assert.strictEqual(JSON.parse(stored).driftRadius, 0);
+});
+
+test('旧配置没有抖动字段时按关闭处理', () => {
+  const settings = JSON.stringify({
+    enabled: true,
+    latitude: 31.230416,
+    longitude: 121.473701,
+    accuracy: 25,
+  });
+
+  const result = runScript(SETTINGS_SOURCE, {
+    $request: { url: 'https://gs-loc.apple.com/wloc-settings/save?action=query' },
+    $persistentStore: {
+      read: (key) => (key === 'wloc_settings' ? settings : null),
+    },
+  });
+
+  assert.strictEqual(JSON.parse(result.response.body).driftRadius, 0);
+});
+
+test('开启抖动后改写结果仍在目标点附近', () => {
+  const response = buildSampleResponse();
+  const settings = JSON.stringify({
+    enabled: true,
+    latitude: 23.129163,
+    longitude: 113.264435,
+    accuracy: 25,
+    driftRadius: 20,
+  });
+
+  const result = runScript(WLOC_SOURCE, {
+    $response: { body: String.fromCharCode(...response) },
+    $persistentStore: {
+      read: (key) => (key === 'wloc_settings' ? settings : null),
+    },
+  });
+
+  assert.ok(result && typeof result.body === 'string', '开启抖动后仍应改写');
+
+  const bytes = toBytes(result.body);
+  // 定点坐标是「度 × 1e8」，所以 20 米大约对应 20 / 111320 * 1e8 个单位。
+  const unitsPerDegree = 1e8;
+  const maxDelta = (20 / 111320) * unitsPerDegree * 1.5; // 留一点浮点余量
+
+  const lat = Number(findVarintDeep(bytes, 1)) / unitsPerDegree;
+  const lon = Number(findVarintDeep(bytes, 2)) / unitsPerDegree;
+
+  assert.ok(
+    Math.abs(lat - 23.129163) <= maxDelta / unitsPerDegree,
+    `纬度偏移过大：${lat}`
+  );
+  assert.ok(
+    Math.abs(lon - 113.264435) <= maxDelta / unitsPerDegree,
+    `经度偏移过大：${lon}`
+  );
+});
+
+test('关闭抖动时坐标与目标完全一致', () => {
+  const response = buildSampleResponse();
+  const settings = JSON.stringify({
+    enabled: true,
+    latitude: 23.129163,
+    longitude: 113.264435,
+    accuracy: 25,
+    driftRadius: 0,
+  });
+
+  const result = runScript(WLOC_SOURCE, {
+    $response: { body: String.fromCharCode(...response) },
+    $persistentStore: {
+      read: (key) => (key === 'wloc_settings' ? settings : null),
+    },
+  });
+
+  const bytes = toBytes(result.body);
+  assert.strictEqual(Number(findVarintDeep(bytes, 1)), Math.round(23.129163 * 1e8));
+  assert.strictEqual(Number(findVarintDeep(bytes, 2)), Math.round(113.264435 * 1e8));
+});

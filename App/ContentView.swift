@@ -31,6 +31,13 @@ struct ContentView: View {
     }
 }
 
+// #Preview 宏需要编译期加载 PreviewsMacros 插件。Release 构建在 -O 下本来就
+// 不产出预览，Xcode 也会打一句 "Disabling previews ... expected -Onone"，
+// 但宏展开仍会发生；在受限环境（CI、沙箱）里插件进程起不来就会直接编译失败：
+//   external macro implementation type 'PreviewsMacros.SwiftUIView' could not be found
+// 加上 #if DEBUG 之后出包路径完全不碰这个宏，只有 Xcode 预览/调试时才展开。
+#if DEBUG
 #Preview {
     ContentView(setup: SetupCoordinator())
 }
+#endif

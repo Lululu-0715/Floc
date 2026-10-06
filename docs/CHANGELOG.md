@@ -2,6 +2,89 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.1] - 2026-10-07
+
+界面重排 + 运动模拟做可用 + 扩大定位端点拦截范围，并引入每次出包自动递增的版本号。
+
+### 地图页
+
+- **地图样式切换移到左上角，改为纵向排列**（原来是右上角横向胶囊）
+- **压缩「开启虚拟定位」区域高度**，主按钮改为 44pt 高的整行按钮
+- **新增「实时位置」按钮**：单击跳回真实 GPS 位置，长按回到已选点
+- **地图页所有浮层统一圆角与材质**（`GlassMetrics.mapCornerRadius` = 20pt +
+  `.ultraThinMaterial` + 0.5pt 白色描边 + 10pt 阴影），与地图样式切换器完全一致
+
+### 设置页
+
+- 行标题字号 15 → **17（medium）**，数值 16，副标题 13；白色卡片行不再拥挤
+- 分组头统一为 15pt semibold
+- **「第三方代理」分组移到「状态」下面**
+- **复制模块地址给出反馈**：绿色对勾 +「已复制到剪贴板」，2 秒后自动消失
+- 分组结构本身保持不变
+
+### 运动状态模拟（原先点击无反应）
+
+- 改为可选项 **关闭 / 5 米 / 10 米 / 20 米**
+- 语义是「原地抖动的半径」：在半径内按**面积均匀**采样（`r = R·√u`），
+  而不是固定偏移，所以不会全挤在圆心
+- 经度按 `cos(纬度)` 修正，极点附近有保护
+- 三层都做取值收敛（Swift `MotionDriftOption`、JS `DRIFT_STEPS`、Go
+  `normalizeMotionRadius`），非法值一律退化为「关闭」
+- 持久化键 `spoofMotionSimulation` → `spoofMotionDriftRadius`
+
+### 拦截更多 Apple 定位端点
+
+- MITM 主机白名单 **5 → 14**，新增 `gsp10-ssl(.ls).apple.com`、
+  `gsp64-ssl.ls.apple.com`、`gspe1/19/19-2/35/79/85-ssl.ls.apple.com`
+- **刻意逐个枚举，不用通配符**——`*.apple.com` 会误伤大量非定位请求；
+  并用单元测试锁死「不许出现通配符」
+- 应用内代理与 6 个第三方客户端模块同步更新
+
+### 实时位置
+
+- 新增 `RealLocationProvider`：单次 `requestOnce` 取真实坐标，不持续定位
+- 坐标按当前地图体系（WGS-84 / GCJ-02）转换后落点
+
+### 构建与发布
+
+- **每次出包版本号末位 +1**（`1.0.0` → `1.0.1`），并同步写进 App 显示名
+  （`Floc 1.0.1`）与 IPA 文件名（`Floc-1.0.1-unsigned.ipa`）
+- 新增 `Scripts/bump-version.py`：`--bump` / `--set` / `--show-build` / `--set-build`
+- `build.sh` 构建失败会同时回退 `MARKETING_VERSION` 与
+  `CURRENT_PROJECT_VERSION`，不会凭空跳号
+- 三语言 `InfoPlist.strings` 移除 `CFBundleDisplayName` 覆盖，
+  否则会盖掉带版本号的显示名
+- 不再删除 `build/DerivedData`（增量编译更快，Release 产物是覆盖写入的，
+  不会拿到旧包）；需要全量重编用 `FULL_CLEAN=1 ./build.sh`
+- `#Preview` 用 `#if DEBUG` 包起来，Release 出包不再依赖预览宏插件
+
+### 缺陷修复
+
+1. **运动模拟开关点了没反应**
+   原实现只有开/关两态，`motionEnabled` 一路透传到 Go 侧，但 Go 里
+   只在「响应中恰好存在运动状态字段」时才写入，实际几乎从不触发。
+   **修复**：改为按半径抖动，主动改写坐标，不再依赖响应里有没有那个字段。
+
+2. **失败构建会吃掉一个 build 号**
+   回滚逻辑只还原 `MARKETING_VERSION`，`CURRENT_PROJECT_VERSION` 留在自增后的值。
+   **修复**：回滚时两个号一起还原。
+
+3. **带版本号的显示名会被语言包盖掉**
+   `InfoPlist.strings` 里的 `CFBundleDisplayName` 优先级高于主 `Info.plist`。
+   **修复**：删除语言包中的该键，并在 `check_branding.py` 里禁止再次出现。
+
+### 测试
+
+- **Go**：18 个用例（新增 `Core/drift_test.go`：半径收敛、抖动不越界、
+  主机白名单覆盖与主机名归一化）
+- **代理脚本**：16 个用例（原 11 个，新增漂移保存/回显、非法值拒绝、
+  旧配置兼容、改写后仍在目标附近、关闭时坐标精确不变）
+- **iOS**：106 个用例（原 94 个，新增运动档位、主机白名单、
+  `drift` 参数契约等）
+- **本地化**：简繁英各 279 条，键名完全对齐
+
+---
+
 ## [1.0.0] - 初始版本
 
 首个完整版本。功能覆盖两种代理模式、双坐标系、环境自检与诊断日志。

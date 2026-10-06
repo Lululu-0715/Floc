@@ -77,7 +77,7 @@ func locationcore_startproxy(certData, keyData *C.char, lat, lon C.double, enabl
 }
 
 //export locationcore_startproxyv2
-func locationcore_startproxyv2(certData, keyData *C.char, lat, lon C.double, enabled C.int, accuracy C.int, motionEnabled C.int) C.uintptr_t {
+func locationcore_startproxyv2(certData, keyData *C.char, lat, lon C.double, enabled C.int, accuracy C.int, motionRadius C.int) C.uintptr_t {
 	if certData == nil || keyData == nil {
 		return 0
 	}
@@ -88,7 +88,7 @@ func locationcore_startproxyv2(certData, keyData *C.char, lat, lon C.double, ena
 		float64(lon),
 		enabled != 0,
 		int(accuracy),
-		motionEnabled != 0,
+		int(motionRadius),
 	)
 	if err != nil {
 		logEvent("代理启动失败: " + err.Error())
@@ -129,8 +129,8 @@ func proxyHandle(handle C.uintptr_t) (server *http.Server, h cgo.Handle, ok bool
 }
 
 //export locationcore_setpatchconfig
-func locationcore_setpatchconfig(lat, lon C.double, enabled C.int, accuracy C.int, motionEnabled C.int) {
-	setSpoofConfig(float64(lat), float64(lon), enabled != 0, int(accuracy), motionEnabled != 0)
+func locationcore_setpatchconfig(lat, lon C.double, enabled C.int, accuracy C.int, motionRadius C.int) {
+	setSpoofConfig(float64(lat), float64(lon), enabled != 0, int(accuracy), int(motionRadius))
 }
 
 //export locationcore_setcoords

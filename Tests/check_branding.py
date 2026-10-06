@@ -167,13 +167,21 @@ def check_file_references(app_name: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 3. 显示名三语言一致
+# 3. 显示名带版本号
 # ---------------------------------------------------------------------------
 
 def check_display_name(app_name: str) -> None:
-    expected = app_name
+    """显示名必须是「品牌名 + 版本号」，且版本号由构建时注入。
 
-    # Info.plist 的 CFBundleDisplayName
+    自签安装的构建在桌面上长得一模一样，用户装了两版也分不出哪个新；
+    所以显示名统一写成 `Floc $(MARKETING_VERSION)`，由 Xcode 在构建时
+    替换成实际版本号。
+
+    也正因为如此，三语言的 InfoPlist.strings **不允许**再定义
+    CFBundleDisplayName——它会盖掉 Info.plist 里的动态值，版本号就没了。
+    """
+    expected = f"{app_name} $(MARKETING_VERSION)"
+
     plist = read("Resources/Info.plist")
     match = re.search(
         r"<key>CFBundleDisplayName</key>\s*<string>([^<]*)</string>",
@@ -182,25 +190,26 @@ def check_display_name(app_name: str) -> None:
     if not match:
         fail("Info.plist 缺少 CFBundleDisplayName")
     elif match.group(1) != expected:
-        fail(f"Info.plist 的 CFBundleDisplayName 是 '{match.group(1)}'，应为 '{expected}'")
+        fail(
+            f"Info.plist 的 CFBundleDisplayName 是 '{match.group(1)}'，"
+            f"应为 '{expected}'"
+        )
 
-    # 三语言 InfoPlist.strings
     for code in ("zh-Hans", "zh-Hant", "en"):
         path = ROOT / "Resources" / f"{code}.lproj" / "InfoPlist.strings"
         if not path.exists():
             fail(f"缺少 {path.relative_to(ROOT)}")
             continue
         content = path.read_text(encoding="utf-8")
-        match = re.search(r'CFBundleDisplayName\s*=\s*"([^"]+)"', content)
-        if not match:
-            fail(f"{code}.lproj/InfoPlist.strings 缺少 CFBundleDisplayName")
-        elif match.group(1) != expected:
+        if re.search(r"CFBundleDisplayName\s*=", content):
             fail(
-                f"{code} 的显示名是 '{match.group(1)}'，应为 '{expected}'"
-                f"（当前设定是三语言统一）"
+                f"{code}.lproj/InfoPlist.strings 不应定义 CFBundleDisplayName："
+                f"它会把 Info.plist 里带版本号的显示名覆盖掉"
             )
+        if not re.search(r'CFBundleName\s*=\s*"([^"]+)"', content):
+            fail(f"{code}.lproj/InfoPlist.strings 缺少 CFBundleName")
 
-    print(f"  显示名：{expected}（三语言）")
+    print(f"  显示名：{expected}（版本号由构建注入）")
 
 
 # ---------------------------------------------------------------------------

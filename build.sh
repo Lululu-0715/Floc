@@ -16,7 +16,14 @@ usage() {
   cat <<'USAGE'
 用法: ./build.sh [--test|--check]
 
-构建未签名 IPA，输出到 dist/ 目录（同时生成带时间戳的副本）。
+构建未签名 IPA，输出到 dist/ 目录。
+
+每次构建会把版本号末位 +1（1.0.0 → 1.0.1），产物形如：
+  dist/Floc-1.0.1-unsigned.ipa   带版本号，用于区分不同构建
+  dist/Floc-unsigned.ipa         固定名字的副本，供发布链接引用
+
+版本号同时写进 App 显示名（桌面上显示为「Floc 1.0.1」），
+这样可以同时装多个构建并一眼区分。构建失败会自动回退版本号。
 
 选项:
   --test    构建完成后运行 iOS 模拟器单元测试
@@ -111,11 +118,40 @@ require_command go "请安装 Go 1.23 或更高版本。"
 run_static_checks
 echo
 
-"$ROOT/Scripts/build-unsigned-ipa.sh"
+# 版本号自增：1.0.0 → 1.0.1。
+#
+# 版本号进 App 显示名和 IPA 文件名，手机上装多个自签构建时才能区分。
+# 构建失败要回退——否则会出现「版本号涨了但没有对应产物」，
+# 下次再构建就凭空跳过了一个版本。
+# CURRENT_PROJECT_VERSION（Xcode build 号）也会被一起自增，所以回退时两个都得还回去，
+# 不然失败一次就白白吃掉一个 build 号。
+PREVIOUS_VERSION="$(python3 "$ROOT/Scripts/bump-version.py")"
+PREVIOUS_BUILD="$(python3 "$ROOT/Scripts/bump-version.py" --show-build)"
+VERSION="$(python3 "$ROOT/Scripts/bump-version.py" --bump)"
+echo "==> 版本号 $PREVIOUS_VERSION → $VERSION"
 
-IPA="$ROOT/dist/$APP_NAME-unsigned.ipa"
-test -s "$IPA"
-echo "未签名 IPA 已生成: $IPA"
+BUILD_SUCCEEDED=0
+restore_version_on_failure() {
+  if [ "$BUILD_SUCCEEDED" -ne 1 ]; then
+    python3 "$ROOT/Scripts/bump-version.py" --set "$PREVIOUS_VERSION" >/dev/null
+    python3 "$ROOT/Scripts/bump-version.py" --set-build "$PREVIOUS_BUILD" >/dev/null
+    echo "构建未完成，版本号已回退到 $PREVIOUS_VERSION" >&2
+  fi
+}
+trap restore_version_on_failure EXIT
+
+VERSION="$VERSION" "$ROOT/Scripts/build-unsigned-ipa.sh"
+
+VERSIONED_IPA="$ROOT/dist/$APP_NAME-$VERSION-unsigned.ipa"
+STABLE_IPA="$ROOT/dist/$APP_NAME-unsigned.ipa"
+test -s "$VERSIONED_IPA"
+test -s "$STABLE_IPA"
+
+BUILD_SUCCEEDED=1
+
+echo "未签名 IPA 已生成:"
+echo "  $VERSIONED_IPA"
+echo "  $STABLE_IPA"
 
 if [ "$run_tests" -eq 1 ]; then
   run_simulator_tests

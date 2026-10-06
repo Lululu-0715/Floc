@@ -151,10 +151,16 @@ WiFi 设备条目（字段 2 的内容）：
 | 1 | varint | **纬度** —— 十进制度 × 1e8 |
 | 2 | varint | **经度** —— 十进制度 × 1e8 |
 | 3 | varint | 精度（米） |
-| 11 | varint | 运动状态（开启运动模拟时补） |
-| 12 | varint | 运动置信度（开启运动模拟时补） |
+| 11 | varint | 运动状态（漂移开启时补 1） |
+| 12 | varint | 运动置信度（漂移开启时补） |
 
 坐标用**定点整数**：`22.281508°` → `2228150800`。
+
+> **关于运动模拟**：字段 11/12 只是「告诉系统这个点在被移动」，并不能让坐标动起来。
+> 真正让坐标产生位移的是**漂移**：`driftCoordinates(lat, lon, radius)` 在半径内按
+> **面积均匀**采样（`r = R·√u`，`u ~ U(0,1)`），经度再按 `cos(纬度)` 修正。
+> 采 `√u` 而不是直接采 `r` 是为了避免所有点都挤在圆心附近；
+> 半径取 `normalizeMotionRadius()` 收敛后的值，`0` 表示关闭、坐标精确保留。
 
 ### 3.3 改写策略
 
@@ -370,14 +376,15 @@ ThirdParty/ProxyScripts/modules/
                             ▼
 ┌──────────────────────────────────────────────────────────────┐
 │                     Go 核心（libwloccore.a）                  │
-│  locationcore_setpatchconfig(lat, lon, acc, motion, enabled)  │
+│  locationcore_setpatchconfig(lat, lon, acc, motionRadius, enabled) │
 │  locationcore_startproxy(certPEM, keyPEM, ...) → handle       │
 └───────────────────────────┬──────────────────────────────────┘
                             │
                             ▼
 ┌──────────────────────────────────────────────────────────────┐
 │                        MITM 代理                             │
-│  拦截 gs-loc.apple.com → rewriteLocationResponse → 改写坐标   │
+│  isLocationHost(host) → rewriteLocationResponse → 改写坐标    │
+│  白名单 14 个主机（gs-loc* / gsp* / gspe* 系列，逐个枚举）      │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -430,7 +437,7 @@ ThirdParty/ProxyScripts/modules/
 
 ### 其他页面
 
-- **设置**：坐标系偏好、精度、运动模拟、语言、代理模式切换
+- **设置**：坐标系偏好、精度、运动模拟档位、语言、代理模式切换
 - **诊断**：6 项环境自检 + 实时日志（2 秒刷新）
 - **问题反馈**：生成脱敏报告，一键复制/分享
 

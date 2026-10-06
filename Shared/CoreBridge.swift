@@ -111,20 +111,20 @@ enum CoreBridge {
         token.withCString { locationcore_checkverifytoken(UnsafeMutablePointer(mutating: $0)) != 0 }
     }
 
-    /// 更新改写配置（坐标、开关、精度、运动模拟）。
+    /// 更新改写配置（坐标、开关、精度、抖动半径）。
     static func updatePatchConfig(
         latitude: Double,
         longitude: Double,
         enabled: Bool,
         accuracy: Int,
-        motionEnabled: Bool
+        motionRadius: Int
     ) {
         locationcore_setpatchconfig(
             CDouble(latitude),
             CDouble(longitude),
             enabled ? 1 : 0,
             CInt(accuracy),
-            motionEnabled ? 1 : 0
+            CInt(motionRadius)
         )
     }
 }

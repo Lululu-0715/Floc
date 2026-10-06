@@ -91,7 +91,7 @@ final class ProxyManager: ObservableObject {
         longitude: Double,
         enabled: Bool,
         accuracy: Int,
-        motionEnabled: Bool
+        motionRadius: Int
     ) async throws {
         guard !status.isRunning else {
             // 已在运行，只需要把新配置推给 Core。
@@ -100,7 +100,7 @@ final class ProxyManager: ObservableObject {
                 longitude: longitude,
                 enabled: enabled,
                 accuracy: accuracy,
-                motionEnabled: motionEnabled
+                motionRadius: motionRadius
             )
             return
         }
@@ -125,7 +125,7 @@ final class ProxyManager: ObservableObject {
                         CDouble(longitude),
                         enabled ? 1 : 0,
                         CInt(accuracy),
-                        motionEnabled ? 1 : 0
+                        CInt(motionRadius)
                     ))
                 }
             }
@@ -170,20 +170,20 @@ final class ProxyManager: ObservableObject {
         CoreBridge.flushLogs(category: "Proxy")
     }
 
-    /// 更新改写配置（坐标变化或开关切换时调用）。
+    /// 更新改写配置（坐标变化、精度或抖动半径调整时调用）。
     func updateCoordinates(
         latitude: Double,
         longitude: Double,
         enabled: Bool,
         accuracy: Int,
-        motionEnabled: Bool
+        motionRadius: Int
     ) {
         CoreBridge.updatePatchConfig(
             latitude: latitude,
             longitude: longitude,
             enabled: enabled,
             accuracy: accuracy,
-            motionEnabled: motionEnabled
+            motionRadius: motionRadius
         )
         CoreBridge.flushLogs(category: "Proxy")
     }

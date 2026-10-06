@@ -16,6 +16,8 @@ iOS 虚拟定位工具。通过本机 MITM 代理拦截 Apple 定位服务响应
   - **第三方代理**：对接 Shadowrocket / Surge / QuantumultX / Loon / Stash / Egern
 - **双坐标系**：WGS-84 与 GCJ-02 同时存储，按地图体系取值，不累积转换误差
 - **地图选点**：搜索地点、地图单击/长按选点，直观指定目标位置
+- **实时位置**：一键跳回真实 GPS 位置，长按回到已选点
+- **运动模拟**：可选关闭 / 5 米 / 10 米 / 20 米原地漂移半径，让定位看起来在动
 - **收藏位置**：最多 50 个常用位置，一键切换
 - **环境自检**：6 项检查（权限 / 证书 / 代理链路 / 核心状态等），出问题能定位到具体环节
 - **诊断日志**：实时查看运行日志，导出的内容自动脱敏（坐标 / MAC / 密钥 / 令牌）
@@ -57,8 +59,10 @@ chmod +x build.sh Scripts/*.sh
 ./build.sh
 ```
 
-产物在 `dist/Floc-unsigned.ipa`，用 AltStore / Sideloadly 等工具
-自签后安装。完整说明见 **[docs/BUILD.md](docs/BUILD.md)**。
+产物在 `dist/Floc-<版本号>-unsigned.ipa`（另有固定名副本 `dist/Floc-unsigned.ipa`），
+用 AltStore / Sideloadly 等工具自签后安装。每次构建版本号末位自动 +1，
+App 显示名也带版本号，方便区分多个自签构建。
+完整说明见 **[docs/BUILD.md](docs/BUILD.md)**。
 
 > **第三方模块的脚本地址写死在本仓库的 raw 地址上**（`Lululu-0715/Floc`）。
 > 如果你 fork 或迁移到其他账号，必须同步改 3 个常量与 5 个模块文件（共 17 处 URL），
@@ -141,12 +145,16 @@ CA 混用时 MITM 会静默失败、不报错。完整说明、导入地址与�
 
 ## 工作原理
 
-iPhone 判断位置时会向 `gs-loc.apple.com/clls/wloc` 查询周围 Wi-Fi 和基站
-对应的经纬度。本机代理拦下这个响应，把坐标改掉，系统就定位到假位置。
+iPhone 判断位置时会向 Apple 的定位服务查询周围 Wi-Fi 和基站对应的经纬度。
+本机代理拦下这些响应，把坐标改掉，系统就定位到假位置。
 
 ```
 iOS 定位服务 → Wi-Fi 代理 127.0.0.1:8888 → MITM 拦截 → 改写坐标 → 返回
 ```
+
+拦截范围是 **14 个主机**（`gs-loc.apple.com` / `gs-loc-cn.apple.com` / `gsp-ssl.ls.apple.com`
+以及 `gsp*` / `gspe*` 系列）。这里**只逐个枚举，不用 `*.apple.com` 通配符**——
+通配会连推送、App Store、激活等流量一起 MITM，既拖慢又容易出问题。
 
 改写的关键难点：
 

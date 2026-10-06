@@ -91,9 +91,9 @@ struct locationcore_generateca_return {
 extern struct locationcore_generateca_return locationcore_generateca();
 extern int locationcore_validateca(char* certData, char* keyData);
 extern uintptr_t locationcore_startproxy(char* certData, char* keyData, double lat, double lon, int enabled, int accuracy);
-extern uintptr_t locationcore_startproxyv2(char* certData, char* keyData, double lat, double lon, int enabled, int accuracy, int motionEnabled);
+extern uintptr_t locationcore_startproxyv2(char* certData, char* keyData, double lat, double lon, int enabled, int accuracy, int motionRadius);
 extern int locationcore_stopproxy(uintptr_t handle);
-extern void locationcore_setpatchconfig(double lat, double lon, int enabled, int accuracy, int motionEnabled);
+extern void locationcore_setpatchconfig(double lat, double lon, int enabled, int accuracy, int motionRadius);
 extern void locationcore_setcoords(double lat, double lon, int enabled, int accuracy);
 
 /* Return type for locationcore_getcoords */

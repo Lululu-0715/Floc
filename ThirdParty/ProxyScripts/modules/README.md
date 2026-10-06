@@ -48,15 +48,29 @@ App 写入的坐标）。本目录的模块文件只是「外壳」——告诉�
 ## 导入之后必须做两件事
 
 1. **开启模块**（导入完默认可能是关闭状态）；
-2. **开启 MITM**，并确认下面这 5 个主机名已加进 MITM 名单：
+2. **开启 MITM**，并确认下面这 14 个主机名已加进 MITM 名单：
 
 ```
 gs-loc.apple.com
 gs-loc-cn.apple.com
 gsp-ssl.ls.apple.com
+gsp10-ssl.ls.apple.com
+gsp10-ssl.apple.com
+gsp64-ssl.ls.apple.com
+gspe1-ssl.ls.apple.com
+gspe19-ssl.ls.apple.com
+gspe19-2-ssl.ls.apple.com
+gspe35-ssl.ls.apple.com
+gspe79-ssl.ls.apple.com
+gspe85-ssl.ls.apple.com
 bluedot.is.autonavi.com
 bluedot.is.autonavi.com.gds.alibabadns.com
 ```
+
+前两台是 Apple 的全球 / 国内定位入口，中间那批 `gsp*` / `gspe*` 是
+**新版本系统把定位查询分散过去的备用入口**。只拦前两三台的话，在 iOS 26+
+上会表现成「模块装了、MITM 也开了，定位就是纹丝不动」。最后两台是
+Apple 地图在国内使用的蓝点定位（高德）端点。
 
 `wloc.module`（Shadowrocket）、`wloc.sgmodule`（Surge / Egern）两个文件的
 `hostname` 用的是 `%APPEND%` 前缀，导入时会**追加**到你的 MITM 名单，

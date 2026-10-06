@@ -146,12 +146,14 @@ final class ThirdPartyProxyManager: ObservableObject {
     @discardableResult
     func save(
         pair: CoordinateConverter.CoordinatePair,
-        accuracy: Int
+        accuracy: Int,
+        motionRadius: Int = 0
     ) async -> Bool {
         guard let url = ThirdPartyProxyProtocol.url(
             wgs84Latitude: pair.wgs84.latitude,
             wgs84Longitude: pair.wgs84.longitude,
-            accuracy: accuracy
+            accuracy: accuracy,
+            driftRadius: motionRadius
         ) else {
             state = .failed(AppLocalization.string("无法构造保存地址"))
             return false

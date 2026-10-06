@@ -202,7 +202,7 @@ final class CoreBridgeTests: XCTestCase {
             longitude: 114.174700,
             enabled: true,
             accuracy: 30,
-            motionEnabled: true
+            motionRadius: 10
         )
 
         let result = CoreBridge.selfCheckPatch(
@@ -218,7 +218,7 @@ final class CoreBridgeTests: XCTestCase {
             longitude: 0,
             enabled: false,
             accuracy: 25,
-            motionEnabled: false
+            motionRadius: 0
         )
     }
 
@@ -229,14 +229,14 @@ final class CoreBridgeTests: XCTestCase {
             longitude: 180.0,
             enabled: true,
             accuracy: 1,
-            motionEnabled: false
+            motionRadius: 20
         )
         CoreBridge.updatePatchConfig(
             latitude: -90.0,
             longitude: -180.0,
             enabled: false,
             accuracy: 5000,
-            motionEnabled: false
+            motionRadius: 0
         )
     }
 

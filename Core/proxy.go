@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"math/rand"
 	"net"
 	"net/http"
 	"strconv"
@@ -39,13 +41,14 @@ const (
 
 // spoofState 保存当前生效的改写配置，由 Swift 侧通过 C 接口更新。
 type spoofState struct {
-	mu            sync.Mutex
-	latitude      float64
-	longitude     float64
-	enabled       bool
-	accuracy      int
-	motionEnabled bool
-	verifyToken   string
+	mu           sync.Mutex
+	latitude     float64
+	longitude    float64
+	enabled      bool
+	accuracy     int
+	motionRadius int // 原地抖动半径（米）。0 表示关闭。
+	verifyToken  string
+	// caCertificate 是当前生效的根证书，供中间人动态签发叶子证书。
 	caCertificate *tls.Certificate
 }
 
@@ -89,21 +92,35 @@ func drainLogs() string {
 // 状态访问
 // ---------------------------------------------------------------------------
 
-func setSpoofConfig(lat, lon float64, enabled bool, accuracy int, motionEnabled bool) {
+func setSpoofConfig(lat, lon float64, enabled bool, accuracy int, motionRadius int) {
 	state.mu.Lock()
 	state.latitude = lat
 	state.longitude = lon
 	state.enabled = enabled
 	state.accuracy = accuracy
-	state.motionEnabled = motionEnabled
+	state.motionRadius = normalizeMotionRadius(motionRadius)
 	state.mu.Unlock()
-	logEvent(fmt.Sprintf("改写配置更新 enabled=%t accuracy=%d motion=%t", enabled, accuracy, motionEnabled))
+	logEvent(fmt.Sprintf("改写配置更新 enabled=%t accuracy=%d motionRadius=%d", enabled, accuracy, motionRadius))
 }
 
-func currentSpoofConfig() (lat, lon float64, enabled bool, accuracy int, motionEnabled bool) {
+func currentSpoofConfig() (lat, lon float64, enabled bool, accuracy int, motionRadius int) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	return state.latitude, state.longitude, state.enabled, state.accuracy, state.motionEnabled
+	return state.latitude, state.longitude, state.enabled, state.accuracy, state.motionRadius
+}
+
+// motionRadiusSteps 是界面上允许选择的抖动半径（米）。
+// 只认这三档，其余值一律归零，避免上层传进来一个离谱的半径把定位甩到几十公里外。
+var motionRadiusSteps = []int{0, 5, 10, 20}
+
+// normalizeMotionRadius 把任意输入收敛到受支持的档位。
+func normalizeMotionRadius(radius int) int {
+	for _, allowed := range motionRadiusSteps {
+		if radius == allowed {
+			return radius
+		}
+	}
+	return 0
 }
 
 func setVerifyToken(token string) {
@@ -134,28 +151,44 @@ func currentCACertificate() *tls.Certificate {
 // 域名白名单
 // ---------------------------------------------------------------------------
 
-// mitmHosts 是允许做 TLS 中间人的主机集合。
+// locationHosts 是允许做 TLS 中间人的主机集合。
 //
-// 前四个是 Apple / 高德的位置服务端点；最后一个由用户手动配置的
-// Wi-Fi 代理在探测网络连通性时访问，用于验证代理链路是否真的生效。
-var mitmHosts = map[string]bool{
-	"gs-loc.apple.com":    true,
-	"gs-loc-cn.apple.com": true,
-	"gsp-ssl.ls.apple.com": true,
-	"bluedot.is.autonavi.com": true,
-	"bluedot.is.autonavi.com.gds.alibabadns.com": true,
+// 前三个是 Apple 的全球 / 国内定位服务入口，中间一批（gsp / gspe）是
+// 新版本系统把定位查询分散过去的备用入口——只拦前三台的话，iOS 26/27
+// 上会出现「代理配好了但定位纹丝不动」的情况。最后两台是 Apple 地图
+// 在国内使用的蓝点定位（高德）端点。
+//
+// 这里刻意逐条枚举而不用 *.apple.com 这类通配：通配会把 Apple ID、
+// 推送、软件更新等大量无关流量也拉进中间人，既没必要也不安全。
+var locationHosts = []string{
+	"gs-loc.apple.com",
+	"gs-loc-cn.apple.com",
+	"gsp-ssl.ls.apple.com",
+	"gsp10-ssl.ls.apple.com",
+	"gsp10-ssl.apple.com",
+	"gsp64-ssl.ls.apple.com",
+	"gspe1-ssl.ls.apple.com",
+	"gspe19-ssl.ls.apple.com",
+	"gspe19-2-ssl.ls.apple.com",
+	"gspe35-ssl.ls.apple.com",
+	"gspe79-ssl.ls.apple.com",
+	"gspe85-ssl.ls.apple.com",
+	"bluedot.is.autonavi.com",
+	"bluedot.is.autonavi.com.gds.alibabadns.com",
 }
+
+// locationHostSet 是 locationHosts 的查表版本。
+var locationHostSet = func() map[string]bool {
+	set := make(map[string]bool, len(locationHosts))
+	for _, host := range locationHosts {
+		set[host] = true
+	}
+	return set
+}()
 
 // isLocationHost 判断主机名是否属于需要改写的定位服务。
 func isLocationHost(host string) bool {
-	host = normalizeHost(host)
-	switch host {
-	case "gs-loc.apple.com", "gs-loc-cn.apple.com",
-		"gsp-ssl.ls.apple.com", "bluedot.is.autonavi.com",
-		"bluedot.is.autonavi.com.gds.alibabadns.com":
-		return true
-	}
-	return false
+	return locationHostSet[normalizeHost(host)]
 }
 
 // normalizeHost 去掉端口、统一小写、去掉尾部点号。
@@ -173,6 +206,35 @@ func normalizeHost(host string) string {
 func isProxyProbeHost(host string) bool {
 	host = normalizeHost(host)
 	return host == "baidu.com" || host == "www.baidu.com" || strings.HasSuffix(host, ".baidu.com")
+}
+
+// metersPerDegreeLatitude 是纬度方向 1 度对应的米数（地球平均半径估算）。
+const metersPerDegreeLatitude = 111320.0
+
+// driftCoordinates 在以 (lat, lon) 为圆心、radiusMeters 为半径的圆内
+// 随机取一个点。radiusMeters <= 0 时原样返回。
+//
+// 半径按 sqrt(u) 分布取样而不是均匀取样，这样点在圆面积上是均匀分布的，
+// 否则会明显往圆心堆。经度方向要除以纬度的余弦做修正，越靠近两极
+// 同样的米数对应的经度差越大。
+func driftCoordinates(lat, lon float64, radiusMeters int) (float64, float64) {
+	if radiusMeters <= 0 {
+		return lat, lon
+	}
+
+	radius := math.Sqrt(rand.Float64()) * float64(radiusMeters)
+	angle := rand.Float64() * 2 * math.Pi
+
+	deltaLat := (radius * math.Cos(angle)) / metersPerDegreeLatitude
+
+	// 极点附近 cos(lat) 趋近 0，经度差会发散，此时只做纬度方向的抖动。
+	cosLat := math.Cos(lat * math.Pi / 180)
+	if math.Abs(cosLat) < 1e-6 {
+		return lat + deltaLat, lon
+	}
+	deltaLon := (radius * math.Sin(angle)) / (metersPerDegreeLatitude * cosLat)
+
+	return lat + deltaLat, lon + deltaLon
 }
 
 // ---------------------------------------------------------------------------
@@ -226,11 +288,11 @@ func handleDirectVisit(w http.ResponseWriter, r *http.Request) {
 			`<body><p><a href="/cert">下载 CA 证书</a></p></body></html>`))
 
 	case "/coords":
-		lat, lon, enabled, accuracy, motionEnabled := currentSpoofConfig()
+		lat, lon, enabled, accuracy, motionRadius := currentSpoofConfig()
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
-		fmt.Fprintf(w, `{"enabled":%t,"lat":%.6f,"lon":%.6f,"accuracy":%d,"motionSimulationEnabled":%t}`,
-			enabled, lat, lon, accuracy, motionEnabled)
+		fmt.Fprintf(w, `{"enabled":%t,"lat":%.6f,"lon":%.6f,"accuracy":%d,"motionDriftRadius":%d}`,
+			enabled, lat, lon, accuracy, motionRadius)
 
 	case "/proxy.mobileconfig", "/proxy.mobileconfig/":
 		w.Header().Set("Content-Type", "application/x-apple-aspen-config")
@@ -321,7 +383,7 @@ func rewriteLocationResponse(resp *http.Response, ctx *goproxy.ProxyCtx) *http.R
 		return resp
 	}
 
-	lat, lon, enabled, accuracy, motionEnabled := currentSpoofConfig()
+	lat, lon, enabled, accuracy, motionRadius := currentSpoofConfig()
 
 	if resp.ContentLength > maxPatchBodyBytes {
 		logEvent(fmt.Sprintf("WLOC 响应过大，跳过改写（%d 字节）", resp.ContentLength))
@@ -348,11 +410,16 @@ func rewriteLocationResponse(resp *http.Response, ctx *goproxy.ProxyCtx) *http.R
 		return resp
 	}
 
+	// 开启抖动后，每次改写都在半径内随机偏移一次。
+	// 系统看到的是「同一个位置附近的微小漂移」，这正是真实 GPS 的表现；
+	// 死钉在一个坐标上反而容易被判定为伪造。
+	driftLat, driftLon := driftCoordinates(lat, lon, motionRadius)
+
 	patched, stats, err := rewriteResponseBody(body, wlocTarget{
-		Latitude:      lat,
-		Longitude:     lon,
+		Latitude:      driftLat,
+		Longitude:     driftLon,
 		Accuracy:      accuracy,
-		MotionEnabled: motionEnabled,
+		MotionEnabled: motionRadius > 0,
 	})
 	if err != nil || bytes.Equal(patched, body) {
 		if err != nil {
@@ -436,14 +503,14 @@ func randomUUID() string {
 }
 
 // startProxy 启动代理服务，返回可传给 stopProxy 的句柄。
-func startProxy(certPEM, keyPEM []byte, lat, lon float64, enabled bool, accuracy int, motionEnabled bool) (*http.Server, error) {
+func startProxy(certPEM, keyPEM []byte, lat, lon float64, enabled bool, accuracy int, motionRadius int) (*http.Server, error) {
 	caCert, err := parseCA(certPEM, keyPEM)
 	if err != nil {
 		return nil, err
 	}
 
 	setCACertificate(caCert)
-	setSpoofConfig(lat, lon, enabled, accuracy, motionEnabled)
+	setSpoofConfig(lat, lon, enabled, accuracy, motionRadius)
 
 	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", proxyListenPort))
 	if err != nil {

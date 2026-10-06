@@ -18,8 +18,8 @@ import SwiftUI
 /// ```
 struct GlassCardModifier: ViewModifier {
 
-    /// 圆角半径。地图上的胶囊控件传 20，卡片类容器用默认值。
-    var cornerRadius: CGFloat = 16
+    /// 圆角半径。地图上的浮层统一传 `GlassMetrics.mapCornerRadius`。
+    var cornerRadius: CGFloat = GlassMetrics.cardCornerRadius
 
     /// 投影半径。放在地图上时调大一点，浮起感更明显。
     var shadowRadius: CGFloat = 12
@@ -38,9 +38,35 @@ struct GlassCardModifier: ViewModifier {
 extension View {
 
     /// 套用玻璃卡片外观。
-    func glassCard(cornerRadius: CGFloat = 16, shadowRadius: CGFloat = 12) -> some View {
+    func glassCard(cornerRadius: CGFloat = GlassMetrics.cardCornerRadius,
+                   shadowRadius: CGFloat = 12) -> some View {
         modifier(GlassCardModifier(cornerRadius: cornerRadius, shadowRadius: shadowRadius))
     }
+
+    /// 地图页浮层统一的玻璃外观。
+    ///
+    /// 地图上同时存在搜索框、图层切换、底部面板等多个浮层，圆角和材质
+    /// 各自写一套很快就会走形（之前就出现过 12 / 14 / 20 混用、材质在
+    /// regular 与 ultraThin 之间跳的情况）。统一从这里取。
+    func mapGlassSurface(cornerRadius: CGFloat = GlassMetrics.mapCornerRadius) -> some View {
+        glassCard(cornerRadius: cornerRadius, shadowRadius: GlassMetrics.mapShadowRadius)
+    }
+}
+
+/// 全应用共用的外观尺寸。
+///
+/// 集中在一处是为了让「同一个界面里的浮层长得一样」这件事可以被review：
+/// 改一个数字，所有浮层一起变。
+enum GlassMetrics {
+
+    /// 设置页等卡片类容器的圆角。
+    static let cardCornerRadius: CGFloat = 16
+
+    /// 地图页浮层的统一圆角。图层切换、搜索框、底部面板全部取这个值。
+    static let mapCornerRadius: CGFloat = 20
+
+    /// 地图页浮层的投影半径。比卡片稍小，浮起感够用又不至于发糊。
+    static let mapShadowRadius: CGFloat = 10
 }
 
 /// 玻璃胶囊按钮组里的单个按钮。
@@ -52,6 +78,8 @@ struct GlassSegmentButton: View {
     let systemImage: String
     let accessibilityLabel: String
     let isSelected: Bool
+    /// 单个按钮的尺寸。横向排列时用扁一点，纵向排列时用方一点。
+    var itemSize: CGSize = CGSize(width: 38, height: 32)
     let action: () -> Void
 
     var body: some View {
@@ -59,7 +87,7 @@ struct GlassSegmentButton: View {
             Image(systemName: systemImage)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.7))
-                .frame(width: 38, height: 32)
+                .frame(width: itemSize.width, height: itemSize.height)
                 .background(
                     Capsule(style: .continuous)
                         .fill(isSelected ? Color.blue : Color.clear)

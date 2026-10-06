@@ -25,8 +25,11 @@ final class MapLocationState: ObservableObject {
     /// 精度（米），写进 WLOC 响应。
     @Published var accuracy: Int = 25
 
-    /// 是否开启运动状态模拟。
-    @Published var motionSimulationEnabled: Bool = false
+    /// 运动状态模拟：原地抖动的半径（米）。0 表示关闭。
+    ///
+    /// 开启后每次改写都会在半径内随机偏移坐标，让系统看到的是
+    /// 「同一个位置附近的微小漂移」，而不是死钉在一个点上。
+    @Published var motionDriftRadius: Int = 0
 
     /// 上次选点时的地图缩放级别（米），用于恢复现场。
     @Published var viewportMeters: Double = 1500
@@ -103,7 +106,7 @@ final class MapLocationState: ObservableObject {
     private enum Key {
         static let enabled = "spoofEnabled"
         static let accuracy = "spoofAccuracy"
-        static let motion = "spoofMotionSimulation"
+        static let motionDrift = "spoofMotionDriftRadius"
         static let viewport = "mapViewportMeters"
         static let lastCoordinate = "lastSelectedCoordinate"
     }
@@ -113,7 +116,9 @@ final class MapLocationState: ObservableObject {
     init(defaults: UserDefaults = AppGroup.defaults) {
         self.defaults = defaults
         accuracy = defaults.object(forKey: Key.accuracy) as? Int ?? 25
-        motionSimulationEnabled = defaults.bool(forKey: Key.motion)
+        motionDriftRadius = MotionDriftOption.normalized(
+            defaults.object(forKey: Key.motionDrift) as? Int ?? 0
+        ).rawValue
         let storedViewport = defaults.double(forKey: Key.viewport)
         viewportMeters = storedViewport > 0 ? storedViewport : 1500
         selection = Self.loadCoordinate(from: defaults, key: Key.lastCoordinate)
@@ -128,12 +133,44 @@ final class MapLocationState: ObservableObject {
             defaults.set(data, forKey: Key.lastCoordinate)
         }
         defaults.set(accuracy, forKey: Key.accuracy)
-        defaults.set(motionSimulationEnabled, forKey: Key.motion)
+        defaults.set(motionDriftRadius, forKey: Key.motionDrift)
         defaults.set(viewportMeters, forKey: Key.viewport)
     }
 
     private static func loadCoordinate(from defaults: UserDefaults, key: String) -> CoordinateConverter.CoordinatePair? {
         guard let data = defaults.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(CoordinateConverter.CoordinatePair.self, from: data)
+    }
+}
+
+/// 运动状态模拟的抖动半径档位。
+///
+/// 只提供三档而不是自由输入：半径越大，位置越"飘"，超出一定范围后
+/// 依赖定位精度的应用反而会判定为信号异常。三档覆盖了常见场景，
+/// 也避免用户填进一个把定位甩到几公里外的值。
+enum MotionDriftOption: Int, CaseIterable, Identifiable {
+
+    case off = 0
+    case fiveMeters = 5
+    case tenMeters = 10
+    case twentyMeters = 20
+
+    var id: Int { rawValue }
+
+    /// 实际抖动半径（米）。关闭时为 0。
+    var radiusMeters: Int { rawValue }
+
+    var isEnabled: Bool { self != .off }
+
+    var displayName: String {
+        switch self {
+        case .off: return AppLocalization.string("关闭")
+        default: return AppLocalization.string("%d 米", rawValue)
+        }
+    }
+
+    /// 把任意存储值收敛到受支持的档位，防止旧数据或脏数据带进非法半径。
+    static func normalized(_ rawValue: Int) -> MotionDriftOption {
+        MotionDriftOption(rawValue: rawValue) ?? .off
     }
 }

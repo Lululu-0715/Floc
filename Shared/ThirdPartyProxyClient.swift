@@ -106,10 +106,27 @@ enum ThirdPartyProxyProtocol {
     static let settingsPath = "/wloc-settings/save"
 
     /// 需要被客户端拦截的主机。
+    ///
+    /// 前两台是 Apple 的全球 / 国内定位入口；中间一批 `gsp*` / `gspe*` 是
+    /// 新版本系统把定位查询分散过去的备用入口，只拦前两台的话在 iOS 26+
+    /// 上会出现「模块装了却没反应」；最后两台是 Apple 地图在国内使用的
+    /// 蓝点定位（高德）端点。
+    ///
+    /// 与 `Core/proxy.go` 的 `locationHosts` 必须保持一致——两边对不上，
+    /// 用户切换运行模式后拦截范围就会静默变窄。
     static let interceptedHosts = [
         "gs-loc.apple.com",
         "gs-loc-cn.apple.com",
         "gsp-ssl.ls.apple.com",
+        "gsp10-ssl.ls.apple.com",
+        "gsp10-ssl.apple.com",
+        "gsp64-ssl.ls.apple.com",
+        "gspe1-ssl.ls.apple.com",
+        "gspe19-ssl.ls.apple.com",
+        "gspe19-2-ssl.ls.apple.com",
+        "gspe35-ssl.ls.apple.com",
+        "gspe79-ssl.ls.apple.com",
+        "gspe85-ssl.ls.apple.com",
         "bluedot.is.autonavi.com",
         "bluedot.is.autonavi.com.gds.alibabadns.com",
     ]
@@ -121,11 +138,14 @@ enum ThirdPartyProxyProtocol {
     }
 
     /// 构造配置接口 URL。坐标一律使用 WGS-84。
+    ///
+    /// `drift` 是运动状态模拟的原地抖动半径（米），0 或 nil 表示关闭。
     static func url(
         action: Action? = nil,
         wgs84Latitude: Double? = nil,
         wgs84Longitude: Double? = nil,
-        accuracy: Int? = nil
+        accuracy: Int? = nil,
+        driftRadius: Int? = nil
     ) -> URL? {
         var components = URLComponents()
         components.scheme = "https"
@@ -145,6 +165,9 @@ enum ThirdPartyProxyProtocol {
         if let accuracy {
             items.append(URLQueryItem(name: "acc", value: String(accuracy)))
         }
+        if let driftRadius {
+            items.append(URLQueryItem(name: "drift", value: String(driftRadius)))
+        }
         components.queryItems = items.isEmpty ? nil : items
 
         return components.url
@@ -156,6 +179,7 @@ enum ThirdPartyProxyProtocol {
         let longitude: Double?
         let latitude: Double?
         let accuracy: Int?
+        let driftRadius: Int?
         let error: String?
     }
 }

@@ -70,7 +70,42 @@ final class ThirdPartyProxyClientTests: XCTestCase {
 
         XCTAssertTrue(hosts.contains("gs-loc.apple.com"), "必须拦截主定位端点")
         XCTAssertTrue(hosts.contains("gs-loc-cn.apple.com"), "必须拦截国内定位端点")
+        XCTAssertTrue(hosts.contains("gsp-ssl.ls.apple.com"), "必须拦截备用定位端点")
+        XCTAssertTrue(
+            hosts.contains("bluedot.is.autonavi.com"),
+            "必须拦截国内蓝点定位端点"
+        )
         XCTAssertFalse(hosts.isEmpty)
+    }
+
+    func testInterceptedHostsCoverNewSystemEndpoints() {
+        // iOS 26 之后定位查询会分散到 gsp* / gspe* 这一批主机上。
+        // 少拦一台的表现是「模块装了、MITM 也开了，定位就是不变」，
+        // 排查成本极高，所以逐个锁死。
+        let required = [
+            "gsp10-ssl.ls.apple.com",
+            "gsp10-ssl.apple.com",
+            "gsp64-ssl.ls.apple.com",
+            "gspe1-ssl.ls.apple.com",
+            "gspe19-ssl.ls.apple.com",
+            "gspe19-2-ssl.ls.apple.com",
+            "gspe35-ssl.ls.apple.com",
+            "gspe79-ssl.ls.apple.com",
+            "gspe85-ssl.ls.apple.com",
+            "bluedot.is.autonavi.com.gds.alibabadns.com",
+        ]
+
+        let hosts = ThirdPartyProxyProtocol.interceptedHosts
+        for host in required {
+            XCTAssertTrue(hosts.contains(host), "缺少端点 \(host)")
+        }
+    }
+
+    func testInterceptedHostsDoNotUseWildcards() {
+        // 通配会把大量无关的 Apple 流量也拉进中间人，既没必要也不安全。
+        for host in ThirdPartyProxyProtocol.interceptedHosts {
+            XCTAssertFalse(host.contains("*"), "不应使用通配主机：\(host)")
+        }
     }
 
     // MARK: - URL 构造
@@ -101,6 +136,29 @@ final class ThirdPartyProxyClientTests: XCTestCase {
         XCTAssertTrue(query.contains("lat=39.908722"), "纬度应保留 6 位小数：\(query)")
         XCTAssertTrue(query.contains("lon=116.397499"), "经度应保留 6 位小数：\(query)")
         XCTAssertTrue(query.contains("acc=25"), "精度应包含：\(query)")
+    }
+
+    func testSaveURLCarriesDriftRadius() {
+        let url = ThirdPartyProxyProtocol.url(
+            wgs84Latitude: 39.908722,
+            wgs84Longitude: 116.397499,
+            accuracy: 25,
+            driftRadius: 10
+        )
+
+        let query = url?.query ?? ""
+        XCTAssertTrue(query.contains("drift=10"), "抖动半径应包含：\(query)")
+    }
+
+    func testSaveURLWithoutDriftKeepsContractBackwardsCompatible() {
+        // 不传抖动半径时必须完全等同于旧版请求，否则老模块会解析出错。
+        let url = ThirdPartyProxyProtocol.url(
+            wgs84Latitude: 39.908722,
+            wgs84Longitude: 116.397499,
+            accuracy: 25
+        )
+
+        XCTAssertFalse(url?.query?.contains("drift=") ?? true, "不应凭空带上 drift 参数")
     }
 
     func testSaveURLUsesWGS84NotGCJ02() {

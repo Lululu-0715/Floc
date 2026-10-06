@@ -51,8 +51,21 @@ chmod +x build.sh Scripts/*.sh     # 首次需要赋予执行权限
 产物：
 
 ```
-dist/Floc-unsigned.ipa                     # 主产物
-dist/Floc-20250101-120000-unsigned.ipa     # 带时间戳副本
+dist/Floc-1.0.1-unsigned.ipa     # 带版本号，用来区分每次构建
+dist/Floc-unsigned.ipa           # 固定名字的副本，发布链接引用这个
+```
+
+`./build.sh` 每次都会把 `MARKETING_VERSION` 末位 +1（`1.0.0` → `1.0.1`），
+并同步写进 App 显示名（桌面图标显示为「Floc 1.0.1」）和 IPA 文件名。
+这样手机上同时装多个自签构建时能一眼分清是哪一个；构建失败会自动回退版本号，
+不会凭空跳号。
+
+只想看版本号、不想构建：
+
+```bash
+python3 Scripts/bump-version.py            # 打印当前版本
+python3 Scripts/bump-version.py --bump     # 手动自增
+python3 Scripts/bump-version.py --set 2.0.0
 ```
 
 同时跑单元测试：
@@ -60,6 +73,9 @@ dist/Floc-20250101-120000-unsigned.ipa     # 带时间戳副本
 ```bash
 ./build.sh --test
 ```
+
+> 编译缓存 `build/DerivedData` 会被保留以复用增量编译（Release 产物是覆盖写入的，
+> 不会拿到旧包）。确实需要全量重编时用 `FULL_CLEAN=1 ./build.sh`。
 
 ---
 
@@ -126,8 +142,11 @@ xcodebuild -project Floc.xcodeproj \
 mkdir -p build/UnsignedIPA/Payload
 cp -R build/DerivedData/Build/Products/Release-iphoneos/Floc.app \
       build/UnsignedIPA/Payload/
-cd build/UnsignedIPA && zip -qry ../../dist/Floc-unsigned.ipa Payload
+cd build/UnsignedIPA && zip -qry ../../dist/Floc-"$VERSION"-unsigned.ipa Payload
 ```
+
+`VERSION` 由 `build.sh` 自增后通过环境变量传进来；单独跑这个脚本时
+它会自己读一次当前版本号，所以也能用。
 
 ---
 

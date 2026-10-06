@@ -158,6 +158,10 @@ struct DiagnosticsView: View {
             }
             KeyValueRow(AppLocalization.string("模拟精度"), value: "\(state.accuracy) m")
             KeyValueRow(
+                AppLocalization.string("运动状态模拟"),
+                value: MotionDriftOption.normalized(state.motionDriftRadius).displayName
+            )
+            KeyValueRow(
                 AppLocalization.string("地图坐标体系"),
                 value: state.mapCoordinateSystem.diagnosticName
             )

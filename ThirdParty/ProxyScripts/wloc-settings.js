@@ -7,10 +7,10 @@
  * 请求约定：
  *   ?action=query                查询当前保存的坐标
  *   ?action=clear                清除已保存的坐标
- *   ?lon=<WGS-84 经度>&lat=<WGS-84 纬度>&acc=<精度>    保存坐标
+ *   ?lon=<WGS-84 经度>&lat=<WGS-84 纬度>&acc=<精度>&drift=<抖动半径>    保存坐标
  *
  * 响应约定（HTTP 200 + JSON）：
- *   { "success": true, "longitude": 113.0, "latitude": 22.0, "accuracy": 25 }
+ *   { "success": true, "longitude": 113.0, "latitude": 22.0, "accuracy": 25, "driftRadius": 10 }
  *   { "success": false, "error": "错误说明" }
  *
  * 这个脚本必须与 wloc.js 使用同一个持久化键名，两者才能读到同一份配置。
@@ -156,6 +156,15 @@ function respond(payload) {
 // 动作处理
 // ---------------------------------------------------------------------------
 
+/** 抖动半径只认这几档，与 MapLocationState.MotionDriftOption 保持一致。 */
+const DRIFT_STEPS = [0, 5, 10, 20];
+
+function normalizeDrift(value) {
+  const parsed = toFiniteNumber(value);
+  if (parsed === null) return 0;
+  return DRIFT_STEPS.includes(parsed) ? parsed : 0;
+}
+
 function handleQuery() {
   const settings = readSettings();
   if (!settings || settings.enabled !== true) {
@@ -170,6 +179,7 @@ function handleQuery() {
     longitude: Number(settings.longitude),
     latitude: Number(settings.latitude),
     accuracy: Number(settings.accuracy) || 25,
+    driftRadius: normalizeDrift(settings.driftRadius),
   });
 }
 
@@ -194,6 +204,7 @@ function handleSave(query) {
   const longitude = toFiniteNumber(query.lon);
   const latitude = toFiniteNumber(query.lat);
   const accuracy = toFiniteNumber(query.acc) || 25;
+  const driftRadius = normalizeDrift(query.drift);
 
   if (longitude === null || latitude === null) {
     respond({ success: false, error: '经纬度参数无效' });
@@ -209,6 +220,7 @@ function handleSave(query) {
     longitude,
     latitude,
     accuracy,
+    driftRadius,
     updatedAt: Date.now(),
   };
 
@@ -217,13 +229,14 @@ function handleSave(query) {
     return;
   }
 
-  log(`已保存坐标 ${latitude},${longitude}`);
+  log(`已保存坐标 ${latitude},${longitude}，抖动半径 ${driftRadius} 米`);
   // 契约要求：保存成功时回读的坐标必须与请求一致。
   respond({
     success: true,
     longitude,
     latitude,
     accuracy,
+    driftRadius,
   });
 }
 
