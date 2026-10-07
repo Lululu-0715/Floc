@@ -19,6 +19,7 @@ struct SettingsView: View {
     @ObservedObject private var runtimeMode = RuntimeModeStore.shared
     @ObservedObject private var remoteConfiguration = AppRemoteConfigurationStore.shared
     @ObservedObject private var appearance = AppearanceStore.shared
+    @ObservedObject private var license = LicenseManager.shared
 
     @Environment(\.dismiss) private var dismiss
 
@@ -38,6 +39,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationView {
             List {
+                licenseSection
                 modeSection
                 statusSection
 
@@ -101,6 +103,38 @@ struct SettingsView: View {
             .task {
                 await remoteConfiguration.refresh()
             }
+        }
+    }
+
+    // MARK: - 运行模式
+
+    // MARK: - 授权
+
+    /// 授权 + 推荐入口。
+    ///
+    /// 放最上面：用户打开设置最常见的两个诉求就是「我还有多久到期」
+    /// 和「怎么看我的推荐奖励」，都需要一眼可见。
+    private var licenseSection: some View {
+        Section {
+            LicenseCardView(manager: license)
+
+            NavigationLink {
+                ReferralView(manager: license)
+            } label: {
+                HStack {
+                    Text(AppLocalization.string("推荐好友"))
+                        .font(SettingsMetrics.titleFont)
+                    Spacer()
+                    if let r = license.referral {
+                        Text("\(r.invitedCount)")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, SettingsMetrics.rowVerticalPadding)
+            }
+        } header: {
+            SettingsSectionHeader(title: AppLocalization.string("授权"))
         }
     }
 

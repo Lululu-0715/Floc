@@ -113,6 +113,7 @@ extern char* locationcore_testpatch(double lat, double lon, int accuracy);
 extern char* locationcore_samplerequesthex();
 extern char* locationcore_refreshverifytoken();
 extern int locationcore_checkverifytoken(char* token);
+extern int locationcore_isproxylistening();
 
 #ifdef __cplusplus
 }

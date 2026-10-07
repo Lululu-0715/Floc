@@ -299,6 +299,14 @@ func locationcore_checkverifytoken(token *C.char) C.int {
 	return 0
 }
 
+//export locationcore_isproxylistening
+func locationcore_isproxylistening() C.int {
+	if isProxyListening() {
+		return 1
+	}
+	return 0
+}
+
 // ---------------------------------------------------------------------------
 // 测试样本构造
 // ---------------------------------------------------------------------------

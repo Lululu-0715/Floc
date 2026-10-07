@@ -569,3 +569,47 @@ test('关闭抖动时坐标与目标完全一致', () => {
   assert.strictEqual(Number(findVarintDeep(bytes, 1)), Math.round(23.129163 * 1e8));
   assert.strictEqual(Number(findVarintDeep(bytes, 2)), Math.round(113.264435 * 1e8));
 });
+
+// ---------------------------------------------------------------------------
+// 各客户端的 $done 形状
+// ---------------------------------------------------------------------------
+
+test('Quantumult X 环境下配置接口用顶层 status/headers/body 返回', () => {
+  // QX 的 script-echo-response 要求顶层字段，且 status 是完整状态行。
+  // 写成 { response: {...} } 会被 QX 丢弃，App 永远读不到坐标，
+  // 表现就是「模块装了却一直报模块未生效」。
+  const result = runScript(SETTINGS_SOURCE, {
+    $task: {},
+    $request: { url: 'https://gs-loc.apple.com/wloc-settings/save?action=query' },
+    $prefs: {
+      valueForKey: (key) => (key === 'wloc_settings'
+        ? JSON.stringify({ enabled: true, latitude: 23.129163, longitude: 113.264435, accuracy: 25 })
+        : null),
+    },
+  });
+
+  assert.ok(result, '应当返回响应对象');
+  assert.ok(!('response' in result), 'QX 下不应使用 response 包裹');
+  assert.strictEqual(result.status, 'HTTP/1.1 200 OK');
+  assert.ok(result.headers, '应当带 headers');
+
+  const payload = JSON.parse(result.body);
+  assert.strictEqual(payload.success, true);
+  assert.strictEqual(payload.latitude, 23.129163);
+});
+
+test('非 Quantumult X 环境仍用 response 包裹', () => {
+  const result = runScript(SETTINGS_SOURCE, {
+    $persistentStore: {
+      read: (key) => (key === 'wloc_settings'
+        ? JSON.stringify({ enabled: true, latitude: 1.5, longitude: 2.5, accuracy: 25 })
+        : null),
+    },
+    $request: { url: 'https://gs-loc.apple.com/wloc-settings/save?action=query' },
+  });
+
+  assert.ok(result && result.response, '其他客户端应当返回 { response: {...} }');
+  assert.strictEqual(result.response.status, 200);
+  const payload = JSON.parse(result.response.body);
+  assert.strictEqual(payload.latitude, 1.5);
+});

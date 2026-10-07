@@ -111,6 +111,15 @@ enum CoreBridge {
         token.withCString { locationcore_checkverifytoken(UnsafeMutablePointer(mutating: $0)) != 0 }
     }
 
+    /// 实际探一次代理端口是否还在监听。
+    ///
+    /// Swift 侧的 `ProxyManager.status` 是自维护状态：进程被 iOS 挂起时
+    /// Go 侧的监听 socket 会失效，但两边都不会自动把状态改成 `.stopped`。
+    /// 因此判断代理是否可用必须以本函数的实测结果为准，不能只看状态值。
+    static func isProxyListening() -> Bool {
+        locationcore_isproxylistening() != 0
+    }
+
     /// 更新改写配置（坐标、开关、精度、抖动半径）。
     static func updatePatchConfig(
         latitude: Double,

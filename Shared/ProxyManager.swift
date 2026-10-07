@@ -190,6 +190,29 @@ final class ProxyManager: ObservableObject {
 
     // MARK: - 环境检测
 
+    /// 用实测结果校正 `status`。
+    ///
+    /// `status` 是自维护状态，进程被挂起时不会自动变成 `.stopped`，于是会出现
+    /// 「状态说在跑、端口其实已经没了」——环境检测里 Wi-Fi 代理链路就因此被
+    /// 误判成「跳过」，用户看到的是「Wi-Fi 设置没错，但怎么都没用」。
+    ///
+    /// 返回校正后「代理是否真的可用」。
+    @discardableResult
+    func syncStatusWithReality() -> Bool {
+        guard status.isRunning else { return false }
+
+        if CoreBridge.isProxyListening() {
+            return true
+        }
+
+        RuntimeLogger.warn("APP", "Proxy", "状态显示在运行，但端口已无响应，按已停止处理")
+        CoreBridge.flushLogs(category: "Proxy")
+        status = .stopped
+        proxyHandle = 0
+        wiFiProxyState = .unknown
+        return false
+    }
+
     /// 验证 CA 是否已在系统中被完整信任。
     func verifyCertificateTrust() async {
         guard let probeURL = certificateService.probeURL else {

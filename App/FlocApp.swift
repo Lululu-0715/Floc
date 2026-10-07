@@ -5,6 +5,7 @@ struct FlocApp: App {
 
     @StateObject private var setup = SetupCoordinator()
     @StateObject private var appearance = AppearanceStore.shared
+    @StateObject private var license = LicenseManager.shared
 
     init() {
         // 启动时清理过期日志，避免容器无限增长。
@@ -21,12 +22,20 @@ struct FlocApp: App {
         WindowGroup {
             ContentView(setup: setup)
                 .environmentObject(setup)
+                .environmentObject(license)
                 // 外观在根节点统一施加：设置页里改一档，整个应用（含已经
                 // 打开的 sheet 和导航栈）立刻跟着变，不用逐页传值。
                 .preferredColorScheme(appearance.mode.colorScheme)
                 .onAppear {
                     Task {
                         await AppRemoteConfigurationStore.shared.refresh()
+                    }
+                    Task {
+                        // 启动校验授权状态。失败时 LicenseManager 内部会回落到
+                        // 本地缓存（3 天离线宽限），不会因为一次断网就把用户挡在门外。
+                        await license.refresh(silent: true)
+                        // 每天上报一次心跳，用于推荐系统「连续使用 3 天」的判定。
+                        await license.reportDailyHeartbeatIfNeeded()
                     }
                 }
         }

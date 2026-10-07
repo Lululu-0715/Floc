@@ -18,6 +18,7 @@ struct MapHomeView: View {
     @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
     @ObservedObject private var runtimeMode = RuntimeModeStore.shared
     @ObservedObject private var remoteConfiguration = AppRemoteConfigurationStore.shared
+    @ObservedObject private var license = LicenseManager.shared
 
     @StateObject private var state = MapLocationState()
     @StateObject private var favorites = FavoriteLocationStore()
@@ -153,7 +154,6 @@ struct MapHomeView: View {
             // 搜索结果展开时就收起图层切换，避免两个浮层挤在一起。
             if searchResults.isEmpty {
                 HStack(alignment: .top) {
-                    mapTypeSwitcher
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 16)
@@ -161,15 +161,27 @@ struct MapHomeView: View {
                 .transition(.opacity)
             }
             Spacer()
+            // 图层/地球/显示器三连放在地图右下角、底部面板上方。
+            // 放右下是因为这三个按钮是「看图」用的，和底部面板的操作区
+            // 分开摆放，右手单手够得着，也不会压住左下角的地图内容。
+            if searchResults.isEmpty {
+                HStack {
+                    Spacer(minLength: 0)
+                    mapTypeSwitcher
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 10)
+                .transition(.opacity)
+            }
             bottomPanel
         }
         .animation(.easeInOut(duration: 0.2), value: banner)
     }
 
-    /// 地图左上角的玻璃图层切换（竖排）。
+    /// 地图右下角的玻璃图层切换（竖排）。
     ///
-    /// 竖排是有意的：横排时三个图标占满一行，会和上方的搜索框、展开的
-    /// 搜索结果抢纵向空间；竖排后每个按钮 36×34，热区够大又不压地图。
+    /// 竖排是有意的：横排时三个图标占满一行，会和上方的地图内容抢横向空间；
+    /// 竖排后每个按钮 36×34，热区够大又不压地图。
     /// 圆角与材质全部走 `mapGlassSurface()`，和地图页其他浮层保持一致。
     private var mapTypeSwitcher: some View {
         VStack(spacing: 2) {
@@ -311,60 +323,76 @@ struct MapHomeView: View {
 
     private var selectionCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 3) {
+                // 收藏按钮紧跟在地名后面：点地名旁边就能收藏/取消，
+                // 比原来放在整行最右侧要少一次跨屏移动，单手操作更顺。
+                HStack(spacing: 6) {
                     Text(state.displayName.isEmpty ? AppLocalization.string("已选位置") : state.displayName)
                         .font(.headline)
                         .lineLimit(1)
 
-                    if let pair = state.selection {
-                        // 国内用户在导航类应用里看到的通常是 GCJ-02，
-                        // 但写进定位服务的是 WGS-84，所以两个都展示出来。
+                    if state.selection != nil {
+                        Button {
+                            if let pair = state.selection {
+                                if let existing = favorites.contains(pair: pair) {
+                                    favorites.remove(id: existing.id)
+                                    showBanner(AppLocalization.string("已取消收藏"), style: .info)
+                                } else {
+                                    newFavoriteName = state.displayName
+                                    showSaveFavorite = true
+                                }
+                            }
+                        } label: {
+                            let isFavorite = state.selection.map { favorites.contains(pair: $0) != nil } ?? false
+                            Image(systemName: isFavorite ? "star.fill" : "star")
+                                .font(.subheadline)
+                                .foregroundStyle(isFavorite ? Color.yellow : Color.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+
+                if let pair = state.selection {
+                    // 国内用户在导航类应用里看到的通常是 GCJ-02，
+                    // 但写进定位服务的是 WGS-84，所以两个都展示出来。
+                    // 复制按钮直接跟在坐标后面 —— 原来单独占一行放两个
+                    // 「复制坐标」按钮，既占纵向空间又要在两行坐标之间来回
+                    // 对照，现在点哪行复制哪行。
+                    HStack(spacing: 6) {
                         Text(String(format: "GCJ-02  %.6f, %.6f",
                                     pair.gcj02.latitude, pair.gcj02.longitude))
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
+                        CoordinateCopyIcon(
+                            accessibilityLabel: "GCJ-02",
+                            value: String(format: "%.6f,%.6f",
+                                          pair.gcj02.latitude, pair.gcj02.longitude)
+                        )
+                    }
+
+                    HStack(spacing: 6) {
                         Text(String(format: "WGS-84  %.6f, %.6f",
                                     pair.wgs84.latitude, pair.wgs84.longitude))
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
+                        CoordinateCopyIcon(
+                            accessibilityLabel: "WGS-84",
+                            value: String(format: "%.6f,%.6f",
+                                          pair.wgs84.latitude, pair.wgs84.longitude)
+                        )
                     }
                 }
-
-                Spacer(minLength: 8)
-
-                Button {
-                    if let pair = state.selection {
-                        if let existing = favorites.contains(pair: pair) {
-                            favorites.remove(id: existing.id)
-                            showBanner(AppLocalization.string("已取消收藏"), style: .info)
-                        } else {
-                            newFavoriteName = state.displayName
-                            showSaveFavorite = true
-                        }
-                    }
-                } label: {
-                    let isFavorite = state.selection.map { favorites.contains(pair: $0) != nil } ?? false
-                    Image(systemName: isFavorite ? "star.fill" : "star")
-                        .font(.title3)
-                        .foregroundStyle(isFavorite ? Color.yellow : Color.secondary)
-                }
-                .buttonStyle(.plain)
             }
 
-            HStack(spacing: 8) {
-                CoordinateCopyButton(
-                    label: "GCJ-02",
-                    value: state.selection.map {
-                        String(format: "%.6f,%.6f", $0.gcj02.latitude, $0.gcj02.longitude)
-                    }
-                )
-                CoordinateCopyButton(
-                    label: "WGS-84",
-                    value: state.selection.map {
-                        String(format: "%.6f,%.6f", $0.wgs84.latitude, $0.wgs84.longitude)
-                    }
-                )
+            // 精度选择器。原来和两个「复制坐标」按钮挤在同一行，
+            // 现在复制按钮上移到坐标行末尾，这里只留精度，并补上
+            // 「精度」二字，避免只剩一个裸数字时不知道是什么。
+            HStack(spacing: 6) {
+                Text(AppLocalization.string("精度"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
                 Picker(AppLocalization.string("精度"), selection: $state.accuracy) {
                     Text("10 m").tag(10)
@@ -374,6 +402,8 @@ struct MapHomeView: View {
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
+
+                Spacer(minLength: 0)
             }
         }
         .padding(12)
@@ -576,7 +606,7 @@ struct MapHomeView: View {
         Task {
             if runtimeMode.mode == .thirdParty {
                 await thirdParty.refresh()
-            } else if proxy.status.isRunning {
+            } else if proxy.syncStatusWithReality() {
                 await proxy.verifyCertificateTrust()
                 await proxy.verifyWiFiProxy()
             }
@@ -715,6 +745,13 @@ struct MapHomeView: View {
             return
         }
 
+        // 授权闸门：只在「要开启」时拦，关闭永远放行 —— 否则用户到期后
+        // 连关都关不掉，虚拟定位会一直挂在系统代理上。
+        if !state.isEnabled && !license.isUsable {
+            showBanner(licenseBlockMessage, style: .error)
+            return
+        }
+
         Task {
             await state.withBusyAsync {
                 if state.isEnabled {
@@ -723,6 +760,18 @@ struct MapHomeView: View {
                     await startSpoofing(pair: pair)
                 }
             }
+        }
+    }
+
+    /// 被授权拦住时的提示文案，按状态给出不同的下一步。
+    private var licenseBlockMessage: String {
+        switch license.status {
+        case .trialExpired:
+            return AppLocalization.string("试用已结束，请在「设置 → 授权」输入卡密后继续使用")
+        case .expired:
+            return AppLocalization.string("卡密已过期，请在「设置 → 授权」续期后继续使用")
+        default:
+            return AppLocalization.string("尚未激活，请在「设置 → 授权」输入卡密或确认网络连接")
         }
     }
 
@@ -1026,9 +1075,14 @@ struct MapHomeView: View {
 
 // MARK: - 小组件
 
-private struct CoordinateCopyButton: View {
+/// 坐标行末尾的复制图标。
+///
+/// 只画一个图标、不带文字标签 —— 因为它紧跟在对应坐标后面，
+/// 「复制这一行」的语义已经由位置本身表达了。原来的胶囊按钮带
+/// 「GCJ-02」「WGS-84」文字，既占宽度又和左边的坐标标签重复。
+private struct CoordinateCopyIcon: View {
 
-    let label: String
+    let accessibilityLabel: String
     let value: String?
 
     @State private var copied = false
@@ -1043,18 +1097,15 @@ private struct CoordinateCopyButton: View {
                 await MainActor.run { copied = false }
             }
         } label: {
-            HStack(spacing: 4) {
-                Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                    .font(.caption2)
-                Text(label)
-                    .font(.caption.weight(.medium))
-            }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 6)
-            .background(Color(.quaternarySystemFill), in: Capsule())
+            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                .font(.caption2)
+                .foregroundStyle(copied ? Color.green : Color.secondary)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(value == nil)
+        .accessibilityLabel(AppLocalization.string("复制%@坐标", accessibilityLabel))
     }
 }
 

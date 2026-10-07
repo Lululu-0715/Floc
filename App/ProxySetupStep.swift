@@ -19,8 +19,12 @@ struct ProxySetupStep: View {
         }
         .task {
             // 进入本步就把代理起起来，这样证书服务可用，用户能立刻去装证书。
-            if setup.selectedMode == .localProxy, !proxy.status.isRunning {
-                await startLocalProxy()
+            // 先实测一次端口：状态可能停在 .running 而进程实际已被系统回收。
+            if setup.selectedMode == .localProxy {
+                proxy.syncStatusWithReality()
+                if !proxy.status.isRunning {
+                    await startLocalProxy()
+                }
             }
         }
     }

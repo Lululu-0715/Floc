@@ -140,13 +140,34 @@ function parseQuery(url) {
 /** 统一的 JSON 响应。 */
 function respond(payload) {
   const body = JSON.stringify(payload);
+  const headers = {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+  };
+
+  // 各客户端对「自己构造响应」要求的 $done 形状并不一致，这里必须分派：
+  //
+  //   Quantumult X 的 script-echo-response：官方 sample-echo-response.js 明确用
+  //     顶层 status/headers/body，且 status 必须是完整的 "HTTP/1.1 200 OK" 字符串。
+  //     写成 { response: { ... } } 会被 QX 当成「响应体只在 response 字段里」，
+  //     回给 App 的 JSON 是空的 —— 表现就是模块装着、开关开着，App 却始终
+  //     报「模块未生效」。
+  //
+  //   Loon / Shadowrocket / Surge / Stash / Egern：沿用 { response: { ... } }，
+  //     这些客户端的脚本引擎直接支持该形状（与 wloc.js 的用法保持一致）。
+  if (ENV === 'quantumultx') {
+    $done({
+      status: 'HTTP/1.1 200 OK',
+      headers,
+      body,
+    });
+    return;
+  }
+
   $done({
     response: {
       status: 200,
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        'Cache-Control': 'no-store',
-      },
+      headers,
       body,
     },
   });

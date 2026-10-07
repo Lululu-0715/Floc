@@ -22,6 +22,7 @@
 "重置" = "Reset";
 "名称" = "Name";
 "精度" = "Accuracy";
+"复制%@坐标" = "Copy %@ coordinates";
 "未知" = "Unknown";
 "国际标准 (WGS-84)" = "International (WGS-84)";
 "国内标准 (GCJ-02)" = "China (GCJ-02)";
@@ -295,3 +296,50 @@
 "关闭时同样操作一次" = "Do the same when turning spoofing off";
 "要恢复真实位置时，先关掉虚拟定位，再重复第 2、3 步。" = "To restore your real location, turn spoofing off first, then repeat steps 2 and 3.";
 "定位服务重启后，已经打开的 App 可能需要退出重进才会刷新位置；系统级的位置（如「查找」）生效会更快。" = "After Location Services restarts, apps that are already open may need to be relaunched before they pick up the new position; system-level features such as Find My update sooner.";
+
+// License / referral
+"已激活" = "Activated";
+"试用中" = "Trial";
+"推荐奖励" = "Referral bonus";
+"试用已结束" = "Trial ended";
+"已过期" = "Expired";
+"未激活" = "Not activated";
+"离线可用" = "Offline";
+"剩余 %d 天" = "%d days left";
+"剩余 %.1f 年" = "%.1f years left";
+"已到期" = "Expired";
+"卡密类型" = "Card type";
+"输入卡密" = "Enter code";
+"解绑设备" = "Unbind device";
+"激活" = "Activate";
+"取消" = "Cancel";
+"卡密" = "License code";
+"激活卡密" = "Activate code";
+"请输入卡密" = "Please enter a code";
+"推荐好友" = "Refer friends";
+"我的邀请码" = "My invite code";
+"获取中…" = "Loading…";
+"复制邀请码" = "Copy code";
+"已复制" = "Copied";
+"推荐进度" = "Referral progress";
+"已邀请 %d 人" = "%d invited";
+"邀请 %d 人" = "Invite %d";
+"+%d 天" = "+%d days";
+"已获得" = "Earned";
+"%d 天" = "%d days";
+"再邀请 %d 人，可再得 %d 天" = "Invite %d more for %d more days";
+"已达到最高档位" = "Highest tier reached";
+"填写好友邀请码" = "Enter a friend's code";
+"提交" = "Submit";
+"已接受好友推荐" = "Referral accepted";
+"连续使用" = "Consecutive use";
+"已达成，好友已获得奖励" = "Qualified — your friend has been rewarded";
+"活动规则" = "How it works";
+"试用期内功能与正式版一致，到期后需输入卡密" = "Trial mode is fully featured; enter a code to continue after it ends.";
+"一天" = "one day";
+"授权" = "License";
+
+// 授权拦截提示
+"试用已结束，请在「设置 → 授权」输入卡密后继续使用" = "Your trial has ended. Enter a code under Settings → License to continue.";
+"卡密已过期，请在「设置 → 授权」续期后继续使用" = "Your license has expired. Renew it under Settings → License to continue.";
+"尚未激活，请在「设置 → 授权」输入卡密或确认网络连接" = "Not activated yet. Enter a code under Settings → License, or check your connection.";

@@ -554,6 +554,28 @@ func startProxy(certPEM, keyPEM []byte, lat, lon float64, enabled bool, accuracy
 	return server, nil
 }
 
+// isProxyListening 实际探一次代理端口是否还在监听。
+//
+// 为什么需要它：进程被 iOS 挂起时，Go 侧的监听 socket 会失效，但 Go 进程
+// 并没有退出，Swift 侧自维护的 status 也就不会变成 .stopped。上层若只信
+// status，就会把「代理其实已经死了」当成「代理在跑」，于是环境检测里
+// Wi-Fi 代理链路被误判成「跳过」——用户看到的就是「Wi-Fi 设置是对的，
+// 但怎么都没用」。
+//
+// 直接 dial 127.0.0.1:8888 是最可靠的判断：端口还接得上就说明监听还在。
+func isProxyListening() bool {
+	conn, err := net.DialTimeout(
+		"tcp",
+		fmt.Sprintf("127.0.0.1:%d", proxyListenPort),
+		500*time.Millisecond,
+	)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
+}
+
 // stopProxy 优雅关闭代理。
 func stopProxy(server *http.Server) error {
 	if server == nil {

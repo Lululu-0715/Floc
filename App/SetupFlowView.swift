@@ -247,7 +247,11 @@ struct SetupFlowView: View {
             }
 
             // Wi-Fi 代理链路。
-            if proxy.status.isRunning {
+            //
+            // 这里必须先实测端口，不能只看 `proxy.status`：被挂起后状态不会
+            // 变成 .stopped，直接信它就会把「代理其实已经死了」误报成
+            // 「代理未启动 → 跳过」，让用户以为这一步没问题。
+            if proxy.syncStatusWithReality() {
                 await proxy.verifyWiFiProxy()
                 let passed = proxy.wiFiProxyState == .configured
                 collected.results.append(VerificationResult(
