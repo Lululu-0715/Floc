@@ -58,6 +58,7 @@ run_simulator_tests() {
 # 这些检查都不需要 Xcode，能在构建前把明显问题拦下来：
 #   - Go 核心单元测试
 #   - 第三方代理脚本测试
+#   - 授权服务端（Worker + D1）单元测试
 #   - 本地化条目对齐
 #   - Swift 源码一致性（括号、桥接头、测试引用）
 #   - 代理模块一致性（脚本 URL、路径、主机名、QX 重写资源格式）
@@ -76,8 +77,20 @@ run_static_checks() {
   if command -v node >/dev/null 2>&1; then
     ( cd "$ROOT/ThirdParty/ProxyScripts" && node --test >/dev/null 2>&1 )
     echo "    代理脚本测试通过"
+
+    # 授权服务端（Cloudflare Worker）单元测试。
+    # 用的是 Node 22 内置的 node:sqlite，所以不需要 npm install，克隆下来就能跑。
+    # Node < 22 没有这个模块，这时候跳过而不是报失败——只是少跑一层校验，
+    # 不该拦住只做 iOS 构建的人。
+    if node -e "require('node:sqlite')" >/dev/null 2>&1; then
+      ( cd "$ROOT/Server/license-worker" && node --test 'test/**/*.test.mjs' >/dev/null 2>&1 )
+      echo "    授权服务端测试通过"
+    else
+      echo "    跳过授权服务端测试（需要 Node 22+ 的 node:sqlite）"
+    fi
   else
     echo "    跳过代理脚本测试（未安装 node）"
+    echo "    跳过授权服务端测试（未安装 node）"
   fi
 
   python3 "$ROOT/Tests/check_localization.py" >/dev/null

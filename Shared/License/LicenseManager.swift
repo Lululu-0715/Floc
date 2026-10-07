@@ -21,13 +21,11 @@ final class LicenseManager: ObservableObject {
     /// 当前授权状态
     @Published private(set) var status: LicenseStatus = .unregistered
 
-    /// 剩余天数（含推荐奖励）
-    @Published private(set) var remainingDays: Int = 0
-
     /// 剩余时长（毫秒，含推荐奖励）。
     ///
-    /// 比 `remainingDays` 精细：设置页的「账号」卡片要显示到分钟
-    /// （`3 天 3 小时 12 分钟`），只靠天数看不出刚激活的场景。
+    /// 只留毫秒这一档：设置页的「账号」卡片要显示到分钟
+    /// （`3 天 3 小时 12 分钟`），只存天数看不出刚激活的场景，
+    /// 而再存一份天数就得在两处同步维护，早晚会不一致。
     @Published private(set) var remainingMs: Double = 0
 
     /// 卡密类型名（月卡/季卡…），试用或未激活时为 nil
@@ -45,8 +43,11 @@ final class LicenseManager: ObservableObject {
     /// 最近一次错误文案，UI 弹完要清掉
     @Published var lastErrorMessage: String?
 
-    /// 是否完成过一次校验（UI 用它决定要不要显示骨架）
-    @Published private(set) var hasLoaded = false
+    /// 当前用的是不是内置测试卡密。
+    ///
+    /// 测试授权是纯本地授予的（见 `LicenseConfig.testCardKeys`），
+    /// 所以要单独标一下，否则界面上会显示成「已激活」，看不出这是自测状态。
+    @Published private(set) var isTestLicense = false
 
     // MARK: - 本地缓存 key
 
@@ -55,6 +56,7 @@ final class LicenseManager: ObservableObject {
         static let verifiedAt = "license.cached.verifiedAt"
         static let heartbeat  = "license.heartbeat.lastDay"
         static let cardKey    = "license.cached.cardKey"
+        static let isTestCard = "license.cached.isTestCard"
     }
 
     private let defaults = UserDefaults.standard
@@ -73,16 +75,22 @@ final class LicenseManager: ObservableObject {
     /// 校验，也不拦功能，方便后端就绪前自测。详见 `LicenseConfig.isConfigured`。
     var isLocalMode: Bool { !LicenseConfig.isConfigured }
 
-    /// 是否允许使用核心功能（虚拟定位）
-    var isUsable: Bool { isLocalMode || status.isUsable }
+    /// 是否允许使用核心功能（虚拟定位）。
+    ///
+    /// 三种放行来源：本地模式（服务端没配）、内置测试授权、真实授权。
+    /// 测试授权按秒倒计时，过期就真过期——这样「到期被拦」这条路径
+    /// 也能在没后端的情况下验一遍。
+    var isUsable: Bool {
+        if isTestLicense { return remainingMs > 0 }
+        return isLocalMode || status.isUsable
+    }
 
-    /// 是否在试用中
-    var isTrial: Bool { status == .trial }
-
-    /// 展示用的状态名。本地模式下覆盖成「本地模式」，
+    /// 展示用的状态名。本地模式与测试授权都要覆盖，
     /// 否则用户会看到一个「未激活」的红锁却又能正常用，前后矛盾。
     var displayNameKey: String {
-        isLocalMode ? "本地模式" : status.displayNameKey
+        if isTestLicense { return "测试授权" }
+        if isLocalMode { return "本地模式" }
+        return status.displayNameKey
     }
 
     /// 距到期还剩多久（含推荐奖励）。
@@ -90,6 +98,9 @@ final class LicenseManager: ObservableObject {
     /// 精确到分钟：刚激活时只显示「剩余 30 天」看不出倒计时在走，
     /// 用户会怀疑到底有没有生效。天数 ≥ 1 时补上小时与分钟。
     var remainingText: String {
+        if isTestLicense {
+            return Self.describe(remainingMs: remainingMs)
+        }
         if isLocalMode {
             return AppLocalization.string("未配置授权服务端，不做校验")
         }
@@ -119,16 +130,6 @@ final class LicenseManager: ObservableObject {
         return String(format: AppLocalization.string("%ld 分钟"), minutes)
     }
 
-    /// 兼容旧调用点：只用「天」表述的场合。
-    var daysLeftText: String {
-        guard remainingDays > 0 else { return AppLocalization.string("已到期") }
-        if remainingDays >= 365 {
-            let years = Double(remainingDays) / 365.0
-            return String(format: AppLocalization.string("剩余 %.1f 年"), years)
-        }
-        return String(format: AppLocalization.string("剩余 %ld 天"), remainingDays)
-    }
-
     // MARK: - 校验
 
     /// 向服务端校验并刷新状态。
@@ -139,7 +140,13 @@ final class LicenseManager: ObservableObject {
         // 之前占位地址会让每次启动都白等 12 秒超时，还弹一条「网络异常」，
         // 而后端根本没部署——纯噪声。
         if isLocalMode {
-            hasLoaded = true
+            lastErrorMessage = nil
+            return
+        }
+
+        // 测试授权是本地授予的，服务端没有这张卡；去问一次只会把状态刷成
+        // 「未激活」，把测试中的倒计时抹掉。
+        if isTestLicense {
             lastErrorMessage = nil
             return
         }
@@ -152,15 +159,12 @@ final class LicenseManager: ObservableObject {
             let state = try await api.verify(deviceId: deviceId)
             apply(state)
             saveToCache()
-            hasLoaded = true
         } catch let error as LicenseError {
             if error.allowsOfflineGrace, let cached = cachedStateIfWithinGrace() {
                 // 网络不通但缓存还在宽限期内 → 继续用
                 apply(cached, asOffline: true)
-                hasLoaded = true
                 if !silent { lastErrorMessage = nil }
             } else {
-                hasLoaded = true
                 if !silent { lastErrorMessage = error.errorDescription }
             }
         } catch {
@@ -173,14 +177,21 @@ final class LicenseManager: ObservableObject {
     /// 用卡密激活，成功返回 true
     @discardableResult
     func activate(cardKey: String) async -> Bool {
-        guard !isLocalMode else {
-            lastErrorMessage = AppLocalization.string("尚未配置授权服务端，当前为本地模式，无需卡密")
+        let key = LicenseConfig.normalizeCardKey(cardKey)
+        guard !key.isEmpty else {
+            lastErrorMessage = AppLocalization.string("请输入卡密")
             return false
         }
 
-        let key = cardKey.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        guard !key.isEmpty else {
-            lastErrorMessage = "请输入卡密"
+        // 内置测试卡密：完全离线生效，不依赖服务端是否配好。
+        // 放在最前面，是为了让「尚无后端」的自测场景能真的走完激活流程。
+        if LicenseConfig.isTestCode(key) {
+            applyTestLicense(cardKey: key)
+            return true
+        }
+
+        guard !isLocalMode else {
+            lastErrorMessage = AppLocalization.string("尚未配置授权服务端，当前为本地模式，无需卡密")
             return false
         }
 
@@ -194,6 +205,9 @@ final class LicenseManager: ObservableObject {
                 return false
             }
 
+            // 真实卡密激活成功，本地测试授权让位。只在确实处于测试态时清，
+            // 免得把普通用户的缓存也一并抹掉。
+            if isTestLicense { clearTestLicense() }
             defaults.set(key, forKey: CacheKey.cardKey)
             // 激活后重新拉一次 verify，拿到统一格式的状态（含推荐奖励叠加）
             await refresh(silent: true)
@@ -210,6 +224,12 @@ final class LicenseManager: ObservableObject {
     /// 自助解绑（换手机用），成功返回 true
     @discardableResult
     func unbind() async -> Bool {
+        // 测试授权服务端不认识，也不需要「解绑」——本地清掉即可。
+        if isTestLicense {
+            clearTestLicense()
+            return true
+        }
+
         guard !isLocalMode else {
             lastErrorMessage = AppLocalization.string("尚未配置授权服务端，当前为本地模式，无需解绑")
             return false
@@ -314,7 +334,6 @@ final class LicenseManager: ObservableObject {
 
     private func apply(_ state: LicenseState, asOffline: Bool = false) {
         status = asOffline ? .offline : state.status
-        remainingDays = state.remainingDays
         // 老服务端可能只回了天数，这里补一个等价毫秒数，保证「天数/小时/分钟」
         // 三档展示都有值。
         remainingMs = state.remainingMs ?? Double(state.remainingDays) * 86_400_000
@@ -322,10 +341,49 @@ final class LicenseManager: ObservableObject {
         bonusDays = state.bonusDays ?? 0
     }
 
+    // MARK: - 内部：内置测试授权
+
+    /// 用内置测试卡密就地授予一份授权。
+    ///
+    /// 全程不发请求，所以离线、后端未部署时都能用。天数从**授予那一刻**
+    /// 起算，跟真实卡密一样会随时间衰减。
+    private func applyTestLicense(cardKey: String) {
+        isTestLicense = true
+        status = .active
+        cardTypeLabel = LicenseConfig.testCardTypeLabel
+        bonusDays = 0
+        remainingMs = Double(LicenseConfig.testCardDays) * 86_400_000
+        lastErrorMessage = nil
+
+        defaults.set(cardKey, forKey: CacheKey.cardKey)
+        defaults.set(true, forKey: CacheKey.isTestCard)
+        saveToCache()
+
+        RuntimeLogger.info("APP", "License", "已用内置测试卡密激活", details: [
+            "days": String(LicenseConfig.testCardDays),
+        ])
+    }
+
+    /// 清掉测试授权，回到「未激活」。
+    ///
+    /// 连缓存一起清：测试授权在服务端没有任何记录，留着缓存只会在下次冷启动
+    /// 时把这份本地授予的状态又读回来。
+    private func clearTestLicense() {
+        isTestLicense = false
+        status = .unregistered
+        remainingMs = 0
+        cardTypeLabel = nil
+        bonusDays = 0
+
+        defaults.removeObject(forKey: CacheKey.isTestCard)
+        defaults.removeObject(forKey: CacheKey.cardKey)
+        defaults.removeObject(forKey: CacheKey.state)
+        defaults.removeObject(forKey: CacheKey.verifiedAt)
+    }
+
     private func saveToCache() {
         let snapshot: [String: Any] = [
             "status": status.rawValue,
-            "remainingDays": remainingDays,
             "remainingMs": remainingMs,
             "cardTypeLabel": cardTypeLabel as Any,
             "bonusDays": bonusDays,
@@ -337,21 +395,22 @@ final class LicenseManager: ObservableObject {
 
     /// 恢复缓存（冷启动时先给 UI 一个值，避免白屏）
     private func restoreFromCache() {
+        // 测试授权标记要先读回来：下面 `remainingMs` 的衰减逻辑两条路都走，
+        // 但只有这个标记能让界面显示成「测试授权」而不是「已激活」。
+        isTestLicense = defaults.bool(forKey: CacheKey.isTestCard)
+
         guard let snapshot = defaults.dictionary(forKey: CacheKey.state) else { return }
         if let raw = snapshot["status"] as? String,
            let cachedStatus = LicenseStatus(rawValue: raw) {
             status = cachedStatus
         }
-        remainingDays = snapshot["remainingDays"] as? Int ?? 0
-        let cachedMs = snapshot["remainingMs"] as? Double
+        remainingMs = 0
         let savedAt = snapshot["savedAt"] as? TimeInterval
         // 缓存里的毫秒数是「上次校验那一刻」的，按已过去的真实时间扣一下，
         // 否则冷启动瞬间会显示一个虚高的倒计时。
-        if let cachedMs {
+        if let cachedMs = snapshot["remainingMs"] as? Double {
             let elapsedMs = savedAt.map { (Date().timeIntervalSince1970 - $0) * 1000 } ?? 0
             remainingMs = max(0, cachedMs - elapsedMs)
-        } else {
-            remainingMs = Double(remainingDays) * 86_400_000
         }
         cardTypeLabel = snapshot["cardTypeLabel"] as? String
         bonusDays = snapshot["bonusDays"] as? Int ?? 0
@@ -368,9 +427,10 @@ final class LicenseManager: ObservableObject {
         let elapsedDays = (Date().timeIntervalSince1970 - savedAt) / 86400
         guard elapsedDays <= Double(LicenseConfig.offlineGraceDays) else { return nil }
 
-        // 用缓存拼一个 LicenseState，剩余时长按离线时长扣减
+        // 用缓存拼一个 LicenseState，剩余时长按离线时长扣减。
+        // 拿不到剩余毫秒（老格式缓存）就当作不可用，走正常的错误提示。
+        guard let cachedMs = dict["remainingMs"] as? Double else { return nil }
         let elapsedMs = (Date().timeIntervalSince1970 - savedAt) * 1000
-        let cachedMs = dict["remainingMs"] as? Double ?? Double(remainingDays) * 86_400_000
         let decayedMs = max(0, cachedMs - elapsedMs)
         return LicenseState(
             ok: true,

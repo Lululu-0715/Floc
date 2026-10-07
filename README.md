@@ -113,6 +113,12 @@ Floc/
 │   ├── wloc-settings.js        配置接口脚本
 │   └── modules/                6 种客户端模块（对照表见该目录 README.md）
 │
+├── Server/license-worker/      授权 / 推荐服务端（Cloudflare Worker + D1，可选）
+│   ├── src/index.js            全部接口（字段契约见 Shared/License/LicenseAPI.swift）
+│   ├── schema.sql              D1 建表
+│   ├── test/                   26 个单元测试
+│   └── README.md               部署步骤
+│
 ├── Resources/                  本地化、图标、Info.plist
 ├── Scripts/                    构建脚本
 └── Tests/                      测试脚本
@@ -179,6 +185,9 @@ cd Core && go test ./... -v
 
 # 第三方脚本测试（11 个用例）
 cd ThirdParty/ProxyScripts && node --test
+
+# 授权服务端测试（26 个用例，需要 Node 22+）
+cd Server/license-worker && npm test
 
 # iOS 单元测试（6 个测试文件）
 ./build.sh --test

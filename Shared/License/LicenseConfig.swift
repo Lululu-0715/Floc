@@ -68,6 +68,63 @@ enum LicenseConfig {
         (100, 365),
     ]
 
+    // MARK: - 内置测试卡密
+
+    /// 内置测试卡密。
+    ///
+    /// 用途有两个：授权服务端还没部署时验证「输入卡密 → 激活 → 倒计时」这条
+    /// 链路；以及正式上线后万一 Worker 挂了，你自己还能进得去。
+    ///
+    /// 命中时**完全离线激活**，一个网络请求都不发，所以不依赖 `baseURL`。
+    ///
+    /// 想关掉就把数组清空——清空后 `isTestCode` 恒为 false，
+    /// 界面上那段「测试卡密」提示也会一起消失。
+    static let testCardKeys: [String] = [
+        "FLOC-TEST-2026",
+    ]
+
+    /// 测试卡密激活后给的天数。
+    static let testCardDays = 30
+
+    /// 测试卡密在「卡密类型」那一行的显示名。
+    static let testCardTypeLabel = "测试卡"
+
+    /// 规范化卡密输入。
+    ///
+    /// 用户手打或从聊天记录里粘贴时，大小写、全角连字符、用空格代替连字符
+    /// 都可能出现，统一收敛成 `FLOC-XXXX-XXXX-XXXX` 这一种形态再比对，
+    /// 免得「明明输对了却说卡密无效」。
+    ///
+    /// 服务端 `Server/license-worker/src/index.js` 里有一份**同样规则**的
+    /// 实现：卡密是拿这个结果去数据库查的，两边规则不一致就会查不到。
+    static func normalizeCardKey(_ raw: String) -> String {
+        var key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        key = key.replacingOccurrences(of: "—", with: "-")
+        key = key.replacingOccurrences(of: "－", with: "-")
+        key = key.replacingOccurrences(of: " ", with: "-")
+        key = key.replacingOccurrences(of: "\t", with: "-")
+        key = key.uppercased()
+
+        // 折叠连续连字符，再掐掉首尾多余的连字符
+        while key.contains("--") {
+            key = key.replacingOccurrences(of: "--", with: "-")
+        }
+        return key.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+    }
+
+    /// 是否为内置测试卡密。
+    static func isTestCode(_ raw: String) -> Bool {
+        let key = normalizeCardKey(raw)
+        guard !key.isEmpty else { return false }
+        return testCardKeys.contains(key)
+    }
+
+    /// 是否在界面上提示测试卡密。
+    ///
+    /// 只在授权服务端还没配好时提示——那正是「开发者自测」的窗口期。
+    /// 把 `baseURL` 换成真实域名后提示自动消失，不会跟着正式包流到用户手里。
+    static var showsTestCardHint: Bool { !isConfigured }
+
     // MARK: - 请求头
 
     /// 服务端没有做鉴权，但带上一个自定义 UA 便于在 Worker 日志里区分客户端。

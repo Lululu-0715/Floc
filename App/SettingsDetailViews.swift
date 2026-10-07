@@ -276,75 +276,6 @@ struct SimulationSettingsView: View {
     }
 }
 
-// MARK: - 收藏位置
-
-/// 收藏位置管理。
-struct FavoritesSettingsView: View {
-
-    @ObservedObject var favorites: FavoriteLocationStore
-
-    @State private var showClearConfirmation = false
-
-    var body: some View {
-        List {
-            Section {
-                SettingsStatusRow(
-                    systemImage: "star.fill",
-                    title: AppLocalization.string("已收藏"),
-                    value: "\(favorites.favorites.count)"
-                )
-
-                ForEach(favorites.favorites) { favorite in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(favorite.name)
-                            .font(SettingsMetrics.titleFont)
-                        Text(String(format: "%.6f, %.6f",
-                                    favorite.pair.wgs84.latitude,
-                                    favorite.pair.wgs84.longitude))
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, SettingsMetrics.rowVerticalPadding)
-                }
-                .onDelete { offsets in
-                    offsets.map { favorites.favorites[$0].id }.forEach { favorites.remove(id: $0) }
-                }
-            } header: {
-                SettingsSectionHeader(title: AppLocalization.string("收藏位置"))
-            } footer: {
-                Text(AppLocalization.string("在地图上选点后点地名旁的星标即可收藏，左滑可以删除单条。"))
-            }
-
-            if !favorites.favorites.isEmpty {
-                Section {
-                    Button(role: .destructive) {
-                        showClearConfirmation = true
-                    } label: {
-                        SettingsLabel(
-                            systemImage: "trash",
-                            title: AppLocalization.string("清空全部收藏"),
-                            tint: .red
-                        )
-                    }
-                }
-            }
-        }
-        .listStyle(.insetGrouped)
-        .navigationTitle(AppLocalization.string("收藏位置"))
-        .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog(
-            AppLocalization.string("清空全部收藏？"),
-            isPresented: $showClearConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button(AppLocalization.string("清空"), role: .destructive) {
-                favorites.removeAll()
-            }
-            Button(AppLocalization.string("取消"), role: .cancel) {}
-        }
-    }
-}
-
 // MARK: - 第三方代理
 
 /// 第三方客户端的模块与连通性。
@@ -909,20 +840,23 @@ struct UserGuideView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private static var entries: [(label: String, kind: TipCard.Kind)] {
+    private static var entries: [(label: String, kind: TipKind)] {
         [
             (AppLocalization.string("生效说明"), .enableSpoofing),
             (AppLocalization.string("失效说明"), .disableSpoofing),
             (AppLocalization.string("关闭 WiFi 代理"), .disableWiFiProxy),
-            (TipCard.Kind.certificateTrust.settingsLabel, .certificateTrust),
-            (TipCard.Kind.thirdPartyMode.settingsLabel, .thirdPartyMode),
+            (TipKind.certificateTrust.settingsLabel, .certificateTrust),
+            (TipKind.thirdPartyMode.settingsLabel, .thirdPartyMode),
         ]
     }
 }
 
 // MARK: - 意见反馈
 
-/// 意见反馈：报告、日志、联系方式。
+/// 意见反馈：生成问题报告与查看运行日志。
+///
+/// 这一页只放「产出材料」的动作，不放联系方式 —— 联系方式统一收在
+/// 「关于 → 联系我们」一处，两个入口做同一件事只会让人犹豫该点哪个。
 struct FeedbackView: View {
 
     @ObservedObject var state: MapLocationState
@@ -956,20 +890,6 @@ struct FeedbackView: View {
                 SettingsSectionHeader(title: AppLocalization.string("意见反馈"))
             } footer: {
                 Text(AppLocalization.string("报告会自动脱敏（去掉坐标、设备标识等），生成后可以先自己看一眼再发出去。遇到问题请附带报告，能省掉一大轮来回。"))
-            }
-
-            Section {
-                NavigationLink {
-                    ContactView()
-                } label: {
-                    SettingsLabel(
-                        systemImage: "envelope",
-                        title: AppLocalization.string("联系我们"),
-                        isSecondary: true
-                    )
-                }
-            } footer: {
-                Text(AppLocalization.string("功能建议、使用疑问、购买咨询都可以直接联系，不必非得是 bug。"))
             }
         }
         .listStyle(.insetGrouped)

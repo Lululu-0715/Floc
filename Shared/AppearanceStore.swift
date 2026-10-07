@@ -22,8 +22,8 @@ final class AppearanceStore: ObservableObject {
         var displayName: String {
             switch self {
             case .system: return AppLocalization.string("跟随系统")
-            case .light: return AppLocalization.string("白天")
-            case .dark: return AppLocalization.string("黑暗")
+            case .light: return AppLocalization.string("浅色")
+            case .dark: return AppLocalization.string("深色")
             }
         }
 

@@ -100,16 +100,4 @@ enum DeviceIdentity {
         String(current.replacingOccurrences(of: "-", with: "").prefix(8)).uppercased()
     }
 
-    // MARK: - 调试
-
-    /// 强制换一个新 ID（仅调试用，正式包不要暴露入口）
-    static func resetForDebug() {
-        let deleteQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-        SecItemDelete(deleteQuery as CFDictionary)
-        cached = nil
-    }
 }

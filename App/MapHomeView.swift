@@ -37,6 +37,9 @@ struct MapHomeView: View {
     @State private var showSaveFavorite = false
     @State private var newFavoriteName = ""
 
+    /// 收藏夹管理页。状态行右端那个圆形按钮打开。
+    @State private var showFavorites = false
+
     /// 地图图层。默认标准图，用户可在地图左上角切换。
     @State private var mapType: MapTypeOption = .standard
 
@@ -80,9 +83,14 @@ struct MapHomeView: View {
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .settings:
-                SettingsView(setup: setup, state: state, favorites: favorites)
+                SettingsView(setup: setup, state: state)
             case .logs:
                 DiagnosticsView(state: state)
+            }
+        }
+        .sheet(isPresented: $showFavorites) {
+            FavoritesView(favorites: favorites) { favorite in
+                applyFavorite(favorite)
             }
         }
         .sheet(item: $editingFavorite) { favorite in
@@ -332,7 +340,7 @@ struct MapHomeView: View {
             actionButtons
         }
         .padding(14)
-        .mapGlassSurface()
+        .mapGlassSurface(cornerRadius: GlassMetrics.mapPanelCornerRadius)
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
     }
@@ -454,8 +462,20 @@ struct MapHomeView: View {
         .frame(height: 38)
     }
 
+    /// 状态行：左端圆形「诊断」，中间状态胶囊，右端圆形「收藏夹」。
+    ///
+    /// 三样东西挤在一行是有意的——它们都是「顺手戳一下」的低频入口，
+    /// 各占一行会让底部面板高出一截，而面板越矮、地图露出来的部分越多。
+    /// 圆钮用 `mapGlassCapsule()` 套在 34×34 的方框上，正好是个圆。
     private var statusRow: some View {
         HStack(spacing: 8) {
+            circleButton(
+                systemImage: "doc.text.magnifyingglass",
+                accessibilityLabel: AppLocalization.string("运行日志与诊断")
+            ) {
+                activeSheet = .logs
+            }
+
             StatusPill(
                 icon: runtimeMode.mode == .localProxy ? "wifi.router" : "shield.lefthalf.filled",
                 text: runtimeMode.mode.displayName,
@@ -481,17 +501,50 @@ struct MapHomeView: View {
                 )
             }
 
-            Spacer()
+            Spacer(minLength: 0)
 
-            Button {
-                activeSheet = .logs
-            } label: {
-                Image(systemName: "doc.text.magnifyingglass")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+            circleButton(
+                systemImage: "star.fill",
+                accessibilityLabel: AppLocalization.string("收藏位置"),
+                badge: favorites.favorites.count
+            ) {
+                showFavorites = true
             }
-            .buttonStyle(.plain)
         }
+    }
+
+    /// 状态行两端的小圆按钮。
+    ///
+    /// `badge` 为 0 时不画角标——收藏夹空着还挂个「0」只是噪声。
+    private func circleButton(
+        systemImage: String,
+        accessibilityLabel: String,
+        badge: Int = 0,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.secondary)
+                    .frame(width: 34, height: 34)
+                    .mapGlassCapsule()
+                    .contentShape(Circle())
+
+                if badge > 0 {
+                    Text("\(badge)")
+                        .font(.system(size: 10, weight: .bold))
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Color.accentColor))
+                        .offset(x: 5, y: -5)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
     }
 
     /// 底部两个动作按钮。
@@ -524,9 +577,8 @@ struct MapHomeView: View {
                 .foregroundStyle(spoofButtonTint)
                 .frame(maxWidth: .infinity)
                 .frame(height: 44)
-                .mapGlassSurface()
-                .contentShape(RoundedRectangle(cornerRadius: GlassMetrics.mapCornerRadius,
-                                               style: .continuous))
+                .mapGlassCapsule()
+                .contentShape(Capsule(style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(state.selection == nil || state.isBusy)
@@ -565,9 +617,8 @@ struct MapHomeView: View {
             }
             .foregroundStyle(Color.accentColor)
             .frame(width: 62, height: 44)
-            .mapGlassSurface()
-            .contentShape(RoundedRectangle(cornerRadius: GlassMetrics.mapCornerRadius,
-                                           style: .continuous))
+            .mapGlassCapsule()
+            .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(realLocation.isLocating)
@@ -785,14 +836,17 @@ struct MapHomeView: View {
     }
 
     /// 被授权拦住时的提示文案，按状态给出不同的下一步。
+    ///
+    /// 路径必须跟着设置页的分组走：1.0.4 把卡密入口收进了「账号」，
+    /// 文案里还写「设置 → 授权」的话，用户会去一个不存在的地方找。
     private var licenseBlockMessage: String {
         switch license.status {
         case .trialExpired:
-            return AppLocalization.string("试用已结束，请在「设置 → 授权」输入卡密后继续使用")
+            return AppLocalization.string("试用已结束，请在「设置 → 账号」输入卡密后继续使用")
         case .expired:
-            return AppLocalization.string("卡密已过期，请在「设置 → 授权」续期后继续使用")
+            return AppLocalization.string("卡密已过期，请在「设置 → 账号」续期后继续使用")
         default:
-            return AppLocalization.string("尚未激活，请在「设置 → 授权」输入卡密或确认网络连接")
+            return AppLocalization.string("尚未激活，请在「设置 → 账号」输入卡密或确认网络连接")
         }
     }
 

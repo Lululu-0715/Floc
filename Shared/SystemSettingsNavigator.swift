@@ -40,14 +40,6 @@ enum SystemSettingsNavigator {
     }
 
     @discardableResult
-    static func openVPNDeviceManagement() -> Bool {
-        open(candidates: [
-            "App-Prefs:root=General&path=ManagedConfigurationList",
-            "App-Prefs:root=General",
-        ], fallbackHint: "VPN 与设备管理")
-    }
-
-    @discardableResult
     static func openAppSettings() -> Bool {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return false }
         UIApplication.shared.open(url)

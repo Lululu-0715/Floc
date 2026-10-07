@@ -58,7 +58,12 @@ struct LicenseCardView: View {
                     String(format: AppLocalization.string("+%ld 天"), manager.bonusDays)
                 )
             }
-            if manager.isLocalMode {
+            if manager.isTestLicense {
+                Text(AppLocalization.string("测试授权由应用内置，不占用真实卡密额度，也不会同步到服务端。到期后会自动回到未激活状态。"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if manager.isLocalMode {
                 Text(AppLocalization.string("尚未配置授权服务端，当前不做授权校验，全部功能已放行。部署 Worker 并把 LicenseConfig.baseURL 换成真实域名后会自动恢复。"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -94,10 +99,13 @@ struct LicenseCardView: View {
     private var actionButton: some View {
         if manager.isBusy {
             ProgressView().controlSize(.small)
-        } else if manager.isLocalMode {
-            // 本地模式没有服务端可谈，激活/解绑都会立刻失败，
-            // 干脆不给按钮，避免用户点进去白填一次。
-            EmptyView()
+        } else if manager.isTestLicense {
+            // 测试授权在服务端没有记录，「解绑」这个词对不上，直说要干什么。
+            Button(AppLocalization.string("清除测试授权")) {
+                Task { await manager.unbind() }
+            }
+            .font(.subheadline)
+            .buttonStyle(.bordered)
         } else if manager.status == .active || manager.status == .bonus {
             Button(AppLocalization.string("解绑设备")) {
                 Task { await manager.unbind() }
@@ -105,6 +113,8 @@ struct LicenseCardView: View {
             .font(.subheadline)
             .buttonStyle(.bordered)
         } else {
+            // 本地模式也给这个按钮：内置测试卡密是离线生效的，
+            // 后端没部署时正是唯一能验完「输入卡密 → 激活」这条链路的入口。
             Button(AppLocalization.string("输入卡密")) { showActivateSheet = true }
                 .font(.subheadline)
                 .buttonStyle(.borderedProminent)
@@ -112,6 +122,7 @@ struct LicenseCardView: View {
     }
 
     private var statusIcon: String {
+        if manager.isTestLicense { return "hammer.fill" }
         if manager.isLocalMode { return "wrench.and.screwdriver.fill" }
         switch manager.status {
         case .active:       return "checkmark.seal.fill"
@@ -124,6 +135,7 @@ struct LicenseCardView: View {
     }
 
     private var statusColor: Color {
+        if manager.isTestLicense { return .purple }
         if manager.isLocalMode { return .blue }
         switch manager.status {
         case .active, .trial, .bonus: return .green
@@ -162,14 +174,27 @@ struct ActivateSheet: View {
                         .font(.caption)
                 }
 
-                if manager.isLocalMode {
+                // 只有服务端还没配好时才露出测试卡密：那正是「开发者自测」的
+                // 窗口期。换成真实域名后这段整块消失，不会跟着正式包发出去。
+                if LicenseConfig.showsTestCardHint {
                     Section {
-                        Label(
-                            AppLocalization.string("尚未配置授权服务端，当前为本地模式，无需卡密即可使用全部功能。"),
-                            systemImage: "wrench.and.screwdriver"
-                        )
-                        .foregroundStyle(.secondary)
-                        .font(.subheadline)
+                        Button {
+                            if let testKey = LicenseConfig.testCardKeys.first {
+                                input = testKey
+                            }
+                        } label: {
+                            SettingsLabel(
+                                systemImage: "wrench.and.screwdriver.fill",
+                                title: AppLocalization.string("填入内置测试卡密"),
+                                isSecondary: true
+                            )
+                        }
+                        .disabled(LicenseConfig.testCardKeys.isEmpty)
+                    } header: {
+                        Text(AppLocalization.string("测试卡密"))
+                    } footer: {
+                        Text(AppLocalization.string("授权服务端尚未配置，用这个内置卡密可以在离线状态下走完激活流程、看到倒计时，不会发出任何网络请求。把 baseURL 换成真实域名后这段提示会自动消失。"))
+                            .font(.caption)
                     }
                 }
 
@@ -199,8 +224,7 @@ struct ActivateSheet: View {
                         }
                     }
                     .disabled(input.trimmingCharacters(in: .whitespaces).isEmpty
-                              || manager.isBusy
-                              || manager.isLocalMode)
+                              || manager.isBusy)
                 }
             }
             .navigationTitle(AppLocalization.string("激活卡密"))
@@ -238,7 +262,7 @@ struct ReferralView: View {
             .padding(16)
         }
         .background(Color(.systemGroupedBackground))
-        .navigationTitle("推荐好友")
+        .navigationTitle(AppLocalization.string("推荐好友"))
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await manager.loadReferralStatus()
@@ -246,8 +270,8 @@ struct ReferralView: View {
                 await manager.loadReferralCode()
             }
         }
-        .alert("提示", isPresented: errorBinding) {
-            Button("好") { manager.lastErrorMessage = nil }
+        .alert(AppLocalization.string("提示"), isPresented: errorBinding) {
+            Button(AppLocalization.string("好")) { manager.lastErrorMessage = nil }
         } message: {
             Text(manager.lastErrorMessage ?? "")
         }
@@ -264,27 +288,31 @@ struct ReferralView: View {
 
     private var myCodeCard: some View {
         VStack(spacing: 12) {
-            Text("我的邀请码")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+            Text(AppLocalization.string("我的邀请码"))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
 
-                Text(manager.referral?.code ?? "获取中…")
-                    .font(.system(size: 28, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.primary)
+            Text(manager.referral?.code ?? AppLocalization.string("获取中…"))
+                .font(.system(size: 28, weight: .bold, design: .monospaced))
+                .foregroundStyle(.primary)
 
-                Button {
-                    guard let code = manager.referral?.code else { return }
-                    UIPasteboard.general.string = code
-                    copied = true
-                    Task {
-                        try? await Task.sleep(nanoseconds: 1_500_000_000)
-                        await MainActor.run { copied = false }
-                    }
-                } label: {
-                    Label(copied ? "已复制" : "复制邀请码",
-                          systemImage: copied ? "checkmark" : "doc.on.doc")
-                        .font(.subheadline)
+            Button {
+                guard let code = manager.referral?.code else { return }
+                UIPasteboard.general.string = code
+                copied = true
+                Task {
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    await MainActor.run { copied = false }
                 }
+            } label: {
+                Label(
+                    copied
+                        ? AppLocalization.string("已复制")
+                        : AppLocalization.string("复制邀请码"),
+                    systemImage: copied ? "checkmark" : "doc.on.doc"
+                )
+                .font(.subheadline)
+            }
             .buttonStyle(.bordered)
             .disabled(manager.referral?.code == nil)
         }
@@ -297,53 +325,59 @@ struct ReferralView: View {
 
     private var progressCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text("推荐进度").font(.headline)
-                    Spacer()
-                    if let r = manager.referral {
-                        Text("已邀请 \(r.invitedCount) 人")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
+            HStack {
+                Text(AppLocalization.string("推荐进度")).font(.headline)
+                Spacer()
                 if let r = manager.referral {
-                    ForEach(Array(LicenseConfig.referralTiers.enumerated()), id: \.offset) { _, tier in
-                        tierRow(tier: tier, current: r.invitedCount)
-                    }
-
-                    Divider().opacity(0.35)
-
-                    HStack {
-                        Label("已获得", systemImage: "gift.fill")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Text("\(r.bonusDays) 天")
-                            .font(.headline)
-                            .foregroundStyle(.green)
-                    }
-
-                    if let next = r.nextTier {
-                        Text("再邀请 \(r.towardNext) 人，可再得 \(next.days) 天")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("已达到最高档位")
-                            .font(.caption)
-                            .foregroundStyle(.green)
-                    }
-
-                    Text("奖励可叠加使用，累计封顶 \(r.capDays / 365) 年")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                } else {
-                    ProgressView().frame(maxWidth: .infinity)
+                    Text(String(format: AppLocalization.string("已邀请 %d 人"), r.invitedCount))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .glassCard()
+
+            if let r = manager.referral {
+                ForEach(Array(LicenseConfig.referralTiers.enumerated()), id: \.offset) { _, tier in
+                    tierRow(tier: tier, current: r.invitedCount)
+                }
+
+                Divider().opacity(0.35)
+
+                HStack {
+                    Label(AppLocalization.string("已获得"), systemImage: "gift.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(String(format: AppLocalization.string("%d 天"), r.bonusDays))
+                        .font(.headline)
+                        .foregroundStyle(.green)
+                }
+
+                if let next = r.nextTier {
+                    Text(String(
+                        format: AppLocalization.string("再邀请 %d 人，可再得 %d 天"),
+                        r.towardNext, next.days
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                } else {
+                    Text(AppLocalization.string("已达到最高档位"))
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                }
+
+                Text(String(
+                    format: AppLocalization.string("奖励可叠加使用，累计封顶 %d 年"),
+                    r.capDays / 365
+                ))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            } else {
+                ProgressView().frame(maxWidth: .infinity)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassCard()
     }
 
     private func tierRow(
@@ -356,13 +390,13 @@ struct ReferralView: View {
                 .foregroundStyle(reached ? Color.green : Color.secondary.opacity(0.5))
                 .font(.subheadline)
 
-            Text("邀请 \(tier.count) 人")
+            Text(String(format: AppLocalization.string("邀请 %d 人"), tier.count))
                 .font(.subheadline)
                 .foregroundStyle(reached ? .primary : .secondary)
 
             Spacer()
 
-            Text("+\(tier.days) 天")
+            Text(String(format: AppLocalization.string("+%d 天"), tier.days))
                 .font(.subheadline)
                 .monospacedDigit()
                 .foregroundStyle(reached ? Color.green : .secondary)
@@ -375,30 +409,42 @@ struct ReferralView: View {
         VStack(alignment: .leading, spacing: 12) {
             if let referred = manager.referral?.asReferred {
                 // 已绑定过：展示进度
-                Text("已接受好友推荐").font(.headline)
+                Text(AppLocalization.string("已接受好友推荐")).font(.headline)
                 HStack {
-                    Text("连续使用")
+                    Text(AppLocalization.string("连续使用"))
                     Spacer()
-                    Text("\(referred.streakDays)/\(referred.requiredDays) 天")
-                        .monospacedDigit()
-                        .foregroundStyle(referred.qualified ? .green : .primary)
+                    Text(String(
+                        format: AppLocalization.string("%d/%d 天"),
+                        referred.streakDays, referred.requiredDays
+                    ))
+                    .monospacedDigit()
+                    .foregroundStyle(referred.qualified ? .green : .primary)
                 }
                 .font(.subheadline)
 
                 if !referred.qualified {
-                    Text("连续使用满 \(referred.requiredDays) 天后，你的好友将获得推荐奖励")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Label("已达成，好友已获得奖励", systemImage: "checkmark.seal.fill")
-                        .font(.caption)
-                        .foregroundStyle(.green)
-                }
-            } else {
-                Text("填写好友邀请码").font(.headline)
-                Text("填写后连续使用 \(LicenseConfig.referralRequiredDays) 天，你的好友即可获得奖励。")
+                    Text(String(
+                        format: AppLocalization.string("连续使用满 %d 天后，你的好友将获得推荐奖励"),
+                        referred.requiredDays
+                    ))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                } else {
+                    Label(
+                        AppLocalization.string("已达成，好友已获得奖励"),
+                        systemImage: "checkmark.seal.fill"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.green)
+                }
+            } else {
+                Text(AppLocalization.string("填写好友邀请码")).font(.headline)
+                Text(String(
+                    format: AppLocalization.string("填写后连续使用 %d 天，你的好友即可获得奖励。"),
+                    LicenseConfig.referralRequiredDays
+                ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
                 HStack {
                     TextField("FLOC-XXXXXX", text: $inputCode)
@@ -406,7 +452,7 @@ struct ReferralView: View {
                         .autocorrectionDisabled()
                         .font(.system(.subheadline, design: .monospaced))
 
-                    Button("提交") {
+                    Button(AppLocalization.string("提交")) {
                         Task {
                             let ok = await manager.bindReferral(code: inputCode)
                             if ok { inputCode = "" }
@@ -426,14 +472,23 @@ struct ReferralView: View {
 
     private var rulesCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("活动规则").font(.headline)
+            Text(AppLocalization.string("活动规则")).font(.headline)
 
-            rule("1", "好友下载并填写你的邀请码")
-            rule("2", "好友连续使用 \(LicenseConfig.referralRequiredDays) 天（每天打开 App 即可）")
-            rule("3", "达成后奖励自动发放，按档位累加，不会跳档")
-            rule("4", "好友后续购买卡密，你额外再得 \(LicenseConfig.referralPaidBonusDays) 天")
-            rule("5", "奖励与卡密时长叠加，累计封顶 \(LicenseConfig.referralCapDays / 365) 年")
-            rule("6", "同一台设备只能被推荐一次，自己不能用自己的邀请码")
+            rule("1", AppLocalization.string("好友下载并填写你的邀请码"))
+            rule("2", String(
+                format: AppLocalization.string("好友连续使用 %d 天（每天打开 App 即可）"),
+                LicenseConfig.referralRequiredDays
+            ))
+            rule("3", AppLocalization.string("达成后奖励自动发放，按档位累加，不会跳档"))
+            rule("4", String(
+                format: AppLocalization.string("好友后续购买卡密，你额外再得 %d 天"),
+                LicenseConfig.referralPaidBonusDays
+            ))
+            rule("5", String(
+                format: AppLocalization.string("奖励与卡密时长叠加，累计封顶 %d 年"),
+                LicenseConfig.referralCapDays / 365
+            ))
+            rule("6", AppLocalization.string("同一台设备只能被推荐一次，自己不能用自己的邀请码"))
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)

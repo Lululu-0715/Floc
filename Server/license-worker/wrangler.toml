@@ -1,0 +1,41 @@
+# Floc 授权 / 推荐服务端。
+#
+# 部署：
+#   cd Server/license-worker
+#   npm install
+#   npx wrangler login
+#   npx wrangler d1 create floc-license        # 把输出的 database_id 填到下面
+#   npx wrangler d1 execute floc-license --remote --file=./schema.sql
+#   npm run deploy
+#
+# 部署完成后把输出里的 https://xxx.workers.dev 填进
+# App 的 Shared/License/LicenseConfig.swift 的 baseURL。
+
+name = "floc-license"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# 授权校验是同步接口，客户端超时 12 秒，别让 Worker 自己先挂住。
+# CPU 时间给足：D1 查询本身很快，这里防的是列表长了之后的序列化。
+[limits]
+cpu_ms = 200
+
+# D1 绑定。database_id 必须换成 `wrangler d1 create` 输出的那个值。
+[[d1_databases]]
+binding = "DB"
+database_name = "floc-license"
+database_id = "REPLACE-WITH-YOUR-DATABASE-ID"
+
+# 日志：出问题时能在 `wrangler tail` 里看到 console.error 的全量堆栈。
+[observability]
+enabled = true
+
+[env.production]
+name = "floc-license"
+
+# 注意是双中括号：D1 绑定是「数组表」，写成 [env.production.d1_databases]
+# 会被 wrangler 判成对象并报错（d1_databases must be an array）。
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "floc-license"
+database_id = "REPLACE-WITH-YOUR-DATABASE-ID"

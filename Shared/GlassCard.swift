@@ -43,12 +43,15 @@ struct GlassCardModifier: ViewModifier {
 ///
 /// 底色用 `systemBackground` 而不是写死白色：浅色模式下压白、
 /// 深色模式下压黑，两种外观下都是「更实」的方向。
-struct MapGlassSurfaceModifier: ViewModifier {
+/// 形状参数化的版本：圆角矩形和胶囊共用同一套材质、描边与投影。
+///
+/// 之前只支持圆角矩形，要做胶囊按钮就得再抄一份 modifier——材质或描边
+/// 改一处漏一处几乎是必然，所以把形状提到泛型参数上。
+struct MapGlassSurfaceModifier<S: Shape>: ViewModifier {
 
-    var cornerRadius: CGFloat
+    var shape: S
 
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         content
             .background(
                 ZStack {
@@ -77,7 +80,18 @@ extension View {
     /// 各自写一套很快就会走形（之前就出现过 12 / 14 / 20 混用、材质在
     /// regular 与 ultraThin 之间跳的情况）。统一从这里取。
     func mapGlassSurface(cornerRadius: CGFloat = GlassMetrics.mapCornerRadius) -> some View {
-        modifier(MapGlassSurfaceModifier(cornerRadius: cornerRadius))
+        modifier(MapGlassSurfaceModifier(
+            shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        ))
+    }
+
+    /// 胶囊版的地图浮层玻璃外观。
+    ///
+    /// 底部面板里的动作按钮用它：44pt 高的按钮配上 28pt 圆角，肉眼看已经
+    /// 接近胶囊，但用 `Capsule` 语义更准，也不必让圆角跟着高度算。
+    /// 34×34 的方形套上去就是一个圆，所以状态行里的圆形按钮也复用这套。
+    func mapGlassCapsule() -> some View {
+        modifier(MapGlassSurfaceModifier(shape: Capsule(style: .continuous)))
     }
 }
 
@@ -90,8 +104,15 @@ enum GlassMetrics {
     /// 设置页等卡片类容器的圆角。
     static let cardCornerRadius: CGFloat = 16
 
-    /// 地图页浮层的统一圆角。图层切换、搜索框、底部面板全部取这个值。
+    /// 地图页浮层的统一圆角。图层切换、搜索框取这个值。
     static let mapCornerRadius: CGFloat = 20
+
+    /// 底部面板的圆角。
+    ///
+    /// 比同级浮层大 8pt：面板又宽又高，同样的绝对圆角在它身上看起来明显
+    /// 比搜索框、图层切换「方」，两个数值一致反而不像一套东西。提到 28 之后
+    /// 面板与内部的胶囊按钮弧度才读得出是同一族。
+    static let mapPanelCornerRadius: CGFloat = 28
 
     /// 地图页浮层的投影半径。比卡片稍小，浮起感够用又不至于发糊。
     static let mapShadowRadius: CGFloat = 10

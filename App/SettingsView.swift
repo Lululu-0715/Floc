@@ -16,7 +16,6 @@ struct SettingsView: View {
 
     @ObservedObject var setup: SetupCoordinator
     @ObservedObject var state: MapLocationState
-    @ObservedObject var favorites: FavoriteLocationStore
 
     @ObservedObject private var proxy = ProxyManager.shared
     @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
@@ -36,6 +35,9 @@ struct SettingsView: View {
     /// 语言是在二级页里改的，改完回到这页要能立刻看到新的语言名。
     /// `AppLocalization` 是静态查表，没有发布者，只能靠通知手动顶一下。
     @State private var languageTick = 0
+
+    /// 输入卡密直接在这页弹，不必先绕进「升级套餐」。
+    @State private var showActivateSheet = false
 
     var body: some View {
         let _ = languageTick
@@ -61,6 +63,9 @@ struct SettingsView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: AppLocalization.didChangeNotification)) { _ in
                 languageTick &+= 1
+            }
+            .sheet(isPresented: $showActivateSheet) {
+                ActivateSheet(manager: license)
             }
         }
     }
@@ -133,6 +138,26 @@ struct SettingsView: View {
                 }
                 .padding(.vertical, SettingsMetrics.rowVerticalPadding)
             }
+
+            Button {
+                showActivateSheet = true
+            } label: {
+                HStack(spacing: SettingsMetrics.iconSpacing) {
+                    SettingsIconBadge(systemImage: "key.fill", tint: .orange)
+
+                    Text(AppLocalization.string("输入卡密"))
+                        .font(SettingsMetrics.titleFont)
+
+                    Spacer(minLength: 8)
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.vertical, SettingsMetrics.rowVerticalPadding)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         } header: {
             SettingsSectionHeader(title: AppLocalization.string("账号"))
         }
@@ -152,6 +177,7 @@ struct SettingsView: View {
     }
 
     private var badgeColor: Color {
+        if license.isTestLicense { return .purple }
         if license.isLocalMode { return .blue }
         return license.isUsable ? .green : .red
     }
@@ -248,14 +274,6 @@ struct SettingsView: View {
             ) {
                 SimulationSettingsView(state: state)
             }
-
-            detailLink(
-                systemImage: "star.fill",
-                title: AppLocalization.string("收藏位置"),
-                value: "\(favorites.favorites.count)"
-            ) {
-                FavoritesSettingsView(favorites: favorites)
-            }
         } header: {
             SettingsSectionHeader(title: AppLocalization.string("连接状态"))
         }
@@ -290,23 +308,25 @@ struct SettingsView: View {
 
     private var appearanceSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: SettingsMetrics.iconSpacing) {
-                    SettingsIconBadge(systemImage: appearance.mode.systemImage)
+            // 主题用行内菜单而不是分段控件：分段控件必须独占一行，
+            // 三个选项横着铺开把这一行撑得很高，而主题是个几乎不会改的
+            // 设置项，跟语言、字体大小一样收进右侧菜单就够了。
+            HStack(spacing: SettingsMetrics.iconSpacing) {
+                SettingsIconBadge(systemImage: appearance.mode.systemImage)
 
-                    Text(AppLocalization.string("主题"))
-                        .font(SettingsMetrics.titleFont)
+                Text(AppLocalization.string("主题"))
+                    .font(SettingsMetrics.titleFont)
 
-                    Spacer(minLength: 0)
-                }
+                Spacer(minLength: 8)
 
                 Picker(AppLocalization.string("主题"), selection: $appearance.mode) {
                     ForEach(AppearanceStore.Mode.allCases) { mode in
                         Text(mode.displayName).tag(mode)
                     }
                 }
-                .pickerStyle(.segmented)
+                .pickerStyle(.menu)
                 .labelsHidden()
+                .accessibilityLabel(AppLocalization.string("主题"))
             }
             .padding(.vertical, SettingsMetrics.rowVerticalPadding)
 

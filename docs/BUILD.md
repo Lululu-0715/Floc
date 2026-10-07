@@ -18,7 +18,7 @@
 | Xcode Command Line Tools | 随 Xcode | `xcode-select --install` | `xcodebuild` / `xcrun` |
 | Go | 1.23 | `brew install go` | 编译定位改写核心 |
 | XcodeGen | 2.38 | `brew install xcodegen` | 从 `project.yml` 生成工程 |
-| Node.js | 18（可选） | `brew install node` | 跑第三方代理脚本测试 |
+| Node.js | 22（可选） | `brew install node` | 跑第三方代理脚本与授权服务端测试 |
 
 安装完 Xcode 后，务必把命令行工具指向它：
 
@@ -352,18 +352,25 @@ rm -rf ~/Library/Developer/Xcode/DerivedData/Floc-*
 ./build.sh --check
 ```
 
-不需要 Xcode，依次跑 Go 测试、代理脚本测试、本地化校验、Swift 源码一致性检查。
+不需要 Xcode，依次跑 Go 测试、代理脚本测试、授权服务端测试、本地化校验、
+Swift 源码一致性、代理模块一致性、品牌命名一致性、模块联通性八项。
 改完代码先跑这个，能拦住大部分低级问题：
 
 ```
 ==> 静态检查
     Go 核心测试通过
     代理脚本测试通过
+    授权服务端测试通过
     本地化校验通过
     Swift 源码一致性通过
+    代理模块一致性通过
+    品牌命名一致性通过
+    模块联通性检查通过
 
 静态检查全部通过。
 ```
+
+> 模块联通性那一项要联网；离线时用 `SKIP_MODULE_REACHABILITY=1 ./build.sh --check` 跳过。
 
 `./build.sh` 和 `./build.sh --test` 在构建前也会自动跑一遍这些检查，
 所以不必刻意先跑 `--check`。
@@ -385,6 +392,20 @@ cd ThirdParty/ProxyScripts && node --test
 
 覆盖：放行路径、坐标改写、长度前缀一致性、无效坐标拒绝、
 配置接口的查询 / 保存 / 清除 / 越界拒绝。
+
+### 授权服务端测试
+
+```bash
+cd Server/license-worker && npm test
+```
+
+需要 Node 22+（用内置的 `node:sqlite` 跑真实 SQLite，不引入任何第三方依赖，
+所以克隆下来不装 `node_modules` 也能跑）。覆盖：卡密规范化、试用登记、
+续费叠加、同卡重复激活不叠加、解绑限次、推荐绑定、连续使用判定、
+阶梯补发与幂等、付费奖励只发一次、奖励封顶、路由与错误体。
+
+`./build.sh --check` 里也会跑这一项；Node < 22 时自动跳过。
+服务端的部署步骤见 `Server/license-worker/README.md`。
 
 ### iOS 单元测试
 

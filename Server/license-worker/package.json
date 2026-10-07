@@ -1,0 +1,19 @@
+{
+  "name": "floc-license-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Floc 授权 / 推荐服务端（Cloudflare Worker + D1）",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy --env production",
+    "init:local": "wrangler d1 execute floc-license --local --file=./schema.sql",
+    "init:remote": "wrangler d1 execute floc-license --remote --file=./schema.sql",
+    "tail": "wrangler tail --env production",
+    "gen:cards": "node scripts/gen-cards.mjs",
+    "test": "node --test 'test/**/*.test.mjs'"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}

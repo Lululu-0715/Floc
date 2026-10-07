@@ -35,11 +35,6 @@ struct LicenseAPI {
         )
     }
 
-    /// 登记/查询试用
-    func trial(deviceId: String) async throws -> LicenseState {
-        try await post("/api/trial", body: ["deviceId": deviceId], as: LicenseState.self)
-    }
-
     /// 解绑设备
     func unbind(deviceId: String, cardKey: String) async throws -> ActivationResult {
         try await post(
