@@ -16,15 +16,23 @@ usage() {
   cat <<'USAGE'
 用法: ./build.sh [--test|--check]
 
-构建未签名 IPA，输出到 dist/ 目录。
+构建未签名 IPA，一次两个口味，输出到 dist/ 目录。
 
-每次构建会把版本号末位 +1（1.0.0 → 1.0.1），产物形如：
-  dist/Floc-1.0.1-unsigned.ipa   带版本号，用于区分不同构建
-  dist/Floc-unsigned.ipa         固定名字的副本，供发布链接引用
+每次构建会把版本号末位 +1（1.0.0 → 1.0.1），共四个文件：
+
+  dist/Floc-1.0.1-unsigned.ipa        标准版：带卡密 / 授权 / 推荐
+  dist/Floc-1.0.1-纯净-unsigned.ipa   纯净版：没有卡密那套（PURE_BUILD）
+  dist/Floc-unsigned.ipa              标准版的固定名字副本，供发布链接引用
+  dist/Floc-纯净-unsigned.ipa         纯净版的固定名字副本
+
+两个包是同一个 App（Bundle ID 与显示名都是 Floc），源码也只有一份，
+区别只在编译条件里有没有 PURE_BUILD —— 详见 Shared/BuildFlavor.swift。
+同一个 Bundle ID 只能装一个，装上会覆盖另一个。
 
 版本号写进 IPA 文件名，并在 App 内的「设置 → 关于 → 应用版本」里显示。
 桌面图标的显示名恒为 Floc，不随版本号变化——要区分多个自签构建，
-看 IPA 文件名或 App 内版本号即可。构建失败会自动回退版本号。
+看 IPA 文件名或 App 内版本号即可；纯净版的版本号后面会多一个「（纯净版）」。
+构建失败会自动回退版本号。
 
 选项:
   --test    构建完成后运行 iOS 模拟器单元测试
@@ -178,16 +186,29 @@ trap restore_version_on_failure EXIT
 
 VERSION="$VERSION" "$ROOT/Scripts/build-unsigned-ipa.sh"
 
-VERSIONED_IPA="$ROOT/dist/$APP_NAME-$VERSION-unsigned.ipa"
-STABLE_IPA="$ROOT/dist/$APP_NAME-unsigned.ipa"
-test -s "$VERSIONED_IPA"
-test -s "$STABLE_IPA"
+# 纯净版文件名的后缀。默认值与 Scripts/build-unsigned-ipa.sh 里的 PURE_SUFFIX
+# 保持一致——两边都只是这一个字面量，改名时记得一起动。
+PURE_SUFFIX="${PURE_SUFFIX:-纯净}"
+
+STANDARD_IPA="$ROOT/dist/$APP_NAME-$VERSION-unsigned.ipa"
+STANDARD_STABLE_IPA="$ROOT/dist/$APP_NAME-unsigned.ipa"
+PURE_IPA="$ROOT/dist/$APP_NAME-$VERSION-$PURE_SUFFIX-unsigned.ipa"
+PURE_STABLE_IPA="$ROOT/dist/$APP_NAME-$PURE_SUFFIX-unsigned.ipa"
+
+test -s "$STANDARD_IPA"
+test -s "$STANDARD_STABLE_IPA"
+test -s "$PURE_IPA"
+test -s "$PURE_STABLE_IPA"
 
 BUILD_SUCCEEDED=1
 
 echo "未签名 IPA 已生成:"
-echo "  $VERSIONED_IPA"
-echo "  $STABLE_IPA"
+echo "  标准版"
+echo "    $STANDARD_IPA"
+echo "    $STANDARD_STABLE_IPA"
+echo "  纯净版（不带卡密）"
+echo "    $PURE_IPA"
+echo "    $PURE_STABLE_IPA"
 
 if [ "$run_tests" -eq 1 ]; then
   run_simulator_tests

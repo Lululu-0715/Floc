@@ -334,6 +334,106 @@ def check_resources() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 6. 系统设置跳转
+# ---------------------------------------------------------------------------
+
+def check_settings_navigator() -> None:
+    """锁死系统设置跳转上踩过的两个坑。
+
+    1. **`canOpenURL` 不能当闸门。** iOS 18 起它对 `App-Prefs` 一律返回 false，
+       但直接 `open` 仍然能跳到目标页；拿它做判断会把「能用」当成「不支持」，
+       静默退到本应用设置页——用户看到的正是「点定位服务，结果进了 Floc 那一屏」。
+       `CertificateTrustVerifier` 里就藏着这么一份，直到 1.0.6 才合并掉。
+    2. **iOS 26 的 `settings-navigation://` 路线不能丢。** 新系统上老 scheme 会被
+       系统兜底成「打开发起方自己的设置页」，少一条新路线整条链就落空。
+
+    候选顺序（新在前）由 iOS 单测 `SystemSettingsNavigatorTests` 负责，
+    这里只做「不许退回旧写法」的静态兜底。
+    """
+    navigator = ROOT / "Shared" / "SystemSettingsNavigator.swift"
+    if not navigator.exists():
+        fail("缺少 Shared/SystemSettingsNavigator.swift")
+        return
+
+    source = navigator.read_text(encoding="utf-8")
+
+    # 去掉注释与字符串再查，注释里讲这条规则不算违规。
+    if "canOpenURL" in strip_strings_and_comments(source):
+        fail(
+            "SystemSettingsNavigator 不得使用 canOpenURL 当闸门"
+            "（iOS 18 起对 App-Prefs 恒返回 false，会静默退到本应用设置页）"
+        )
+
+    required = {
+        "定位服务": "settings-navigation://com.apple.Settings.PrivacyAndSecurity/LOCATION",
+        "无线局域网": "settings-navigation://com.apple.Settings.WiFi",
+        "证书信任设置": "settings-navigation://com.apple.Settings.General/About/CERT_TRUST_SETTINGS",
+        "设置首页": "settings-navigation://com.apple.Settings",
+    }
+    for label, url in required.items():
+        # 带引号匹配：`com.apple.Settings` 是其它几条的前缀，不锚定会漏判。
+        if f'"{url}"' not in source:
+            fail(f"SystemSettingsNavigator 缺少「{label}」的 iOS 26 候选：{url}")
+
+    # 证书信任那条曾经写成页面标题而不是 specifier 名，断言一下省得改回去。
+    if "path=About/CertificateTrustSettings" in source:
+        fail("证书信任设置应使用 specifier 名 About/CERT_TRUST_SETTINGS，而不是页面标题")
+
+
+# ---------------------------------------------------------------------------
+# 7. 双口味出包
+# ---------------------------------------------------------------------------
+
+def check_build_flavors() -> None:
+    """每次出包必须成对：标准版 + 纯净版。
+
+    用户明确要求「以后每次帮我打包两个 ipa，一个纯净版不带卡密那些功能的」。
+    这条约定最容易在改构建脚本时被无声破坏——少打一个包不会报错，
+    只是 dist/ 里少一个文件，等东西发出去才发现。
+    """
+    flavor = ROOT / "Shared" / "BuildFlavor.swift"
+    if not flavor.exists():
+        fail("缺少 Shared/BuildFlavor.swift（纯净版的编译条件开关）")
+    elif "#if PURE_BUILD" not in flavor.read_text(encoding="utf-8"):
+        fail("BuildFlavor.swift 里没有 #if PURE_BUILD 分支")
+
+    ipa_script = ROOT / "Scripts" / "build-unsigned-ipa.sh"
+    if not ipa_script.exists():
+        fail("缺少 Scripts/build-unsigned-ipa.sh")
+        return
+
+    script = ipa_script.read_text(encoding="utf-8")
+    if "PURE_BUILD" not in script:
+        fail("打包脚本没有用 PURE_BUILD 构建纯净版")
+    # 1 次函数定义 + 2 次调用（标准版、纯净版）
+    if script.count("pack_ipa") < 3:
+        fail("打包脚本似乎只打了一个包：pack_ipa 调用不足两次")
+
+    # 脚本里 `$VAR` 后面紧跟着中文字符时，bash 在部分 locale 下会把多字节字符
+    # 的首字节当成变量名的一部分（报 `label?: unbound variable`，报错位置还很难认）。
+    # 中文提示语在这套脚本里到处都是，所以这里统一要求加花括号。
+    for sh in sorted([ROOT / "build.sh"] + list((ROOT / "Scripts").glob("*.sh"))):
+        for lineno, line in enumerate(sh.read_text(encoding="utf-8").split("\n"), 1):
+            for match in re.finditer(r"\$(?!\{)([A-Za-z_][A-Za-z0-9_]*)(?=[^\x00-\x7f])", line):
+                fail(
+                    f"{sh.relative_to(ROOT)}:{lineno} 变量 {match.group(0)} 后面紧跟中文字符，"
+                    f"必须写成 ${{{match.group(1)}}}（否则 bash 会把中文首字节吃进变量名）"
+                )
+
+    # 卡密相关的东西必须真的待在 #if !PURE_BUILD 里，
+    # 否则「纯净版」只是把界面藏起来，接口和地址照样在包里。
+    for rel in (
+        "Shared/License/LicenseAPI.swift",
+        "Shared/License/LicenseViews.swift",
+    ):
+        path = ROOT / rel
+        if not path.exists():
+            fail(f"缺少 {rel}")
+        elif "#if !PURE_BUILD" not in path.read_text(encoding="utf-8"):
+            fail(f"{rel} 没包 #if !PURE_BUILD，纯净版会连卡密功能一起带上")
+
+
+# ---------------------------------------------------------------------------
 # 主流程
 # ---------------------------------------------------------------------------
 
@@ -347,22 +447,28 @@ def main() -> int:
         + list((ROOT / "Tests").rglob("*.swift"))
     )
 
-    print(f"\n[1/5] 括号配平（{len(swift_files)} 个 Swift 文件）")
+    print(f"\n[1/7] 括号配平（{len(swift_files)} 个 Swift 文件）")
     for path in swift_files:
         check_balance(path, path.read_text(encoding="utf-8"))
     print(f"      已检查 {len(swift_files)} 个文件")
 
-    print("\n[2/5] 桥接头与 Go 导出对齐")
+    print("\n[2/7] 桥接头与 Go 导出对齐")
     check_bridging_header()
 
-    print("\n[3/5] 测试类型引用")
+    print("\n[3/7] 测试类型引用")
     check_test_references()
 
-    print("\n[4/5] project.yml 源路径")
+    print("\n[4/7] project.yml 源路径")
     check_project_sources()
 
-    print("\n[5/5] 资源完整性")
+    print("\n[5/7] 资源完整性")
     check_resources()
+
+    print("\n[6/7] 系统设置跳转")
+    check_settings_navigator()
+
+    print("\n[7/7] 双口味出包")
+    check_build_flavors()
 
     print("\n" + "=" * 60)
 

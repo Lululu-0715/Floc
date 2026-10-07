@@ -167,6 +167,7 @@
 "关于" = "About";
 "应用版本" = "App version";
 "构建号" = "Build";
+"（纯净版）" = " (Pure)";
 "内核版本" = "Core version";
 "数据共享" = "Data sharing";
 "已启用" = "Enabled";
@@ -367,6 +368,7 @@
 "直接联系" = "Direct contact";
 "邮箱" = "Email";
 "点一下即可复制。购买卡密、续费、换设备解绑都可以直接找这里。" = "Tap to copy. Buying a card key, renewing or unbinding a device — all handled here.";
+"点一下即可复制。有问题或建议都可以直接找这里。" = "Tap to copy. Reach out here with any questions or feedback.";
 "手动代理" = "Manual proxy";
 "打开 Wi-Fi 代理设置" = "Open Wi-Fi proxy settings";
 "iOS 不提供直接跳到「配置代理」那一屏的接口，只能先到无线局域网列表再点两下。" = "iOS offers no API to jump straight to the Configure Proxy screen — you can only land on the Wi-Fi list and tap two more times.";

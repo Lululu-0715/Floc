@@ -81,34 +81,12 @@ enum CertificateTrustVerifier {
         }
     }
 
-    /// 直接跳转到系统「证书信任设置」页面。
+    /// 跳转系统「证书信任设置」页面由 `SystemSettingsNavigator` 统一负责。
     ///
-    /// 通过 `App-Prefs` 私有 scheme 可以直达，但 iOS 版本变化可能失效，
-    /// 因此调用方需要在返回 false 时回退到「设置首页 + 文字引导」。
-    @discardableResult
-    static func openTrustSettings() -> Bool {
-        let candidates = [
-            "App-Prefs:root=General&path=About/CertificateTrustSettings",
-            "App-Prefs:root=General&path=About",
-            "App-Prefs:root=General",
-        ]
-
-        for candidate in candidates {
-            guard let url = URL(string: candidate) else { continue }
-            if UIApplication.shared.canOpenURL(url) {
-                UIApplication.shared.open(url)
-                RuntimeLogger.info("APP", "Certificate.verify", "已跳转证书信任设置", details: [
-                    "url": candidate,
-                ])
-                return true
-            }
-        }
-
-        RuntimeLogger.warn("APP", "Certificate.verify", "无法直达证书信任设置，回退到设置首页")
-        guard let fallback = URL(string: UIApplication.openSettingsURLString) else { return false }
-        UIApplication.shared.open(fallback)
-        return false
-    }
+    /// 这里原先自己维护了一份 `App-Prefs` 候选表，还用 `canOpenURL` 当闸门——
+    /// 而 iOS 18 起 `canOpenURL` 对 `App-Prefs` 恒返回 false，于是这个循环
+    /// 一次都没进去过，直接落到 `openSettingsURLString`（Floc 自己在设置里的
+    /// 那一屏）。两处维护同一件事只会让其中一份慢慢烂掉，现已合并。
 
     /// 用 Safari 打开证书下载地址，触发描述文件安装流程。
     @discardableResult

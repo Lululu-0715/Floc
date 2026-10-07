@@ -681,6 +681,7 @@ struct CertificateEnvironmentView: View {
 
 // MARK: - 升级套餐
 
+#if !PURE_BUILD
 /// 套餐与推荐。授权卡片 + 推荐奖励都在这里。
 struct MembershipView: View {
 
@@ -730,6 +731,7 @@ struct MembershipView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 }
+#endif
 
 // MARK: - 关于 Floc
 
@@ -778,7 +780,7 @@ struct AboutFlocView: View {
                 SettingsStatusRow(
                     systemImage: "info.circle",
                     title: AppLocalization.string("应用版本"),
-                    value: Bundle.main.appVersion
+                    value: Bundle.main.appVersion + BuildFlavor.editionSuffix
                 )
                 SettingsStatusRow(
                     systemImage: "hammer",
@@ -1029,7 +1031,12 @@ struct ContactView: View {
                 } header: {
                     SettingsSectionHeader(title: AppLocalization.string("直接联系"))
                 } footer: {
+                    // 标准版的「购买卡密、续费、解绑」在纯净版里全是空话，换一句中性文案。
+                    #if PURE_BUILD
+                    Text(AppLocalization.string("点一下即可复制。有问题或建议都可以直接找这里。"))
+                    #else
                     Text(AppLocalization.string("点一下即可复制。购买卡密、续费、换设备解绑都可以直接找这里。"))
+                    #endif
                 }
             } else {
                 Section {

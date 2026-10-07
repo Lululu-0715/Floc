@@ -1,3 +1,6 @@
+// 纯净版（`PURE_BUILD`）不带卡密，这里的授权服务端通信整体不参与编译。
+// 口味开关见 `Shared/BuildFlavor.swift`。
+#if !PURE_BUILD
 import Foundation
 
 /// 与 Cloudflare Worker 通信的薄客户端。
@@ -127,3 +130,4 @@ struct LicenseAPI {
         }
     }
 }
+#endif

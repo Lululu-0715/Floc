@@ -59,6 +59,9 @@ struct ProfileView: View {
                 Text(AppLocalization.string("昵称只在这台设备上显示，不会上传。留空时使用默认称呼。"))
             }
 
+            // 设备码唯一的用途就是绑卡密，纯净版里没有任何地方会用到它，
+            // 留着只会让用户困惑「这串码是要发给谁」——整段拿掉。
+            #if !PURE_BUILD
             Section {
                 SettingsStatusRow(
                     systemImage: "iphone",
@@ -82,6 +85,7 @@ struct ProfileView: View {
             } footer: {
                 Text(AppLocalization.string("设备码用于把卡密绑定到这台设备。换机后可以凭它联系我们处理。"))
             }
+            #endif
         }
         .listStyle(.insetGrouped)
         .navigationTitle(AppLocalization.string("账号"))

@@ -32,6 +32,8 @@ iOS 虚拟定位工具。通过本机 MITM 代理拦截 Apple 定位服务响应
 
 到 **[Releases](https://github.com/Lululu-0715/Floc/releases)** 下载已经打好的
 `Floc-<版本号>-unsigned.ipa`（最新为 `Floc-1.0.4-unsigned.ipa`），跳过下面的编译步骤。
+不想装卡密 / 授权那套的话，下带「-纯净-」的那一个（`Floc-<版本号>-纯净-unsigned.ipa`），
+签名与安装步骤完全一样。
 
 下载到的是**未签名**包，iOS 不会直接运行，需要自签工具（TrollStore / AltStore /
 Sideloadly / 爱思助手），签名与安装的完整流程见
@@ -59,10 +61,19 @@ chmod +x build.sh Scripts/*.sh
 ./build.sh
 ```
 
-产物在 `dist/Floc-<版本号>-unsigned.ipa`（另有固定名副本 `dist/Floc-unsigned.ipa`），
-用 AltStore / Sideloadly 等工具自签后安装。每次构建版本号末位自动 +1，
-版本号体现在 IPA 文件名和 App 内的「设置 → 关于 → 应用版本」里；
-桌面图标名字恒为 `Floc`，不随版本变化。
+产物在 `dist/`，**一次两个口味**：
+
+```
+Floc-<版本号>-unsigned.ipa         标准版：带卡密 / 授权 / 推荐
+Floc-<版本号>-纯净-unsigned.ipa    纯净版：没有卡密那套（PURE_BUILD）
+Floc-unsigned.ipa                  标准版的固定名副本，发布链接引用它
+Floc-纯净-unsigned.ipa             纯净版的固定名副本
+```
+
+用 AltStore / Sideloadly 等工具自签后安装。两个包是同一个 App
+（Bundle ID 与显示名都是 `Floc`），装一个会覆盖另一个。每次构建版本号末位
+自动 +1，版本号体现在 IPA 文件名和 App 内的「设置 → 关于 → 应用版本」里；
+桌面图标名字恒为 `Floc`，不随版本变化。裁剪范围见 `Shared/BuildFlavor.swift`，
 完整说明见 **[docs/BUILD.md](docs/BUILD.md)**。
 
 > **第三方模块的脚本地址写死在本仓库的 raw 地址上**（`Lululu-0715/Floc`）。

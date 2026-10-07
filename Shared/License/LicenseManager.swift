@@ -11,6 +11,9 @@ import Combine
 ///
 /// 注意：这里的所有判断都只是「客户端体验层」，真正的防刷靠服务端。
 /// 客户端被越狱破解只能骗过自己，服务端仍会拒绝签发状态。
+///
+/// **纯净版（`PURE_BUILD`）下这里几乎什么都不做**：不发请求、恒放行。
+/// 见 `Shared/BuildFlavor.swift`。
 @MainActor
 final class LicenseManager: ObservableObject {
 
@@ -60,8 +63,12 @@ final class LicenseManager: ObservableObject {
     }
 
     private let defaults = UserDefaults.standard
-    private let api = LicenseAPI.shared
     private let deviceId = DeviceIdentity.current
+
+    #if !PURE_BUILD
+    /// 纯净版里 `LicenseAPI.swift` 整个文件不参与编译，所以这个属性也不存在。
+    private let api = LicenseAPI.shared
+    #endif
 
     private init() {
         restoreFromCache()
@@ -81,6 +88,8 @@ final class LicenseManager: ObservableObject {
     /// 测试授权按秒倒计时，过期就真过期——这样「到期被拦」这条路径
     /// 也能在没后端的情况下验一遍。
     var isUsable: Bool {
+        // 纯净版根本没有授权这套东西，永远放行。
+        if BuildFlavor.isPure { return true }
         if isTestLicense { return remainingMs > 0 }
         return isLocalMode || status.isUsable
     }
@@ -155,6 +164,10 @@ final class LicenseManager: ObservableObject {
     ///
     /// - Parameter silent: 静默模式不弹错误（用于后台刷新）
     func refresh(silent: Bool = false) async {
+        #if PURE_BUILD
+        // 纯净版没有授权服务端这回事，一次请求都不发。
+        lastErrorMessage = nil
+        #else
         // 本地模式：直接放行，连一次请求都不发。
         // 之前占位地址会让每次启动都白等 12 秒超时，还弹一条「网络异常」，
         // 而后端根本没部署——纯噪声。
@@ -189,6 +202,7 @@ final class LicenseManager: ObservableObject {
         } catch {
             if !silent { lastErrorMessage = error.localizedDescription }
         }
+        #endif
     }
 
     // MARK: - 激活 / 解绑
@@ -196,6 +210,11 @@ final class LicenseManager: ObservableObject {
     /// 用卡密激活，成功返回 true
     @discardableResult
     func activate(cardKey: String) async -> Bool {
+        #if PURE_BUILD
+        // 纯净版没有卡密，界面上也没有入口；真被调到就当激活失败。
+        lastErrorMessage = nil
+        return false
+        #else
         let key = LicenseConfig.normalizeCardKey(cardKey)
         guard !key.isEmpty else {
             lastErrorMessage = AppLocalization.string("请输入卡密")
@@ -238,11 +257,16 @@ final class LicenseManager: ObservableObject {
             lastErrorMessage = error.localizedDescription
             return false
         }
+        #endif
     }
 
     /// 自助解绑（换手机用），成功返回 true
     @discardableResult
     func unbind() async -> Bool {
+        #if PURE_BUILD
+        lastErrorMessage = nil
+        return false
+        #else
         // 测试授权服务端不认识，也不需要「解绑」——本地清掉即可。
         if isTestLicense {
             clearTestLicense()
@@ -279,12 +303,16 @@ final class LicenseManager: ObservableObject {
             lastErrorMessage = error.localizedDescription
             return false
         }
+        #endif
     }
 
     // MARK: - 推荐
 
     /// 拉取我的邀请码（首次调用时服务端自动生成）
     func loadReferralCode() async {
+        #if PURE_BUILD
+        return
+        #else
         guard !isLocalMode else { return }
         do {
             referral = try await api.referralCode(deviceId: deviceId)
@@ -293,11 +321,16 @@ final class LicenseManager: ObservableObject {
         } catch {
             lastErrorMessage = error.localizedDescription
         }
+        #endif
     }
 
     /// 填写别人的邀请码
     @discardableResult
     func bindReferral(code: String) async -> Bool {
+        #if PURE_BUILD
+        lastErrorMessage = nil
+        return false
+        #else
         guard !isLocalMode else {
             lastErrorMessage = AppLocalization.string("尚未配置授权服务端，推荐功能暂不可用")
             return false
@@ -317,16 +350,21 @@ final class LicenseManager: ObservableObject {
             lastErrorMessage = error.localizedDescription
             return false
         }
+        #endif
     }
 
     /// 查询推荐进度
     func loadReferralStatus() async {
+        #if PURE_BUILD
+        return
+        #else
         guard !isLocalMode else { return }
         do {
             referral = try await api.referralStatus(deviceId: deviceId)
         } catch {
             // 推荐进度查失败不打扰用户，静默即可
         }
+        #endif
     }
 
     /// 每天上报一次使用心跳。
@@ -334,6 +372,9 @@ final class LicenseManager: ObservableObject {
     /// 用「UTC 日期」做去重，保证同一天多次启动只算一次。
     /// 被推荐人连续 3 天打开 App 后，服务端会自动给推荐人发奖励。
     func reportDailyHeartbeatIfNeeded() async {
+        #if PURE_BUILD
+        return
+        #else
         guard !isLocalMode else { return }
 
         let today = ISO8601DateFormatter.dayString(from: Date())
@@ -347,6 +388,7 @@ final class LicenseManager: ObservableObject {
         } catch {
             // 心跳失败无所谓，下次启动再试
         }
+        #endif
     }
 
     // MARK: - 内部：状态落地

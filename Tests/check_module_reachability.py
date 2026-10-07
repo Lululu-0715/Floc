@@ -35,6 +35,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -47,6 +48,9 @@ FAILURES: list[str] = []
 WARNINGS: list[str] = []
 
 REQUEST_TIMEOUT = 20
+# 走代理时 raw 偶发 TLS 中断，单次失败就拦下整轮打包太亏，重试几次再判。
+REQUEST_ATTEMPTS = 3
+RETRY_DELAY = 1.5
 USER_AGENT = "Floc-Module-Reachability-Check"
 
 # 与 check_proxy_modules.py 保持一致的模块扩展名
@@ -182,13 +186,31 @@ def check_local(targets: list[tuple[str, Path]]) -> None:
 # ---------------------------------------------------------------------------
 
 def http_get(url: str) -> tuple[int, bytes]:
-    """返回 (状态码, 内容)。网络层失败抛 OSError。"""
+    """返回 (状态码, 内容)。网络层失败抛 OSError。
+
+    **为什么带重试**：走代理时 `raw.githubusercontent.com` 会偶发 TLS 中断
+    （`UNEXPECTED_EOF_WHILE_READING`、`connection reset`），单次失败就把整轮
+    打包拦下来，然后重跑一次又是 7/7 —— 纯属白等一轮。同一秒里换个连接就通，
+    所以固定重试几次再判失败。
+
+    只对网络层（`OSError`）重试；`HTTPError` 是确定性的状态码，不重试。
+    """
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    try:
-        with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT) as response:
-            return response.status, response.read()
-    except urllib.error.HTTPError as exc:
-        return exc.code, b""
+    last_error: OSError | None = None
+
+    for attempt in range(REQUEST_ATTEMPTS):
+        if attempt:
+            time.sleep(RETRY_DELAY * attempt)
+        try:
+            with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT) as response:
+                return response.status, response.read()
+        except urllib.error.HTTPError as exc:
+            return exc.code, b""
+        except OSError as exc:
+            last_error = exc
+
+    assert last_error is not None
+    raise last_error
 
 
 def fetch_via_api(url: str) -> tuple[int, bytes] | None:

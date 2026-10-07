@@ -32,8 +32,10 @@ struct SettingsView: View {
     /// `AppLocalization` 是静态查表，没有发布者，只能靠通知手动顶一下。
     @State private var languageTick = 0
 
+    #if !PURE_BUILD
     /// 输入卡密直接在这页弹，不必先绕进「升级套餐」。
     @State private var showActivateSheet = false
+    #endif
 
     var body: some View {
         let _ = languageTick
@@ -60,9 +62,11 @@ struct SettingsView: View {
             .onReceive(NotificationCenter.default.publisher(for: AppLocalization.didChangeNotification)) { _ in
                 languageTick &+= 1
             }
+            #if !PURE_BUILD
             .sheet(isPresented: $showActivateSheet) {
                 ActivateSheet(manager: license)
             }
+            #endif
         }
     }
 
@@ -72,6 +76,8 @@ struct SettingsView: View {
     ///
     /// 三行分别回答三个问题：我是谁（头像昵称）、这台机器是谁（设备码）、
     /// 我还能用多久（剩余时间 + 升级入口）。
+    ///
+    /// 后两行都属于卡密那套东西，纯净版（`PURE_BUILD`）只留头像昵称。
     private var accountSection: some View {
         Section {
             NavigationLink {
@@ -95,6 +101,7 @@ struct SettingsView: View {
                 .padding(.vertical, 2)
             }
 
+            #if !PURE_BUILD
             HStack(spacing: SettingsMetrics.iconSpacing) {
                 SettingsIconBadge(systemImage: "iphone")
 
@@ -110,7 +117,9 @@ struct SettingsView: View {
                 licenseBadge
             }
             .padding(.vertical, SettingsMetrics.rowVerticalPadding)
+            #endif
 
+            #if !PURE_BUILD
             NavigationLink {
                 MembershipView(manager: license)
             } label: {
@@ -134,7 +143,9 @@ struct SettingsView: View {
                 }
                 .padding(.vertical, SettingsMetrics.rowVerticalPadding)
             }
+            #endif
 
+            #if !PURE_BUILD
             Button {
                 showActivateSheet = true
             } label: {
@@ -154,11 +165,13 @@ struct SettingsView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            #endif
         } header: {
             SettingsSectionHeader(title: AppLocalization.string("账号"))
         }
     }
 
+    #if !PURE_BUILD
     /// 授权状态小胶囊。颜色跟着「能不能用」走，而不是跟着具体状态枚举——
     /// 用户只需要一眼看出「现在是好的还是不好的」。
     private var licenseBadge: some View {
@@ -177,6 +190,7 @@ struct SettingsView: View {
         if license.isLocalMode { return .blue }
         return license.isUsable ? .green : .red
     }
+    #endif
 
     // MARK: - 运行模式
 

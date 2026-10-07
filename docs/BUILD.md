@@ -48,15 +48,22 @@ chmod +x build.sh Scripts/*.sh     # 首次需要赋予执行权限
 ./build.sh
 ```
 
-产物：
+产物（**一次两个口味，共四个文件**）：
 
 ```
-dist/Floc-1.0.1-unsigned.ipa     # 带版本号，用来区分每次构建
-dist/Floc-unsigned.ipa           # 固定名字的副本，发布链接引用这个
+dist/Floc-1.0.1-unsigned.ipa           # 标准版：带卡密 / 授权 / 推荐
+dist/Floc-1.0.1-纯净-unsigned.ipa      # 纯净版：没有卡密那套
+dist/Floc-unsigned.ipa                 # 标准版固定名副本，发布链接引用这个
+dist/Floc-纯净-unsigned.ipa            # 纯净版固定名副本
 ```
+
+两个包是**同一个 App**：Bundle ID（`com.fff.loc`）与显示名（`Floc`）完全一样，
+装一个会覆盖另一个，不共存。源码也只有一份，区别只在编译条件里有没有
+`PURE_BUILD` —— 裁剪范围见 `Shared/BuildFlavor.swift`。
 
 `./build.sh` 每次都会把 `MARKETING_VERSION` 末位 +1（`1.0.0` → `1.0.1`），
-并写进 IPA 文件名，以及在 App 内的「设置 → 关于 → 应用版本」里显示。
+并写进 IPA 文件名，以及在 App 内的「设置 → 关于 → 应用版本」里显示
+（纯净版会多一个「（纯净版）」后缀）。
 桌面图标的显示名恒为 `Floc`，不随版本号变化——要区分多个自签构建，看 IPA
 文件名或 App 内的版本号即可。构建失败会自动回退版本号，不会凭空跳号。
 
@@ -128,7 +135,7 @@ xcodegen generate
 ./Scripts/build-unsigned-ipa.sh
 ```
 
-内部执行：
+内部执行（两遍，第二遍多带一个编译条件）：
 
 ```bash
 xcodebuild -project Floc.xcodeproj \
@@ -143,6 +150,12 @@ mkdir -p build/UnsignedIPA/Payload
 cp -R build/DerivedData/Build/Products/Release-iphoneos/Floc.app \
       build/UnsignedIPA/Payload/
 cd build/UnsignedIPA && zip -qry ../../dist/Floc-"$VERSION"-unsigned.ipa Payload
+
+# 纯净版：同样的命令，只多一个编译条件
+xcodebuild ... \
+  SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) PURE_BUILD' \
+  build
+# 再打包成 dist/Floc-"$VERSION"-纯净-unsigned.ipa
 ```
 
 `VERSION` 由 `build.sh` 自增后通过环境变量传进来；单独跑这个脚本时

@@ -1,3 +1,6 @@
+// 纯净版（`PURE_BUILD`）不带卡密，这里的卡密激活 / 套餐 / 推荐的界面整体不参与编译。
+// 口味开关见 `Shared/BuildFlavor.swift`。
+#if !PURE_BUILD
 import SwiftUI
 
 /// 授权卡片：显示当前状态与剩余天数，可展开输入卡密。
@@ -509,3 +512,4 @@ struct ReferralView: View {
         }
     }
 }
+#endif

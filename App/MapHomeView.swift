@@ -18,7 +18,9 @@ struct MapHomeView: View {
     @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
     @ObservedObject private var runtimeMode = RuntimeModeStore.shared
     @ObservedObject private var remoteConfiguration = AppRemoteConfigurationStore.shared
+    #if !PURE_BUILD
     @ObservedObject private var license = LicenseManager.shared
+    #endif
 
     @StateObject private var state = MapLocationState()
     @StateObject private var favorites = FavoriteLocationStore()
@@ -341,12 +343,14 @@ struct MapHomeView: View {
         }
         .padding(14)
         .mapGlassSurface(cornerRadius: GlassMetrics.mapPanelCornerRadius)
-        // 面板整体往下、往外推：左右各留 6pt、底边留 4pt。
+        // 左右 16pt，和地图页其他浮层（搜索框、提示条、图层切换）对齐 ——
+        // 它们本来就是这个数。1.0.6 一度收到 6pt，想把面板往外推到屏幕圆角
+        // 附近，结果面板左右两条边和上面那些浮层对不齐，看起来像是"贴边了"。
+        // 真正要贴近的是**下边**，横向上跟页面节奏保持一致才不别扭。
         //
-        // 底边这 4pt 是相对「安全区下沿」而不是屏幕物理下沿——面板仍然让开
-        // 那条 Home 指示条，只是把它和屏幕圆角之间的距离压缩到最小，
-        // 大圆角的弧线才读得出来是在呼应机身轮廓，而不是悬在半空中。
-        .padding(.horizontal, 6)
+        // 底边这 4pt 是相对「安全区下沿」而不是屏幕物理下沿 —— 面板仍然让开
+        // 那条 Home 指示条，只是把它和屏幕下沿之间的距离压到最小。
+        .padding(.horizontal, 16)
         .padding(.bottom, 4)
     }
 
@@ -891,10 +895,13 @@ struct MapHomeView: View {
 
         // 授权闸门：只在「要开启」时拦，关闭永远放行 —— 否则用户到期后
         // 连关都关不掉，虚拟定位会一直挂在系统代理上。
+        // 纯净版没有授权这回事，整段不参与编译。
+        #if !PURE_BUILD
         if !state.isEnabled && !license.isUsable {
             showBanner(licenseBlockMessage, style: .error)
             return
         }
+        #endif
 
         Task {
             await state.withBusyAsync {
@@ -907,6 +914,7 @@ struct MapHomeView: View {
         }
     }
 
+    #if !PURE_BUILD
     /// 被授权拦住时的提示文案，按状态给出不同的下一步。
     ///
     /// 路径必须跟着设置页的分组走：1.0.4 把卡密入口收进了「账号」，
@@ -921,6 +929,7 @@ struct MapHomeView: View {
             return AppLocalization.string("尚未激活，请在「设置 → 账号」输入卡密或确认网络连接")
         }
     }
+    #endif
 
     private func startSpoofing(pair: CoordinateConverter.CoordinatePair) async {
         switch runtimeMode.mode {
