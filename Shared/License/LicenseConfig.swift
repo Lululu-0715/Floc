@@ -11,7 +11,25 @@ enum LicenseConfig {
     /// Worker 地址（结尾不要带斜杠）。
     ///
     /// 例：`"https://floc-license.your-name.workers.dev"`
+    ///
+    /// 还是占位符时 App 会进入「本地模式」——不发授权请求、也不做授权闸门，
+    /// 详见 `isConfigured`。
     static let baseURL = "https://floc-license.YOUR-SUBDOMAIN.workers.dev"
+
+    /// 占位符里出现的片段，用来判断 `baseURL` 有没有被真正替换过。
+    private static let placeholderMarker = "YOUR-SUBDOMAIN"
+
+    /// 授权服务端是否已经配置好。
+    ///
+    /// 没配置时整个卡密系统降级成「本地模式」：
+    ///   - 不发任何网络请求（省掉每次启动 12 秒超时和一条报错弹窗）；
+    ///   - 授权闸门放行，开发者后端都还没部署时也能自测全部功能；
+    ///   - 设置页「账号」分组里明确标注「本地模式」，不会让人误以为已激活。
+    ///
+    /// 把 `baseURL` 换成真实域名后，校验与闸门自动恢复，不需要改其他代码。
+    static var isConfigured: Bool {
+        !baseURL.isEmpty && !baseURL.contains(placeholderMarker)
+    }
 
     // MARK: - 超时
 

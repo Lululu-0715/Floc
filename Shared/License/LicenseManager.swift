@@ -24,6 +24,12 @@ final class LicenseManager: ObservableObject {
     /// 剩余天数（含推荐奖励）
     @Published private(set) var remainingDays: Int = 0
 
+    /// 剩余时长（毫秒，含推荐奖励）。
+    ///
+    /// 比 `remainingDays` 精细：设置页的「账号」卡片要显示到分钟
+    /// （`3 天 3 小时 12 分钟`），只靠天数看不出刚激活的场景。
+    @Published private(set) var remainingMs: Double = 0
+
     /// 卡密类型名（月卡/季卡…），试用或未激活时为 nil
     @Published private(set) var cardTypeLabel: String?
 
@@ -61,20 +67,66 @@ final class LicenseManager: ObservableObject {
 
     // MARK: - 对外：能不能用
 
+    /// 是否处于「本地模式」。
+    ///
+    /// 授权服务端还没配置（`baseURL` 仍是占位符）时为真：此时不做任何
+    /// 校验，也不拦功能，方便后端就绪前自测。详见 `LicenseConfig.isConfigured`。
+    var isLocalMode: Bool { !LicenseConfig.isConfigured }
+
     /// 是否允许使用核心功能（虚拟定位）
-    var isUsable: Bool { status.isUsable }
+    var isUsable: Bool { isLocalMode || status.isUsable }
 
     /// 是否在试用中
     var isTrial: Bool { status == .trial }
 
-    /// 距到期还有几天（试用/卡密都用这个数）
+    /// 展示用的状态名。本地模式下覆盖成「本地模式」，
+    /// 否则用户会看到一个「未激活」的红锁却又能正常用，前后矛盾。
+    var displayNameKey: String {
+        isLocalMode ? "本地模式" : status.displayNameKey
+    }
+
+    /// 距到期还剩多久（含推荐奖励）。
+    ///
+    /// 精确到分钟：刚激活时只显示「剩余 30 天」看不出倒计时在走，
+    /// 用户会怀疑到底有没有生效。天数 ≥ 1 时补上小时与分钟。
+    var remainingText: String {
+        if isLocalMode {
+            return AppLocalization.string("未配置授权服务端，不做校验")
+        }
+        return Self.describe(remainingMs: remainingMs)
+    }
+
+    /// 把毫秒数格式化成「x 天 x 小时 x 分钟」。
+    ///
+    /// 单独抽出来是为了能单测——边界（刚好 1 天 / 刚好 1 小时 / 不足 1 分钟）
+    /// 最容易写错，而这段文案每次打开设置页都会显示。
+    static func describe(remainingMs: Double) -> String {
+        guard remainingMs > 0 else {
+            return AppLocalization.string("已到期")
+        }
+
+        let totalSeconds = Int(remainingMs / 1000)
+        let days = totalSeconds / 86_400
+        let hours = (totalSeconds % 86_400) / 3_600
+        let minutes = (totalSeconds % 3_600) / 60
+
+        if days > 0 {
+            return String(format: AppLocalization.string("%ld 天 %ld 小时 %ld 分钟"), days, hours, minutes)
+        }
+        if hours > 0 {
+            return String(format: AppLocalization.string("%ld 小时 %ld 分钟"), hours, minutes)
+        }
+        return String(format: AppLocalization.string("%ld 分钟"), minutes)
+    }
+
+    /// 兼容旧调用点：只用「天」表述的场合。
     var daysLeftText: String {
-        guard remainingDays > 0 else { return "已到期" }
+        guard remainingDays > 0 else { return AppLocalization.string("已到期") }
         if remainingDays >= 365 {
             let years = Double(remainingDays) / 365.0
-            return String(format: "剩余 %.1f 年", years)
+            return String(format: AppLocalization.string("剩余 %.1f 年"), years)
         }
-        return "剩余 \(remainingDays) 天"
+        return String(format: AppLocalization.string("剩余 %ld 天"), remainingDays)
     }
 
     // MARK: - 校验
@@ -83,6 +135,15 @@ final class LicenseManager: ObservableObject {
     ///
     /// - Parameter silent: 静默模式不弹错误（用于后台刷新）
     func refresh(silent: Bool = false) async {
+        // 本地模式：直接放行，连一次请求都不发。
+        // 之前占位地址会让每次启动都白等 12 秒超时，还弹一条「网络异常」，
+        // 而后端根本没部署——纯噪声。
+        if isLocalMode {
+            hasLoaded = true
+            lastErrorMessage = nil
+            return
+        }
+
         guard !isBusy else { return }
         if !silent { isBusy = true }
         defer { if !silent { isBusy = false } }
@@ -112,6 +173,11 @@ final class LicenseManager: ObservableObject {
     /// 用卡密激活，成功返回 true
     @discardableResult
     func activate(cardKey: String) async -> Bool {
+        guard !isLocalMode else {
+            lastErrorMessage = AppLocalization.string("尚未配置授权服务端，当前为本地模式，无需卡密")
+            return false
+        }
+
         let key = cardKey.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard !key.isEmpty else {
             lastErrorMessage = "请输入卡密"
@@ -144,6 +210,11 @@ final class LicenseManager: ObservableObject {
     /// 自助解绑（换手机用），成功返回 true
     @discardableResult
     func unbind() async -> Bool {
+        guard !isLocalMode else {
+            lastErrorMessage = AppLocalization.string("尚未配置授权服务端，当前为本地模式，无需解绑")
+            return false
+        }
+
         let key = defaults.string(forKey: CacheKey.cardKey) ?? ""
         guard !key.isEmpty else {
             lastErrorMessage = "本机没有已激活的卡密"
@@ -175,6 +246,7 @@ final class LicenseManager: ObservableObject {
 
     /// 拉取我的邀请码（首次调用时服务端自动生成）
     func loadReferralCode() async {
+        guard !isLocalMode else { return }
         do {
             referral = try await api.referralCode(deviceId: deviceId)
         } catch let error as LicenseError {
@@ -187,6 +259,11 @@ final class LicenseManager: ObservableObject {
     /// 填写别人的邀请码
     @discardableResult
     func bindReferral(code: String) async -> Bool {
+        guard !isLocalMode else {
+            lastErrorMessage = AppLocalization.string("尚未配置授权服务端，推荐功能暂不可用")
+            return false
+        }
+
         isBusy = true
         defer { isBusy = false }
 
@@ -205,6 +282,7 @@ final class LicenseManager: ObservableObject {
 
     /// 查询推荐进度
     func loadReferralStatus() async {
+        guard !isLocalMode else { return }
         do {
             referral = try await api.referralStatus(deviceId: deviceId)
         } catch {
@@ -217,6 +295,8 @@ final class LicenseManager: ObservableObject {
     /// 用「UTC 日期」做去重，保证同一天多次启动只算一次。
     /// 被推荐人连续 3 天打开 App 后，服务端会自动给推荐人发奖励。
     func reportDailyHeartbeatIfNeeded() async {
+        guard !isLocalMode else { return }
+
         let today = ISO8601DateFormatter.dayString(from: Date())
         let last = defaults.string(forKey: CacheKey.heartbeat)
 
@@ -235,6 +315,9 @@ final class LicenseManager: ObservableObject {
     private func apply(_ state: LicenseState, asOffline: Bool = false) {
         status = asOffline ? .offline : state.status
         remainingDays = state.remainingDays
+        // 老服务端可能只回了天数，这里补一个等价毫秒数，保证「天数/小时/分钟」
+        // 三档展示都有值。
+        remainingMs = state.remainingMs ?? Double(state.remainingDays) * 86_400_000
         cardTypeLabel = state.typeLabel
         bonusDays = state.bonusDays ?? 0
     }
@@ -243,6 +326,7 @@ final class LicenseManager: ObservableObject {
         let snapshot: [String: Any] = [
             "status": status.rawValue,
             "remainingDays": remainingDays,
+            "remainingMs": remainingMs,
             "cardTypeLabel": cardTypeLabel as Any,
             "bonusDays": bonusDays,
             "savedAt": Date().timeIntervalSince1970,
@@ -259,6 +343,16 @@ final class LicenseManager: ObservableObject {
             status = cachedStatus
         }
         remainingDays = snapshot["remainingDays"] as? Int ?? 0
+        let cachedMs = snapshot["remainingMs"] as? Double
+        let savedAt = snapshot["savedAt"] as? TimeInterval
+        // 缓存里的毫秒数是「上次校验那一刻」的，按已过去的真实时间扣一下，
+        // 否则冷启动瞬间会显示一个虚高的倒计时。
+        if let cachedMs {
+            let elapsedMs = savedAt.map { (Date().timeIntervalSince1970 - $0) * 1000 } ?? 0
+            remainingMs = max(0, cachedMs - elapsedMs)
+        } else {
+            remainingMs = Double(remainingDays) * 86_400_000
+        }
         cardTypeLabel = snapshot["cardTypeLabel"] as? String
         bonusDays = snapshot["bonusDays"] as? Int ?? 0
     }
@@ -274,8 +368,10 @@ final class LicenseManager: ObservableObject {
         let elapsedDays = (Date().timeIntervalSince1970 - savedAt) / 86400
         guard elapsedDays <= Double(LicenseConfig.offlineGraceDays) else { return nil }
 
-        // 用缓存拼一个 LicenseState，剩余天数按离线时长扣减
-        let decayed = max(0, remainingDays - Int(elapsedDays))
+        // 用缓存拼一个 LicenseState，剩余时长按离线时长扣减
+        let elapsedMs = (Date().timeIntervalSince1970 - savedAt) * 1000
+        let cachedMs = dict["remainingMs"] as? Double ?? Double(remainingDays) * 86_400_000
+        let decayedMs = max(0, cachedMs - elapsedMs)
         return LicenseState(
             ok: true,
             status: LicenseStatus(rawValue: dict["status"] as? String ?? "") ?? .unregistered,
@@ -284,8 +380,8 @@ final class LicenseManager: ObservableObject {
             expireAt: nil,
             bonusDays: dict["bonusDays"] as? Int,
             bonusMs: nil,
-            remainingDays: decayed,
-            remainingMs: nil,
+            remainingDays: Int(decayedMs / 86_400_000),
+            remainingMs: decayedMs,
             serverTime: Date().timeIntervalSince1970 * 1000
         )
     }

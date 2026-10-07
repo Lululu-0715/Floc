@@ -31,7 +31,7 @@ iOS 虚拟定位工具。通过本机 MITM 代理拦截 Apple 定位服务响应
 ### 直接下载（不编译）
 
 到 **[Releases](https://github.com/Lululu-0715/Floc/releases)** 下载已经打好的
-`Floc-<版本号>-unsigned.ipa`（最新为 `Floc-1.0.2-unsigned.ipa`），跳过下面的编译步骤。
+`Floc-<版本号>-unsigned.ipa`（最新为 `Floc-1.0.4-unsigned.ipa`），跳过下面的编译步骤。
 
 下载到的是**未签名**包，iOS 不会直接运行，需要自签工具（TrollStore / AltStore /
 Sideloadly / 爱思助手），签名与安装的完整流程见

@@ -27,6 +27,7 @@ def check_file(path):
 
     entries = 0
     keys = set()
+    duplicates = []
     buffer = ''
     start_line = 0
 
@@ -48,12 +49,19 @@ def check_file(path):
             errors.append(f'{path}:{start_line} 语法错误: {buffer[:90]}')
         else:
             entries += 1
-            keys.add(match.group(1))
+            key = match.group(1)
+            # 重复 key 是个静默陷阱：plist 解析时后写的覆盖先写的，
+            # 两边值不一样就会「明明改了却没生效」。之前 zh-Hant 里
+            # 「已复制」同时存在「已復製」和「已複製」就是这么来的。
+            if key in keys:
+                duplicates.append(f'{path}:{start_line} 重复定义 key: {key}')
+            keys.add(key)
         buffer = ''
 
     if buffer:
         errors.append(f'{path}:{start_line} 末尾缺少分号: {buffer[:90]}')
 
+    errors.extend(duplicates)
     return errors, entries, keys
 
 

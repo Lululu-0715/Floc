@@ -90,6 +90,16 @@ enum DeviceIdentity {
         SecItemAdd(addQuery as CFDictionary, nil)
     }
 
+    // MARK: - 展示
+
+    /// 展示用的短设备码：UUID 前 8 位，大写。
+    ///
+    /// 完整 UUID 36 个字符，设置页那一行根本放不下；前 8 位已经足够
+    /// 用户在人工客服场景里报给你识别。需要原始值的地方仍然用 `current`。
+    static var displayCode: String {
+        String(current.replacingOccurrences(of: "-", with: "").prefix(8)).uppercased()
+    }
+
     // MARK: - 调试
 
     /// 强制换一个新 ID（仅调试用，正式包不要暴露入口）

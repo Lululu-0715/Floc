@@ -43,6 +43,14 @@ struct MapHomeView: View {
     @State private var banner: BannerMessage?
     @State private var bannerDismissTask: Task<Void, Never>?
 
+    /// 「去把定位服务关一下再打开」的提示。
+    ///
+    /// 每次启动最多弹一次：定位服务有自己的一层缓存，第一次开启虚拟定位
+    /// 基本都要踢一下才会刷新，但每开一次弹一次就成骚扰了。想再看的话
+    /// 设置 → 关于 → 用户指南里有完整步骤。
+    @State private var showLocationRefreshPrompt = false
+    @State private var didShowLocationRefreshPrompt = false
+
     @State private var geocodeTask: Task<Void, Never>?
     @State private var coordinateSystemProbeTask: Task<Void, Never>?
 
@@ -86,6 +94,14 @@ struct MapHomeView: View {
             Button(AppLocalization.string("保存")) { saveFavorite() }
         } message: {
             Text(AppLocalization.string("为当前选点取一个便于识别的名字。"))
+        }
+        .alert(AppLocalization.string("让位置立刻刷新"), isPresented: $showLocationRefreshPrompt) {
+            Button(AppLocalization.string("打开定位服务设置")) {
+                SystemSettingsNavigator.openLocationServices()
+            }
+            Button(AppLocalization.string("我知道了"), role: .cancel) {}
+        } message: {
+            Text(AppLocalization.string("如果地图还显示原来的位置：打开「设置 → 隐私与安全性 → 定位服务」，把总开关关掉，等 5–10 秒再打开。一次不行就多试几次，定位缓存需要被踢掉才会重新取坐标。"))
         }
         .onAppear(perform: handleAppear)
         .onDisappear(perform: handleDisappear)
@@ -360,50 +376,41 @@ struct MapHomeView: View {
                     // 复制按钮直接跟在坐标后面 —— 原来单独占一行放两个
                     // 「复制坐标」按钮，既占纵向空间又要在两行坐标之间来回
                     // 对照，现在点哪行复制哪行。
-                    HStack(spacing: 6) {
-                        Text(String(format: "GCJ-02  %.6f, %.6f",
-                                    pair.gcj02.latitude, pair.gcj02.longitude))
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                        CoordinateCopyIcon(
-                            accessibilityLabel: "GCJ-02",
-                            value: String(format: "%.6f,%.6f",
-                                          pair.gcj02.latitude, pair.gcj02.longitude)
-                        )
-                    }
+                    //
+                    // 精度选择器现在挂在两行坐标的右侧，不再单独占一行：
+                    // 它是低频选项，压在右下角既顺手又不增加面板高度。
+                    HStack(alignment: .center, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 6) {
+                                Text(String(format: "GCJ-02  %.6f, %.6f",
+                                            pair.gcj02.latitude, pair.gcj02.longitude))
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                                CoordinateCopyIcon(
+                                    accessibilityLabel: "GCJ-02",
+                                    value: String(format: "%.6f,%.6f",
+                                                  pair.gcj02.latitude, pair.gcj02.longitude)
+                                )
+                            }
 
-                    HStack(spacing: 6) {
-                        Text(String(format: "WGS-84  %.6f, %.6f",
-                                    pair.wgs84.latitude, pair.wgs84.longitude))
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                        CoordinateCopyIcon(
-                            accessibilityLabel: "WGS-84",
-                            value: String(format: "%.6f,%.6f",
-                                          pair.wgs84.latitude, pair.wgs84.longitude)
-                        )
+                            HStack(spacing: 6) {
+                                Text(String(format: "WGS-84  %.6f, %.6f",
+                                            pair.wgs84.latitude, pair.wgs84.longitude))
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                                CoordinateCopyIcon(
+                                    accessibilityLabel: "WGS-84",
+                                    value: String(format: "%.6f,%.6f",
+                                                  pair.wgs84.latitude, pair.wgs84.longitude)
+                                )
+                            }
+                        }
+
+                        Spacer(minLength: 0)
+
+                        accuracyPicker
                     }
                 }
-            }
-
-            // 精度选择器。原来和两个「复制坐标」按钮挤在同一行，
-            // 现在复制按钮上移到坐标行末尾，这里只留精度，并补上
-            // 「精度」二字，避免只剩一个裸数字时不知道是什么。
-            HStack(spacing: 6) {
-                Text(AppLocalization.string("精度"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Picker(AppLocalization.string("精度"), selection: $state.accuracy) {
-                    Text("10 m").tag(10)
-                    Text("25 m").tag(25)
-                    Text("50 m").tag(50)
-                    Text("100 m").tag(100)
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-
-                Spacer(minLength: 0)
             }
         }
         .padding(12)
@@ -411,6 +418,20 @@ struct MapHomeView: View {
             RoundedRectangle(cornerRadius: GlassMetrics.mapCornerRadius, style: .continuous)
                 .fill(Color.primary.opacity(0.06))
         )
+    }
+
+    /// 精度选择器。原来单独占一行，现在挪到两行坐标的最右侧，
+    /// 底部面板因此少一行高度。
+    private var accuracyPicker: some View {
+        Picker(AppLocalization.string("精度"), selection: $state.accuracy) {
+            Text("10 m").tag(10)
+            Text("25 m").tag(25)
+            Text("50 m").tag(50)
+            Text("100 m").tag(100)
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .accessibilityLabel(AppLocalization.string("精度"))
     }
 
     private var favoritesRow: some View {
@@ -799,6 +820,7 @@ struct MapHomeView: View {
                     showBanner(AppLocalization.string("Wi-Fi 代理未生效，请检查代理配置"), style: .error)
                 } else {
                     showBanner(AppLocalization.string("虚拟定位已开启"), style: .info)
+                    presentLocationRefreshPromptIfNeeded()
                 }
             } catch {
                 showBanner(error.localizedDescription, style: .error)
@@ -813,10 +835,22 @@ struct MapHomeView: View {
             if success {
                 state.enable()
                 showBanner(AppLocalization.string("坐标已写入客户端"), style: .info)
+                presentLocationRefreshPromptIfNeeded()
             } else {
                 showBanner(AppLocalization.string("写入失败，请检查客户端模块是否生效"), style: .error)
             }
         }
+    }
+
+    /// 开启成功后提示一次「去关一下定位服务再打开」。
+    ///
+    /// 定位服务把上一次的坐标缓存在系统进程里，刚开启虚拟定位时地图
+    /// 往往还是旧位置。关掉总开关再打开会强制重新查询，这一步不做的话
+    /// 用户很容易以为功能没生效。
+    private func presentLocationRefreshPromptIfNeeded() {
+        guard !didShowLocationRefreshPrompt else { return }
+        didShowLocationRefreshPrompt = true
+        showLocationRefreshPrompt = true
     }
 
     private func stopSpoofing() async {

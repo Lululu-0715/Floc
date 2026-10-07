@@ -173,11 +173,11 @@ struct UsageGuideView: View {
             ),
             Step(
                 title: AppLocalization.string("等 5–10 秒再打开"),
-                detail: AppLocalization.string("停顿 5–10 秒后重新打开。定位服务会重新查询当前坐标，这时拿到的就是改写后的位置。")
+                detail: AppLocalization.string("停顿 5–10 秒后重新打开。定位服务会重新查询当前坐标，这时拿到的就是改写后的位置。一次没生效就重复关开 2–3 次，定位缓存不会每次都乖乖吐出来。")
             ),
             Step(
                 title: AppLocalization.string("关闭时同样操作一次"),
-                detail: AppLocalization.string("要恢复真实位置时，先关掉虚拟定位，再重复第 2、3 步。")
+                detail: AppLocalization.string("要恢复真实位置时，先关掉虚拟定位，再重复第 2、3 步；同样可能需要多试几次才会刷回真实位置。")
             ),
         ]
     }

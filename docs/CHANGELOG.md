@@ -2,6 +2,120 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.4] - 2026-10-07
+
+设置页重构为五个分组、新增账号体系与外观个性化；修复「未部署授权服务端
+时连开发者都无法自测」的死锁。
+
+### 未配置授权服务端时进入「本地模式」
+
+- **问题**：`LicenseConfig.baseURL` 还是占位符，而 `LicenseStatus` 默认
+  `.unregistered`、`isUsable == false`，`MapHomeView.toggleSpoofing()`
+  的授权闸门会把「开启虚拟定位」直接拦掉；后端又不存在，卡密无处激活——
+  全新安装连自测都做不了
+- **改法**：新增 `LicenseConfig.isConfigured` 检测占位符。未配置时
+  `LicenseManager` 进入本地模式：不发任何授权请求（省掉每次启动 12 秒
+  超时和一条「网络异常」）、`isUsable` 直接放行、状态名显示「本地模式」
+  而不是红锁「未激活」
+- 把 `baseURL` 换成真实域名后校验与闸门**自动恢复**，不需要改其他代码；
+  设置页「账号」分组会明说当前处于本地模式
+
+### 设置页重构
+
+- 从「一长条分组」改为五组：**账号 / 运行模式 / 连接状态 /
+  外观及个性化 / 关于**
+- **账号**（新增）：头像 + 昵称（二级页可改，头像存 App Group 容器、
+  自动缩到 512px）、设备码 + 授权状态胶囊、剩余时间（精确到
+  `3 天 3 小时 12 分钟`）+「升级套餐」入口
+- **运行模式**：从单选行改为二级页点选，行尾带当前模式
+- **连接状态**：本机代理开关 / 第三方代理状态、虚拟定位状态，下面四个
+  二级入口——证书与环境、第三方代理、定位模拟、收藏位置
+- **外观及个性化**：主题（跟随系统 / 浅色 / 深色）分段控件、
+  语言（二级页三选一）、**字体大小**（小 / 标准 / 大，新增）
+- **关于**：关于 Floc（版本、构建号、内核版本、工作原理、重置引导流程）、
+  用户指南（使用方法 + 生效/失效说明 + 工作原理）、意见反馈（问题报告 +
+  运行日志与诊断 + 联系我们）、联系我们
+
+### 新增
+
+- `Shared/ProfileStore.swift`：昵称 + 头像（落盘在 App Group 容器，
+  不塞进 UserDefaults）
+- `Shared/FontScaleStore.swift`：字号三档。同时挂在根节点的
+  `.environment(\.sizeCategory, ...)` 和 `SettingsMetrics` 的固定字号上——
+  只挂一处的话设置页自己那套 `.system(size:)` 不会跟着变，看起来就像
+  开关没生效
+- `Shared/AppContact.swift`：联系方式配置（邮箱 / 微信 / 反馈地址）。
+  **空着的项界面上不显示**，所以没确定就留空，不用担心露出占位符；
+  但发布前至少要填一项，否则用户想买卡找不到人
+
+### 修复 Wi-Fi 一键跳转
+
+- 原来只走 `App-Prefs:root=WIFI`，跳不过去时会静默回退到应用自己的设置页，
+  表现成「点了跳到别的页面」。`Info.plist` 补上 `prefs` scheme，
+  并把**手动路径直接写在界面上**
+- 如实说明：iOS 没有公开 API 能跳到「无线局域网 → 当前网络 → 配置代理」
+  那一屏，最多只能到 Wi-Fi 列表，剩下两下要用户自己点
+
+### 地图页
+
+- 精度选择器从独立一行移到两行坐标最右侧，底部面板少一行高度
+- 开启虚拟定位成功后提示「关掉定位服务总开关，等 5–10 秒再打开，
+  一次不行就多试几次」，并给一键跳转「定位服务」的按钮（每次启动最多提示一次）
+
+### 本地化
+
+- 三语各 409 条，key 完全一致（1.0.3 的 339 + 本轮 70）
+- 补回 1.0.3 遗漏在 `generate_localizations.py` EN 表之外的 37 条映射——
+  此前脚本一跑就报「缺少英文翻译」，只能手工改 `en.lproj`，很容易两边漏改
+
+### 测试与检查
+
+- 新增 `LicenseLocalModeTests`（本地模式契约 + 剩余时长文案边界）、
+  `FontScaleTests`、`ProfileStoreTests`、`DeviceIdentityTests`
+- `Tests/check_swift_sources.py` 修两个假失败：类型收集改用 `rglob`
+  （`Shared/License/` 这类子目录此前整块被漏掉），类型引用匹配前先摘掉
+  字符串与注释（域名里的 `XXX.workers.dev` 会被误判成类型名）
+
+## [1.0.3] - 2026-10-07
+
+修复 Quantumult X 模块不生效与内置代理状态误判；地图页 UI 重排；
+新增卡密与推荐系统。
+
+### 地图页
+
+- 图层三连从左上角移到右下角，竖排保持
+- GCJ-02 / WGS-84 两行末尾各加复制图标，删掉原来单独一行的两个「复制坐标」按钮
+- 收藏星标移到地名正后方
+
+### Quantumult X 模块不生效
+
+- **根因**：QX 的 `script-echo-response` 要求脚本顶层返回
+  `status` / `headers` / `body`，且 `status` 必须是完整的
+  `"HTTP/1.1 200 OK"` 字符串；其他客户端用的是 `{ response: {...} }`
+- `wloc-settings.js` 的 `respond()` 按客户端分派，回归用例 16 → 18
+
+### 内置代理误报「跳过」
+
+- **根因**：`ProxyManager.status` 是自维护状态，进程被挂起时 Go 侧监听
+  socket 已失效但进程没退出，`status` 不会变成 `.stopped`，环境检测把
+  「代理其实已死」当成「在跑」
+- 新增 Go `isProxyListening()`（实测 dial `127.0.0.1:8888`）+ 导出
+  `locationcore_isproxylistening` + Swift 封装 `syncStatusWithReality()`，
+  三处调用点改为先实测
+
+### 新增卡密与推荐系统
+
+- `Shared/License/`：`LicenseConfig` / `LicenseModels` / `DeviceIdentity` /
+  `LicenseAPI` / `LicenseManager` / `LicenseViews`
+- 设备 ID 存 Keychain（重装不换），3 天离线宽限；授权闸门只在「要开启」时拦
+- 授权卡片 + 激活弹窗 + 推荐页（六档进度、累进发放、3 年封顶）
+
+### 兼容性
+
+- `LicenseViews.swift` 原本用了 `NavigationStack`（iOS 16+），工程
+  deploymentTarget 是 15.0，Release 直接编译失败；改为 `NavigationView`，
+  与工程其余 5 处保持一致
+
 ## [1.0.2] - 2026-10-07
 
 界面精修 + 修复 Quantumult X 模块无法导入 + 新增打包前的模块联通性检查。

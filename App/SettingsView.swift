@@ -3,8 +3,12 @@ import SwiftUI
 /// 设置页。
 ///
 /// 版式参照参考图：`List` + `.insetGrouped` 给出独立的白色卡片，
-/// 每行以 36×36 的蓝色圆形图标起头，右侧按内容性质给出四种控件——
+/// 每行以圆形图标起头，右侧按内容性质给出四种控件——
 /// 勾选（模式）/ 开关（可切换项）/ 只读状态文字（无箭头）/ 跳转箭头。
+///
+/// 这一版刻意只留五组：账号 / 运行模式 / 连接状态 / 外观及个性化 / 关于。
+/// 具体配置全部下沉到二级页——主页每行右边都带着当前取值，
+/// 不进二级页也知道现在是什么状态，滚动长度却砍掉了一半以上。
 ///
 /// 背景不额外铺色：`.insetGrouped` 的底色本来就是 `systemGroupedBackground`，
 /// 自己再叠一层反而会和系统色在深色模式下打架。
@@ -19,51 +23,29 @@ struct SettingsView: View {
     @ObservedObject private var runtimeMode = RuntimeModeStore.shared
     @ObservedObject private var remoteConfiguration = AppRemoteConfigurationStore.shared
     @ObservedObject private var appearance = AppearanceStore.shared
+    @ObservedObject private var fontScale = FontScaleStore.shared
     @ObservedObject private var license = LicenseManager.shared
+    @ObservedObject private var profile = ProfileStore.shared
 
     @Environment(\.dismiss) private var dismiss
 
-    @State private var showResetConfirmation = false
-    @State private var showClearFavoritesConfirmation = false
-    @State private var showModuleURLSheet = false
-    @State private var moduleURLInput = ""
-    @State private var selfCheckResult: String?
-    /// 启停代理过程中的错误，展示在「状态」分组里而不是弹窗——
+    /// 启停代理过程中的错误，展示在「连接状态」里而不是弹窗——
     /// 用户正在这页操作，内联提示比模态弹窗少一次点击。
     @State private var statusMessage: String?
-    /// 「复制模块订阅地址」的即时回馈。复制本身没有界面变化，不给反馈
-    /// 用户会怀疑到底点上没有。
-    @State private var didCopyModuleURL = false
-    @State private var copyFeedbackTask: Task<Void, Never>?
+
+    /// 语言是在二级页里改的，改完回到这页要能立刻看到新的语言名。
+    /// `AppLocalization` 是静态查表，没有发布者，只能靠通知手动顶一下。
+    @State private var languageTick = 0
 
     var body: some View {
-        NavigationView {
+        let _ = languageTick
+
+        return NavigationView {
             List {
-                licenseSection
+                accountSection
                 modeSection
-                statusSection
-
-                // 「第三方代理」紧跟「状态」：用户在这一步最想确认的就是
-                // 客户端到底连上没有，排在下面的说明文字之后要翻很久。
-                if runtimeMode.mode == .thirdParty {
-                    thirdPartySection
-                }
-
-                simulationSection
-
-                if runtimeMode.mode == .localProxy {
-                    environmentSection
-                }
-
-                favoritesSection
+                connectionSection
                 appearanceSection
-                languageSection
-
-                // 「说明」「工作原理」紧挨着「支持」：这三块都是
-                // 「出问题了再回来查」的内容，放在一起不用来回翻。
-                notesSection
-                principlesSection
-                supportSection
                 aboutSection
             }
             .listStyle(.insetGrouped)
@@ -74,76 +56,123 @@ struct SettingsView: View {
                     Button(AppLocalization.string("完成")) { dismiss() }
                 }
             }
-            .confirmationDialog(
-                AppLocalization.string("重置引导流程？"),
-                isPresented: $showResetConfirmation,
-                titleVisibility: .visible
-            ) {
-                Button(AppLocalization.string("重置"), role: .destructive) {
-                    setup.reset()
-                    dismiss()
-                }
-                Button(AppLocalization.string("取消"), role: .cancel) {}
-            } message: {
-                Text(AppLocalization.string("重置后需要重新完成当前模式的配置引导。已保存的收藏和证书不受影响。"))
-            }
-            .confirmationDialog(
-                AppLocalization.string("清空全部收藏？"),
-                isPresented: $showClearFavoritesConfirmation,
-                titleVisibility: .visible
-            ) {
-                Button(AppLocalization.string("清空"), role: .destructive) {
-                    favorites.removeAll()
-                }
-                Button(AppLocalization.string("取消"), role: .cancel) {}
-            }
-            .sheet(isPresented: $showModuleURLSheet) {
-                moduleURLSheet
-            }
             .task {
                 await remoteConfiguration.refresh()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: AppLocalization.didChangeNotification)) { _ in
+                languageTick &+= 1
             }
         }
     }
 
-    // MARK: - 运行模式
+    // MARK: - 账号
 
-    // MARK: - 授权
-
-    /// 授权 + 推荐入口。
+    /// 账号。
     ///
-    /// 放最上面：用户打开设置最常见的两个诉求就是「我还有多久到期」
-    /// 和「怎么看我的推荐奖励」，都需要一眼可见。
-    private var licenseSection: some View {
+    /// 三行分别回答三个问题：我是谁（头像昵称）、这台机器是谁（设备码）、
+    /// 我还能用多久（剩余时间 + 升级入口）。
+    private var accountSection: some View {
         Section {
-            LicenseCardView(manager: license)
-
             NavigationLink {
-                ReferralView(manager: license)
+                ProfileView(profile: profile)
             } label: {
-                HStack {
-                    Text(AppLocalization.string("推荐好友"))
-                        .font(SettingsMetrics.titleFont)
-                    Spacer()
-                    if let r = license.referral {
-                        Text("\(r.invitedCount)")
-                            .font(.subheadline)
+                HStack(spacing: SettingsMetrics.iconSpacing) {
+                    ProfileAvatarView(
+                        image: profile.avatar,
+                        initial: profile.avatarInitial,
+                        size: SettingsMetrics.iconSize + 8
+                    )
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(profile.displayName)
+                            .font(SettingsMetrics.titleFont)
+                        Text(AppLocalization.string("点按设置头像和昵称"))
+                            .font(SettingsMetrics.subtitleFont)
                             .foregroundStyle(.secondary)
                     }
+                }
+                .padding(.vertical, 2)
+            }
+
+            HStack(spacing: SettingsMetrics.iconSpacing) {
+                SettingsIconBadge(systemImage: "iphone")
+
+                Text(AppLocalization.string("设备码"))
+                    .font(SettingsMetrics.titleFont)
+
+                Spacer(minLength: 8)
+
+                Text(DeviceIdentity.displayCode)
+                    .font(.system(size: 14, design: .monospaced))
+                    .foregroundStyle(.secondary)
+
+                licenseBadge
+            }
+            .padding(.vertical, SettingsMetrics.rowVerticalPadding)
+
+            NavigationLink {
+                MembershipView(manager: license)
+            } label: {
+                HStack(spacing: SettingsMetrics.iconSpacing) {
+                    SettingsIconBadge(systemImage: "hourglass")
+
+                    Text(AppLocalization.string("剩余时间"))
+                        .font(SettingsMetrics.titleFont)
+
+                    Spacer(minLength: 8)
+
+                    Text(license.remainingText)
+                        .font(SettingsMetrics.valueFont)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    Text(AppLocalization.string("升级套餐"))
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.accentColor)
                 }
                 .padding(.vertical, SettingsMetrics.rowVerticalPadding)
             }
         } header: {
-            SettingsSectionHeader(title: AppLocalization.string("授权"))
+            SettingsSectionHeader(title: AppLocalization.string("账号"))
         }
+    }
+
+    /// 授权状态小胶囊。颜色跟着「能不能用」走，而不是跟着具体状态枚举——
+    /// 用户只需要一眼看出「现在是好的还是不好的」。
+    private var licenseBadge: some View {
+        Text(AppLocalization.string(license.displayNameKey))
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(badgeColor)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(badgeColor.opacity(0.14)))
+    }
+
+    private var badgeColor: Color {
+        if license.isLocalMode { return .blue }
+        return license.isUsable ? .green : .red
     }
 
     // MARK: - 运行模式
 
     private var modeSection: some View {
         Section {
-            ForEach(ProxyRuntimeMode.allCases) { mode in
-                modeOptionRow(mode)
+            NavigationLink {
+                RuntimeModePickerView(runtimeMode: runtimeMode, onSelect: switchMode)
+            } label: {
+                HStack(spacing: SettingsMetrics.iconSpacing) {
+                    SettingsIconBadge(systemImage: runtimeMode.mode.systemImage)
+                    Text(AppLocalization.string("运行模式"))
+                        .font(SettingsMetrics.titleFont)
+                    Spacer(minLength: 8)
+                    Text(runtimeMode.mode.displayName)
+                        .font(SettingsMetrics.valueFont)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, SettingsMetrics.rowVerticalPadding)
             }
         } header: {
             SettingsSectionHeader(title: AppLocalization.string("运行模式"))
@@ -152,33 +181,12 @@ struct SettingsView: View {
         }
     }
 
-    /// 模式选项行：普通文字 + 选中项右侧的蓝色勾选。
-    private func modeOptionRow(_ mode: ProxyRuntimeMode) -> some View {
-        let isSelected = runtimeMode.mode == mode
-        return Button {
-            switchMode(to: mode)
-        } label: {
-            HStack {
-                Text(mode.displayName)
-                    .font(SettingsMetrics.titleFont)
-                    .foregroundStyle(.primary)
-                Spacer(minLength: 8)
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(Color.blue)
-                }
-            }
-            .padding(.vertical, SettingsMetrics.rowVerticalPadding)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(isSelected ? AccessibilityTraits.isSelected : AccessibilityTraits())
-    }
+    // MARK: - 连接状态
 
-    // MARK: - 状态
-
-    private var statusSection: some View {
+    /// 连接状态。
+    ///
+    /// 上面两行是「现在通不通」，下面四个入口是「不通的时候去哪儿修」。
+    private var connectionSection: some View {
         Section {
             if runtimeMode.mode == .localProxy {
                 SettingsToggleRow(
@@ -193,7 +201,8 @@ struct SettingsView: View {
                 SettingsStatusRow(
                     systemImage: "link",
                     title: thirdParty.selectedClient.displayName,
-                    value: thirdParty.state.displayText
+                    value: thirdParty.state.displayText,
+                    valueColor: thirdParty.state.isUsable ? .green : .orange
                 )
             }
 
@@ -202,7 +211,8 @@ struct SettingsView: View {
                 title: AppLocalization.string("虚拟定位"),
                 value: state.isEnabled
                     ? AppLocalization.string("已开启")
-                    : AppLocalization.string("已关闭")
+                    : AppLocalization.string("已关闭"),
+                valueColor: state.isEnabled ? .green : .secondary
             )
 
             if let statusMessage {
@@ -210,412 +220,87 @@ struct SettingsView: View {
                     .font(.footnote)
                     .foregroundStyle(Color.red)
             }
-        } header: {
-            SettingsSectionHeader(title: AppLocalization.string("状态"))
-        }
-    }
 
-    // MARK: - 定位模拟
-
-    private var simulationSection: some View {
-        Section {
-            HStack(spacing: SettingsMetrics.iconSpacing) {
-                SettingsIconBadge(systemImage: "scope")
-
-                Text(AppLocalization.string("精度"))
-                    .font(SettingsMetrics.titleFont)
-
-                Spacer(minLength: 8)
-
-                Picker(AppLocalization.string("精度"), selection: $state.accuracy) {
-                    Text("10 m").tag(10)
-                    Text("25 m").tag(25)
-                    Text("50 m").tag(50)
-                    Text("100 m").tag(100)
-                    Text("500 m").tag(500)
+            if runtimeMode.mode == .localProxy {
+                detailLink(
+                    systemImage: "checkmark.shield.fill",
+                    title: AppLocalization.string("证书与环境"),
+                    value: proxy.certificateTrustState.isTrusted
+                        ? proxy.certificateTrustState.displayText
+                        : proxy.wiFiProxyState.displayText
+                ) {
+                    CertificateEnvironmentView(state: state)
                 }
-                .pickerStyle(.menu)
-                .labelsHidden()
-            }
-            .padding(.vertical, SettingsMetrics.rowVerticalPadding)
-
-            HStack(spacing: SettingsMetrics.iconSpacing) {
-                SettingsIconBadge(systemImage: "figure.walk")
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(AppLocalization.string("运动状态模拟"))
-                        .font(SettingsMetrics.titleFont)
-                    Text(AppLocalization.string("在选定位置附近轻微漂移，更接近真实 GPS。"))
-                        .font(SettingsMetrics.subtitleFont)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 8)
-
-                Picker(AppLocalization.string("运动状态模拟"), selection: motionDriftBinding) {
-                    ForEach(MotionDriftOption.allCases) { option in
-                        Text(option.displayName).tag(option.rawValue)
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-            }
-            .padding(.vertical, SettingsMetrics.rowVerticalPadding)
-
-            Button {
-                selfCheckResult = proxy.runSelfCheck(
-                    latitude: state.selection?.wgs84.latitude ?? 22.281508,
-                    longitude: state.selection?.wgs84.longitude ?? 114.174700,
-                    accuracy: state.accuracy
-                )
-            } label: {
-                SettingsLabel(
-                    systemImage: "checkmark.seal",
-                    title: AppLocalization.string("运行改写引擎自检")
-                )
-            }
-
-            if let selfCheckResult {
-                Text(selfCheckResult)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(selfCheckResult.hasPrefix("ok:") ? Color.green : Color.red)
-            }
-        } header: {
-            SettingsSectionHeader(title: AppLocalization.string("定位模拟"))
-        } footer: {
-            Text(runtimeMode.mode == .thirdParty
-                 ? AppLocalization.string("精度与运动状态模拟都会写入客户端配置。")
-                 : AppLocalization.string("精度直接影响系统对定位可信度的判断，通常 25 米较为自然。"))
-        }
-    }
-
-    /// 「运动状态模拟」的选择：界面上下拉给的是档位原始值（0 / 5 / 10 / 20），
-    /// 写回前收敛一次，避免脏值传进 Core。
-    private var motionDriftBinding: Binding<Int> {
-        Binding(
-            get: { state.motionDriftRadius },
-            set: { state.motionDriftRadius = MotionDriftOption.normalized($0).rawValue }
-        )
-    }
-
-    // MARK: - 说明
-
-    private var notesSection: some View {
-        Section {
-            tipLink(kind: .enableSpoofing, systemImage: "checkmark.circle")
-            tipLink(kind: .disableSpoofing, systemImage: "arrow.uturn.backward.circle")
-            tipLink(kind: .disableWiFiProxy, systemImage: "wifi.slash")
-        } header: {
-            SettingsSectionHeader(title: AppLocalization.string("说明"))
-        }
-    }
-
-    private func tipLink(kind: TipCard.Kind, systemImage: String) -> some View {
-        NavigationLink {
-            TipDetailView(kind: kind)
-        } label: {
-            SettingsLabel(
-                systemImage: systemImage,
-                title: kind.settingsLabel,
-                isSecondary: true
-            )
-        }
-    }
-
-    // MARK: - 工作原理
-
-    private var principlesSection: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(Self.principles, id: \.self) { line in
-                    HStack(alignment: .top, spacing: 8) {
-                        Circle()
-                            .fill(Color.blue)
-                            .frame(width: 5, height: 5)
-                            .padding(.top, 6)
-                        Text(line)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-            .padding(.vertical, 4)
-        } header: {
-            SettingsSectionHeader(title: AppLocalization.string("工作原理"))
-        }
-    }
-
-    private static var principles: [String] {
-        [
-            AppLocalization.string("Floc 在本机运行一个代理，拦截并改写系统定位服务返回的坐标。"),
-            AppLocalization.string("改写只作用于定位响应，其他请求原样转发，不会修改内容。"),
-            AppLocalization.string("停止虚拟定位后立即恢复真实位置，不会留下持久改动。"),
-        ]
-    }
-
-    // MARK: - 证书与环境（应用内代理）
-
-    private var environmentSection: some View {
-        Section {
-            SettingsStatusRow(
-                systemImage: "checkmark.shield.fill",
-                title: AppLocalization.string("证书信任"),
-                value: proxy.certificateTrustState.displayText,
-                valueColor: proxy.certificateTrustState.isTrusted ? .green : .orange
-            )
-            SettingsStatusRow(
-                systemImage: "wifi.router",
-                title: AppLocalization.string("代理状态"),
-                value: proxy.status.displayText
-            )
-            SettingsStatusRow(
-                systemImage: "link",
-                title: AppLocalization.string("Wi-Fi 代理"),
-                value: proxy.wiFiProxyState.displayText,
-                valueColor: proxy.wiFiProxyState == .configured ? .green : .orange
-            )
-            if !proxy.currentWiFiName.isEmpty {
-                SettingsStatusRow(
-                    systemImage: "wifi",
-                    title: AppLocalization.string("当前网络"),
-                    value: proxy.currentWiFiName
-                )
-            }
-
-            Button {
-                Task {
-                    await proxy.verifyCertificateTrust()
-                    await proxy.verifyWiFiProxy()
-                }
-            } label: {
-                SettingsLabel(
-                    systemImage: "arrow.clockwise",
-                    title: AppLocalization.string("重新检测环境")
-                )
-            }
-
-            if let url = proxy.certificateDownloadURL {
-                Button {
-                    CertificateTrustVerifier.openCertificateDownload(url: url)
-                } label: {
-                    SettingsLabel(
-                        systemImage: "arrow.down.circle",
-                        title: AppLocalization.string("下载 CA 证书")
-                    )
+            } else {
+                detailLink(
+                    systemImage: "shield.lefthalf.filled",
+                    title: AppLocalization.string("第三方代理"),
+                    value: thirdParty.state.displayText
+                ) {
+                    ThirdPartySettingsView(thirdParty: thirdParty)
                 }
             }
 
-            Button {
-                SystemSettingsNavigator.openCertificateTrustSettings()
-            } label: {
-                SettingsLabel(
-                    systemImage: "lock.shield",
-                    title: AppLocalization.string("打开证书信任设置")
-                )
+            detailLink(
+                systemImage: "scope",
+                title: AppLocalization.string("定位模拟"),
+                value: String(format: AppLocalization.string("精度 %@ 米"), "\(state.accuracy)")
+            ) {
+                SimulationSettingsView(state: state)
             }
 
-            Button {
-                SystemSettingsNavigator.openWiFiSettings()
-            } label: {
-                SettingsLabel(
-                    systemImage: "wifi",
-                    title: AppLocalization.string("打开 Wi-Fi 设置")
-                )
-            }
-
-            Button(role: .destructive) {
-                CertificateAuthorityStore.delete()
-                proxy.stop()
-                BackgroundKeepAlive.shared.stop()
-                state.disable()
-                RuntimeLogger.info("APP", "Settings", "已重置本机证书")
-            } label: {
-                SettingsLabel(
-                    systemImage: "trash",
-                    title: AppLocalization.string("重置本机证书"),
-                    tint: .red
-                )
-            }
-        } header: {
-            SettingsSectionHeader(title: AppLocalization.string("证书与环境"))
-        } footer: {
-            Text(AppLocalization.string("重置证书后需要重新下载并在系统设置中再次信任。"))
-        }
-    }
-
-    // MARK: - 第三方代理
-
-    private var thirdPartySection: some View {
-        Section {
-            HStack(spacing: SettingsMetrics.iconSpacing) {
-                SettingsIconBadge(systemImage: "shield.lefthalf.filled")
-
-                Text(AppLocalization.string("客户端"))
-                    .font(SettingsMetrics.titleFont)
-
-                Spacer(minLength: 8)
-
-                Picker(AppLocalization.string("客户端"), selection: $thirdParty.selectedClient) {
-                    ForEach(ThirdPartyProxyClient.allCases) { client in
-                        Text(client.displayName).tag(client)
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-            }
-            .padding(.vertical, SettingsMetrics.rowVerticalPadding)
-
-            // 仓库里有 5 个 wloc.* 模块文件，把当前客户端该用哪个直接写出来，
-            // 省得用户对着文件名猜。
-            SettingsStatusRow(
-                systemImage: "doc.text",
-                title: AppLocalization.string("模块文件"),
-                value: thirdParty.moduleFileName,
-                monospacedValue: true
-            )
-
-            if let url = thirdParty.moduleSubscriptionURL {
-                Button {
-                    UIPasteboard.general.string = url.absoluteString
-                    RuntimeLogger.info("APP", "Settings", "模块地址已复制")
-                    showCopyFeedback()
-                } label: {
-                    SettingsLabel(
-                        systemImage: didCopyModuleURL ? "checkmark.circle.fill" : "doc.on.doc",
-                        title: didCopyModuleURL
-                            ? AppLocalization.string("已复制到剪贴板")
-                            : AppLocalization.string("复制模块订阅地址"),
-                        tint: didCopyModuleURL ? .green : .blue
-                    )
-                }
-
-                Text(url.absoluteString)
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(3)
-            }
-
-            Button {
-                moduleURLInput = ThirdPartyProxyManager.defaultModuleBaseURL
-                showModuleURLSheet = true
-            } label: {
-                SettingsLabel(
-                    systemImage: "link",
-                    title: AppLocalization.string("自定义模块托管地址")
-                )
-            }
-
-            Button {
-                thirdParty.selectedClient.open()
-            } label: {
-                SettingsLabel(
-                    systemImage: "arrow.up.forward.app",
-                    title: AppLocalization.string("打开 %@", thirdParty.selectedClient.displayName)
-                )
-            }
-            .disabled(!thirdParty.selectedClient.isInstalled)
-
-            Button {
-                Task { await thirdParty.refresh() }
-            } label: {
-                SettingsLabel(
-                    systemImage: "arrow.clockwise",
-                    title: AppLocalization.string("重新检测连通性")
-                )
-            }
-
-            Button(role: .destructive) {
-                Task { await thirdParty.clear() }
-            } label: {
-                SettingsLabel(
-                    systemImage: "xmark.circle",
-                    title: AppLocalization.string("清除客户端坐标"),
-                    tint: .red
-                )
-            }
-        } header: {
-            SettingsSectionHeader(title: AppLocalization.string("第三方代理"))
-        } footer: {
-            Text(AppLocalization.string("模块由第三方客户端执行拦截，本应用只负责写入坐标。"))
-        }
-    }
-
-    private var moduleURLSheet: some View {
-        NavigationView {
-            List {
-                Section {
-                    TextField(AppLocalization.string("托管地址前缀"), text: $moduleURLInput)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                } footer: {
-                    Text(AppLocalization.string("填写模块文件所在目录的地址前缀，不带文件名。"))
-                }
-            }
-            .listStyle(.insetGrouped)
-            .navigationTitle(AppLocalization.string("模块托管地址"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(AppLocalization.string("取消")) { showModuleURLSheet = false }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(AppLocalization.string("保存")) {
-                        AppGroup.defaults.set(moduleURLInput, forKey: "thirdPartyModuleBaseURL")
-                        showModuleURLSheet = false
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: - 收藏
-
-    private var favoritesSection: some View {
-        Section {
-            SettingsStatusRow(
+            detailLink(
                 systemImage: "star.fill",
-                title: AppLocalization.string("已收藏"),
+                title: AppLocalization.string("收藏位置"),
                 value: "\(favorites.favorites.count)"
-            )
-            if !favorites.favorites.isEmpty {
-                Button(role: .destructive) {
-                    showClearFavoritesConfirmation = true
-                } label: {
-                    SettingsLabel(
-                        systemImage: "trash",
-                        title: AppLocalization.string("清空全部收藏"),
-                        tint: .red
-                    )
-                }
+            ) {
+                FavoritesSettingsView(favorites: favorites)
             }
         } header: {
-            SettingsSectionHeader(title: AppLocalization.string("收藏位置"))
+            SettingsSectionHeader(title: AppLocalization.string("连接状态"))
         }
     }
 
-    // MARK: - 外观
+    /// 二级页入口：图标 + 标题 + 当前取值 + 箭头。
+    private func detailLink<Destination: View>(
+        systemImage: String,
+        title: String,
+        value: String,
+        @ViewBuilder destination: () -> Destination
+    ) -> some View {
+        NavigationLink(destination: destination()) {
+            HStack(spacing: SettingsMetrics.iconSpacing) {
+                SettingsIconBadge(systemImage: systemImage)
 
-    /// 外观：白天 / 黑暗 / 跟随系统。
-    ///
-    /// 分段控件横排占满一行，而不是挤进「行首图标 + 标题 + 控件」的单行里——
-    /// 一个图标加三个中文标签，横向空间不够会被压成「跟…统」。
-    /// 实际生效靠根节点上的 `.preferredColorScheme`（见 FlocApp）。
+                Text(title)
+                    .font(SettingsMetrics.titleFont)
+
+                Spacer(minLength: 8)
+
+                Text(value)
+                    .font(SettingsMetrics.valueFont)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .padding(.vertical, SettingsMetrics.rowVerticalPadding)
+        }
+    }
+
+    // MARK: - 外观及个性化
+
     private var appearanceSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: SettingsMetrics.iconSpacing) {
                     SettingsIconBadge(systemImage: appearance.mode.systemImage)
 
-                    Text(AppLocalization.string("显示模式"))
+                    Text(AppLocalization.string("主题"))
                         .font(SettingsMetrics.titleFont)
 
                     Spacer(minLength: 0)
                 }
 
-                Picker(AppLocalization.string("显示模式"), selection: $appearance.mode) {
+                Picker(AppLocalization.string("主题"), selection: $appearance.mode) {
                     ForEach(AppearanceStore.Mode.allCases) { mode in
                         Text(mode.displayName).tag(mode)
                     }
@@ -624,123 +309,74 @@ struct SettingsView: View {
                 .labelsHidden()
             }
             .padding(.vertical, SettingsMetrics.rowVerticalPadding)
-        } header: {
-            SettingsSectionHeader(title: AppLocalization.string("外观"))
-        }
-    }
 
-    // MARK: - 语言
-
-    private var languageSection: some View {
-        Section {
-            HStack(spacing: SettingsMetrics.iconSpacing) {
-                SettingsIconBadge(systemImage: "globe")
-
-                Text(AppLocalization.string("界面语言"))
-                    .font(SettingsMetrics.titleFont)
-
-                Spacer(minLength: 8)
-
-                Picker(AppLocalization.string("界面语言"), selection: Binding(
-                    get: { AppLocalization.overrideLanguage ?? "system" },
-                    set: { newValue in
-                        AppLocalization.overrideLanguage = newValue == "system" ? nil : newValue
-                        NotificationCenter.default.post(name: AppLocalization.didChangeNotification, object: nil)
-                    }
-                )) {
-                    Text(AppLocalization.string("跟随系统")).tag("system")
-                    ForEach(AppLocalization.supportedLanguages, id: \.code) { language in
-                        Text(language.name).tag(language.code)
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
+            detailLink(
+                systemImage: "globe",
+                title: AppLocalization.string("语言"),
+                value: currentLanguageName
+            ) {
+                LanguageSettingsView()
             }
-            .padding(.vertical, SettingsMetrics.rowVerticalPadding)
+
+            detailLink(
+                systemImage: "textformat.size",
+                title: AppLocalization.string("字体大小"),
+                value: fontScale.size.displayName
+            ) {
+                FontSizeSettingsView(store: fontScale)
+            }
         } header: {
-            SettingsSectionHeader(title: AppLocalization.string("语言"))
+            SettingsSectionHeader(title: AppLocalization.string("外观及个性化"))
         } footer: {
             Text(AppLocalization.string("切换语言后部分界面需要重新进入才会完全生效。"))
         }
     }
 
-    // MARK: - 支持
-
-    private var supportSection: some View {
-        Section {
-            NavigationLink {
-                UsageGuideView()
-            } label: {
-                SettingsLabel(
-                    systemImage: "book",
-                    title: AppLocalization.string("使用方法")
-                )
-            }
-
-            NavigationLink {
-                DiagnosticsView(state: state)
-            } label: {
-                SettingsLabel(
-                    systemImage: "doc.text.magnifyingglass",
-                    title: AppLocalization.string("运行日志与诊断")
-                )
-            }
-
-            NavigationLink {
-                BugReportView()
-            } label: {
-                SettingsLabel(
-                    systemImage: "exclamationmark.bubble",
-                    title: AppLocalization.string("生成问题报告")
-                )
-            }
-
-            Button {
-                showResetConfirmation = true
-            } label: {
-                SettingsLabel(
-                    systemImage: "arrow.counterclockwise",
-                    title: AppLocalization.string("重置引导流程")
-                )
-            }
-        } header: {
-            SettingsSectionHeader(title: AppLocalization.string("支持"))
+    private var currentLanguageName: String {
+        guard let code = AppLocalization.overrideLanguage else {
+            return AppLocalization.string("跟随系统")
         }
+        return AppLocalization.supportedLanguages.first { $0.code == code }?.name ?? code
     }
 
     // MARK: - 关于
 
+    /// 关于。
+    ///
+    /// 「说明 / 工作原理 / 支持」原来各占一个分组，其实都是
+    /// 「出问题了再回来查」的内容，收进这里三个入口后面更清爽。
     private var aboutSection: some View {
         Section {
-            SettingsStatusRow(
+            detailLink(
                 systemImage: "info.circle",
-                title: AppLocalization.string("应用版本"),
+                title: AppLocalization.string("关于 Floc"),
                 value: Bundle.main.appVersion
-            )
-            SettingsStatusRow(
-                systemImage: "hammer",
-                title: AppLocalization.string("构建号"),
-                value: Bundle.main.buildNumber
-            )
-            SettingsStatusRow(
-                systemImage: "cpu",
-                title: AppLocalization.string("内核版本"),
-                value: CoreBridge.coreVersion
-            )
-            SettingsStatusRow(
-                systemImage: "square.stack.3d.up",
-                title: AppLocalization.string("数据共享"),
-                value: AppGroup.isAvailable
-                    ? AppLocalization.string("已启用")
-                    : AppLocalization.string("不可用")
-            )
+            ) {
+                AboutFlocView(setup: setup)
+            }
 
-            if remoteConfiguration.systemVersionBlocked {
-                Label(
-                    AppLocalization.string("当前系统版本可能不受支持"),
-                    systemImage: "exclamationmark.triangle.fill"
-                )
-                .foregroundStyle(.orange)
+            detailLink(
+                systemImage: "book",
+                title: AppLocalization.string("用户指南"),
+                value: ""
+            ) {
+                UserGuideView()
+            }
+
+            detailLink(
+                systemImage: "exclamationmark.bubble",
+                title: AppLocalization.string("意见反馈"),
+                value: ""
+            ) {
+                FeedbackView(state: state)
+            }
+
+            detailLink(
+                systemImage: "envelope",
+                title: AppLocalization.string("联系我们"),
+                value: ""
+            ) {
+                ContactView()
             }
         } header: {
             SettingsSectionHeader(title: AppLocalization.string("关于"))
@@ -752,19 +388,6 @@ struct SettingsView: View {
     }
 
     // MARK: - 操作
-
-    /// 展示一次「已复制」回馈，2 秒后自动恢复。
-    private func showCopyFeedback() {
-        copyFeedbackTask?.cancel()
-        withAnimation(.easeInOut(duration: 0.15)) { didCopyModuleURL = true }
-        copyFeedbackTask = Task {
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                withAnimation(.easeInOut(duration: 0.15)) { didCopyModuleURL = false }
-            }
-        }
-    }
 
     /// 切换运行模式。两套链路不能同时开着，所以先停掉当前代理再切。
     private func switchMode(to mode: ProxyRuntimeMode) {

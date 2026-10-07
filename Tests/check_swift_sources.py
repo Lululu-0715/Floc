@@ -207,9 +207,15 @@ TEST_TYPE_REFERENCE = re.compile(r"\b([A-Z]\w{2,})\b")
 
 
 def collect_declared_types() -> set[str]:
+    """收集项目内声明的类型。
+
+    用 `rglob` 而不是 `glob`：`Shared/License/` 这类子目录同样参与编译，
+    早先用 `glob("*.swift")` 只扫顶层，导致 `LicenseManager` 这些
+    「确实存在却报未声明」的假失败。
+    """
     declared: set[str] = set()
     for folder in ("App", "Shared"):
-        for path in (ROOT / folder).glob("*.swift"):
+        for path in (ROOT / folder).rglob("*.swift"):
             declared.update(SWIFT_TYPE_PATTERN.findall(path.read_text(encoding="utf-8")))
     return declared
 
@@ -248,7 +254,11 @@ def check_test_references() -> None:
     known_all = declared | known_external
     checked = 0
     for path in sorted(test_dir.glob("*.swift")):
-        source = path.read_text(encoding="utf-8")
+        raw = path.read_text(encoding="utf-8")
+        # 先把字符串字面量与注释摘掉再找类型名：注释里提到类型名、
+        # 或者字符串里出现形如 `XXX.workers.dev` 的域名，都会被误判成
+        # 「引用了未声明的类型」。单行字符串不会吃掉换行，行号仍然准。
+        source = strip_strings_and_comments(raw)
         own_types = set(SWIFT_TYPE_PATTERN.findall(source))
 
         for match in type_reference.finditer(source):

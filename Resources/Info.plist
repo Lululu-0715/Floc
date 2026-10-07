@@ -28,6 +28,7 @@
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>App-Prefs</string>
+		<string>prefs</string>
 		<string>shadowrocket</string>
 		<string>surge</string>
 		<string>quantumult-x</string>
@@ -43,6 +44,11 @@
 	<string>用于在地图上显示当前真实位置，方便与虚拟位置对照验证。</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>用于在地图上显示当前真实位置，方便与虚拟位置对照验证。</string>
+
+	<!-- 设置页「账号」里可以换头像，需要读取相册里的图片。
+	     只读一张选中的图，不访问其他照片，也不上传。 -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>用于选择一张图片作为应用内头像，仅保存在本机，不会上传。</string>
 
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>用于在设备内启动本地定位拦截代理，需要访问本机回环地址。</string>

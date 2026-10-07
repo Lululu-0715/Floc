@@ -6,6 +6,7 @@ struct FlocApp: App {
     @StateObject private var setup = SetupCoordinator()
     @StateObject private var appearance = AppearanceStore.shared
     @StateObject private var license = LicenseManager.shared
+    @StateObject private var fontScale = FontScaleStore.shared
 
     init() {
         // 启动时清理过期日志，避免容器无限增长。
@@ -26,6 +27,10 @@ struct FlocApp: App {
                 // 外观在根节点统一施加：设置页里改一档，整个应用（含已经
                 // 打开的 sheet 和导航栈）立刻跟着变，不用逐页传值。
                 .preferredColorScheme(appearance.mode.colorScheme)
+                // 字号：把档位挂到根节点的动态字体环境上，整棵树会随之重算，
+                // 设置页里那些固定字号（`SettingsMetrics`，读的是静态属性）
+                // 也就一并拿到新系数，不需要逐页传值。
+                .environment(\.sizeCategory, fontScale.size.sizeCategory)
                 .onAppear {
                     Task {
                         await AppRemoteConfigurationStore.shared.refresh()

@@ -32,9 +32,9 @@ struct LicenseCardView: View {
                 .frame(width: 28)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(AppLocalization.string(manager.status.displayNameKey))
+                Text(AppLocalization.string(manager.displayNameKey))
                     .font(.headline)
-                Text(manager.daysLeftText)
+                Text(manager.remainingText)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -50,20 +50,32 @@ struct LicenseCardView: View {
     private var detail: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let type = manager.cardTypeLabel {
-                row("卡密类型", type)
+                row(AppLocalization.string("卡密类型"), type)
             }
             if manager.bonusDays > 0 {
-                row("推荐奖励", "+\(manager.bonusDays) 天")
+                row(
+                    AppLocalization.string("推荐奖励"),
+                    String(format: AppLocalization.string("+%ld 天"), manager.bonusDays)
+                )
+            }
+            if manager.isLocalMode {
+                Text(AppLocalization.string("尚未配置授权服务端，当前不做授权校验，全部功能已放行。部署 Worker 并把 LicenseConfig.baseURL 换成真实域名后会自动恢复。"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if manager.status == .trial {
-                Text("试用期内功能与正式版一致，到期后需输入卡密")
+                Text(AppLocalization.string("试用期内功能与正式版一致，到期后需输入卡密"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             if manager.status == .offline {
-                Text("当前处于离线状态，使用的是最近一次校验结果（最多宽限 \(LicenseConfig.offlineGraceDays) 天）")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
+                Text(AppLocalization.string(
+                    "当前处于离线状态，使用的是最近一次校验结果（最多宽限 %ld 天）",
+                    LicenseConfig.offlineGraceDays
+                ))
+                .font(.caption)
+                .foregroundStyle(.orange)
             }
         }
     }
@@ -82,20 +94,25 @@ struct LicenseCardView: View {
     private var actionButton: some View {
         if manager.isBusy {
             ProgressView().controlSize(.small)
+        } else if manager.isLocalMode {
+            // 本地模式没有服务端可谈，激活/解绑都会立刻失败，
+            // 干脆不给按钮，避免用户点进去白填一次。
+            EmptyView()
         } else if manager.status == .active || manager.status == .bonus {
-            Button("解绑设备") {
+            Button(AppLocalization.string("解绑设备")) {
                 Task { await manager.unbind() }
             }
             .font(.subheadline)
             .buttonStyle(.bordered)
         } else {
-            Button("输入卡密") { showActivateSheet = true }
+            Button(AppLocalization.string("输入卡密")) { showActivateSheet = true }
                 .font(.subheadline)
                 .buttonStyle(.borderedProminent)
         }
     }
 
     private var statusIcon: String {
+        if manager.isLocalMode { return "wrench.and.screwdriver.fill" }
         switch manager.status {
         case .active:       return "checkmark.seal.fill"
         case .trial:        return "clock.badge.checkmark"
@@ -107,6 +124,7 @@ struct LicenseCardView: View {
     }
 
     private var statusColor: Color {
+        if manager.isLocalMode { return .blue }
         switch manager.status {
         case .active, .trial, .bonus: return .green
         case .offline:                return .orange
@@ -138,10 +156,21 @@ struct ActivateSheet: View {
                         .font(.system(.body, design: .monospaced))
                         .focused($focused)
                 } header: {
-                    Text("卡密")
+                    Text(AppLocalization.string("卡密"))
                 } footer: {
-                    Text("卡密不区分大小写，输入后自动补全格式。一台设备一张卡，换手机可自助解绑 1 次。")
+                    Text(AppLocalization.string("卡密不区分大小写。一台设备一张卡，换手机可自助解绑 1 次。"))
                         .font(.caption)
+                }
+
+                if manager.isLocalMode {
+                    Section {
+                        Label(
+                            AppLocalization.string("尚未配置授权服务端，当前为本地模式，无需卡密即可使用全部功能。"),
+                            systemImage: "wrench.and.screwdriver"
+                        )
+                        .foregroundStyle(.secondary)
+                        .font(.subheadline)
+                    }
                 }
 
                 if let error = manager.lastErrorMessage {
@@ -164,19 +193,21 @@ struct ActivateSheet: View {
                             if manager.isBusy {
                                 ProgressView().controlSize(.small)
                             } else {
-                                Text("激活")
+                                Text(AppLocalization.string("激活"))
                             }
                             Spacer()
                         }
                     }
-                    .disabled(input.trimmingCharacters(in: .whitespaces).isEmpty || manager.isBusy)
+                    .disabled(input.trimmingCharacters(in: .whitespaces).isEmpty
+                              || manager.isBusy
+                              || manager.isLocalMode)
                 }
             }
-            .navigationTitle("激活卡密")
+            .navigationTitle(AppLocalization.string("激活卡密"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { dismiss() }
+                    Button(AppLocalization.string("取消")) { dismiss() }
                 }
             }
             .onAppear {
