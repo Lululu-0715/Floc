@@ -1,4 +1,4 @@
 {
   "scriptVersion": "1.0.0",
-  "moduleBaseURL": "https://raw.githubusercontent.com/Lululu-0715/Floc/main/ThirdParty/ProxyScripts/modules"
+  "moduleBaseURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules"
 }

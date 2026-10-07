@@ -2,13 +2,18 @@ import CoreLocation
 import SwiftUI
 
 /// 引导第二步：申请必要权限。
+///
+/// 这一页只放**真正需要用户点一下系统弹窗**的权限。
+/// Wi-Fi 信息（SSID）曾经也占一行，但它是「读得到就读、读不到也不影响开工」
+/// 的诊断信息，而且应用内的代理设置页本来就会显示当前 Wi-Fi 名称——
+/// 在引导里再要一次只是徒增一步，用户明确要求删掉。SSID 的读取入口仍在
+/// `ProxyManager.verifyWiFiProxy()`，由设置页与问题报告按需触发。
 struct PermissionStep: View {
 
     @ObservedObject var setup: SetupCoordinator
     @Binding var requested: Bool
 
     @StateObject private var locator = PermissionLocator()
-    @ObservedObject private var proxy = ProxyManager.shared
 
     var body: some View {
         VStack(spacing: 14) {
@@ -22,18 +27,6 @@ struct PermissionStep: View {
             ) {
                 locator.request()
                 requested = true
-            }
-
-            PermissionRow(
-                icon: "wifi",
-                title: AppLocalization.string("Wi-Fi 信息"),
-                description: AppLocalization.string("用于读取当前 Wi-Fi 名称，在引导中明确指出该去哪一页配置代理。"),
-                state: proxy.currentWiFiName.isEmpty
-                    ? AppLocalization.string("未读取到名称")
-                    : proxy.currentWiFiName,
-                isGranted: !proxy.currentWiFiName.isEmpty
-            ) {
-                Task { await proxy.verifyWiFiProxy() }
             }
 
             infoBox

@@ -52,10 +52,7 @@
 "环境检测报告" = "Environment check report";
 "生成时间" = "Generated at";
 "定位权限" = "Location permission";
-"Wi-Fi 信息" = "Wi-Fi information";
 "用于在地图上显示真实位置，便于与虚拟位置对照。" = "Used to show your real position on the map so you can compare it with the spoofed one.";
-"用于读取当前 Wi-Fi 名称，在引导中明确指出该去哪一页配置代理。" = "Used to read the current Wi-Fi name so the guide can point you to the right settings page.";
-"未读取到名称" = "Name unavailable";
 "未授权" = "Not granted";
 "受限" = "Restricted";
 "已拒绝" = "Denied";

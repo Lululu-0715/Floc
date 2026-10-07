@@ -225,8 +225,86 @@ def check_display_name(app_name: str) -> None:
 # 4. 脚本托管地址一致
 # ---------------------------------------------------------------------------
 
+# 脚本/配置的托管地址。生产**只认 jsDelivr**：
+#
+#   jsDelivr    https://cdn.jsdelivr.net/gh/<owner>/<repo>@<ref>/<path>
+#   GitHub raw  https://raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>
+#
+# raw 国内基本不可用（DNS 污染），而模块与远端配置拉不到时的表现都是
+# **静默失效**——开关看着是开的、日志里只有一行 debug。所以 raw 不是
+# 「次优选择」，是明确的错误配置，这里直接拦掉而不是降级放行。
+#
+# 这段逻辑踩过一次坑：原来只写了 raw 的正则，换成 jsDelivr 之后匹配数变成 0，
+# 检查照样「通过」，但「脚本 URL 指向了别的仓库」这条保护已经悄悄失效了。
+# 所以下面除了比对坐标，还断言**每个模块文件恰好 2 条脚本 URL**——
+# 让正则失配变成显式失败，而不是静默放行。
+JSDELIVR_PATTERN = re.compile(
+    r"https://cdn\.jsdelivr\.net/gh/"
+    r"(?P<owner>[\w.\-]+)/(?P<repo>[\w.\-]+)@(?P<ref>[\w.\-]+)/"
+)
+RAW_PATTERN = re.compile(
+    r"https://raw\.githubusercontent\.com/"
+    r"(?P<owner>[\w.\-]+)/(?P<repo>[\w.\-]+)/(?P<ref>[\w.\-]+)/"
+)
+
+SCRIPT_URL_PATTERN = re.compile(r"https://[^\s,;'\"]+\.js(?![A-Za-z0-9])")
+
+# 每个模块文件里应当出现的脚本 URL 条数（wloc.js + wloc-settings.js）。
+EXPECTED_SCRIPTS_PER_MODULE = 2
+
+
+def repo_coordinates(url: str) -> tuple[str, str, str] | None:
+    """从 jsDelivr 地址取出 (owner, repo, ref)；其他主机的地址返回 None。"""
+    match = JSDELIVR_PATTERN.match(url)
+    if not match:
+        return None
+    return (match.group("owner"), match.group("repo"), match.group("ref"))
+
+
+def hosted_url_problem(
+    url: str, expected: tuple[str, str, str] | None, where: str
+) -> str | None:
+    """核对一条托管地址。没问题是 None，否则返回一句可读的原因。"""
+    if RAW_PATTERN.match(url):
+        return (
+            f"{where} 用了 GitHub raw 地址，国内基本拉不到（表现是静默失效）：\n"
+            f"      {url}\n"
+            f"      请改用 https://cdn.jsdelivr.net/gh/<owner>/<repo>@<branch>/<path>"
+        )
+    match = JSDELIVR_PATTERN.match(url)
+    if not match:
+        return f"{where} 的地址不在已知托管主机上（既不是 jsDelivr 也不是 raw）：\n      {url}"
+    if expected is None:
+        return None
+    coords = (match.group("owner"), match.group("repo"), match.group("ref"))
+    if coords != expected:
+        return (
+            f"{where} 指向了其他仓库：\n"
+            f"      {url}\n"
+            f"      期望 {expected[0]}/{expected[1]}@{expected[2]}"
+        )
+    return None
+
+
+def without_comment_lines(content: str) -> str:
+    """去掉注释行。
+
+    模块文件里到处是「对着旧写法讲道理」的注释，注释里出现地址很正常
+    （比如 wloc.conf 头部就写着它自己的订阅地址）。不排除注释的话，
+    这些字样会参与判定，改配置时容易被骗过去。
+    注释前缀在这里统一处理：`;`（module/sgmodule/lpx/conf）、`#`、`//`。
+    """
+    kept = []
+    for line in content.split("\n"):
+        stripped = line.lstrip()
+        if stripped.startswith((";", "#", "//")):
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
 def check_script_hosting() -> None:
-    # 从 Swift 常量取期望前缀
+    # 从 Swift 常量取期望仓库
     match = re.search(
         r"defaultModuleBaseURL\s*=\s*\n?\s*\"([^\"]+)\"",
         read("Shared/ThirdPartyProxyManager.swift"),
@@ -236,42 +314,63 @@ def check_script_hosting() -> None:
         return
 
     base_url = match.group(1)
-    repo_prefix = base_url.split("/main/")[0]
+    problem = hosted_url_problem(base_url, None, "defaultModuleBaseURL")
+    if problem:
+        fail(problem)
+        return
 
-    print(f"  脚本仓库：{repo_prefix}")
+    expected = repo_coordinates(base_url)
+    repo_label = f"{expected[0]}/{expected[1]}@{expected[2]}"
+    print(f"  脚本仓库：{repo_label}")
 
     # 逐个模块核对脚本 URL
     modules_dir = ROOT / "ThirdParty" / "ProxyScripts" / "modules"
+    checked = 0
     for path in sorted(modules_dir.iterdir()):
-        if not path.is_file():
+        if not path.is_file() or path.suffix == ".md":
             continue
-        content = path.read_text(encoding="utf-8")
-        for match in re.finditer(r"https://raw\.githubusercontent\.com/\S+?\.js", content):
-            url = match.group(0)
-            if not url.startswith(repo_prefix):
-                fail(
-                    f"{path.name} 的脚本 URL 指向了其他仓库：\n"
-                    f"      {url}\n"
-                    f"      期望前缀 {repo_prefix}"
-                )
+        content = without_comment_lines(path.read_text(encoding="utf-8"))
+        urls = SCRIPT_URL_PATTERN.findall(content)
+        if len(urls) != EXPECTED_SCRIPTS_PER_MODULE:
+            fail(
+                f"{path.name} 里找到 {len(urls)} 条脚本 URL，"
+                f"应为 {EXPECTED_SCRIPTS_PER_MODULE} 条"
+                f"（正则失配会让「指向其他仓库 / 用错主机」被静默放过）"
+            )
+        for url in urls:
+            checked += 1
+            problem = hosted_url_problem(url, expected, f"{path.name} 的脚本 URL")
+            if problem:
+                fail(problem)
+    print(f"  模块脚本地址：{checked} 条（{repo_label}）")
 
     # 远端配置地址
     match = re.search(
         r"defaultConfigurationURL\s*=\s*\n?\s*\"([^\"]+)\"",
         read("Shared/AppRemoteConfiguration.swift"),
     )
-    if match:
+    if not match:
+        fail("无法从 AppRemoteConfiguration.swift 读出 defaultConfigurationURL")
+    else:
         config_url = match.group(1)
-        if not config_url.startswith(repo_prefix):
-            fail(
-                f"远端配置 URL 与脚本仓库前缀不一致：\n"
-                f"      {config_url}\n"
-                f"      期望前缀 {repo_prefix}"
-            )
-        # 本地是否真的存在这个文件
+        problem = hosted_url_problem(config_url, expected, "远端配置 URL")
+        if problem:
+            fail(problem)
         for suffix in ("Resources/remote-config.json",):
             if config_url.endswith(suffix) and not (ROOT / suffix).exists():
                 fail(f"远端配置指向 {suffix}，但仓库里没有这个文件")
+
+    # 远端配置里的 moduleBaseURL 会覆盖应用内置值——它要是写回 raw，
+    # 等于把用户又推回拉不到的地址上，所以这里一起核。
+    remote = json.loads(read("Resources/remote-config.json"))
+    remote_base = remote.get("moduleBaseURL")
+    if remote_base:
+        problem = hosted_url_problem(
+            remote_base, expected, "Resources/remote-config.json 的 moduleBaseURL"
+        )
+        if problem:
+            fail(problem)
+    print(f"  远端配置地址：{repo_label}")
 
 
 # ---------------------------------------------------------------------------

@@ -56,7 +56,47 @@ USER_AGENT = "Floc-Module-Reachability-Check"
 # 与 check_proxy_modules.py 保持一致的模块扩展名
 MODULE_SUFFIXES = [".module", ".sgmodule", ".conf", ".lpx", ".stoverride"]
 
-RAW_PREFIX = "https://raw.githubusercontent.com"
+# 同一份文件有两条公开地址，检查脚本必须都认识：
+#
+#   raw      https://raw.githubusercontent.com/<owner>/<repo>/<branch>/<path>
+#   jsDelivr https://cdn.jsdelivr.net/gh/<owner>/<repo>@<branch>/<path>
+#
+# 手机上真正去拉的是 jsDelivr（国内可达），但**权威内容以 raw 为准**——
+# jsDelivr 对分支有最长 12 小时的缓存，刚 push 完它可能还是旧内容。
+# 所以 raw 那条要求逐字节一致（用来抓「改了没 push」），
+# jsDelivr 只要求「拉得到且是同一份脚本」，内容暂时滞后只警告不报错。
+RAW_PATTERN = re.compile(
+    r"^https://raw\.githubusercontent\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/"
+    r"(?P<branch>[^/]+)/(?P<path>.+)$"
+)
+JSDELIVR_PATTERN = re.compile(
+    r"^https://(?:cdn|fastly|gcore)\.jsdelivr\.net/gh/(?P<owner>[^/]+)/(?P<repo>[^/]+)"
+    r"@(?P<branch>[^/]+)/(?P<path>.+)$"
+)
+
+
+def parse_repo_url(url: str) -> tuple[str, str, str, str] | None:
+    """把 raw / jsDelivr 两种地址都解析成 (owner, repo, branch, path)。"""
+    for pattern in (RAW_PATTERN, JSDELIVR_PATTERN):
+        match = pattern.match(url)
+        if match:
+            return (
+                match.group("owner"),
+                match.group("repo"),
+                match.group("branch"),
+                match.group("path"),
+            )
+    return None
+
+
+def mirror_raw(url: str) -> str | None:
+    """把 jsDelivr 地址换成同一份文件的 raw 地址，用于兜底。"""
+    parsed = parse_repo_url(url)
+    if not parsed:
+        return None
+    owner, repo, branch, path = parsed
+    return f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}"
+
 
 
 def fail(message: str) -> None:
@@ -78,6 +118,15 @@ def module_base_url() -> str:
         fail("无法从 ThirdPartyProxyManager.swift 读出 defaultModuleBaseURL")
         return ""
     return match.group(1).rstrip("/")
+
+
+def raw_module_base_url() -> str:
+    """同一份模块文件的 raw 地址，用来在 CDN 缓存滞后时判断到底推没推。"""
+    source = (ROOT / "Shared" / "ThirdPartyProxyManager.swift").read_text(encoding="utf-8")
+    match = re.search(r'rawScriptPrefix\s*=\s*\n?\s*"([^"]+)"', source)
+    if not match:
+        return ""
+    return f"{match.group(1).rstrip('/')}/modules"
 
 
 def configuration_url() -> str:
@@ -112,7 +161,12 @@ def origin_repository() -> str:
 # ---------------------------------------------------------------------------
 
 def build_targets() -> list[tuple[str, Path]]:
-    """返回 [(URL, 本地文件路径)]。"""
+    """返回 [(URL, 本地文件路径)]。
+
+    只检查**手机上真正去拉的那条地址**（默认是 jsDelivr，见
+    `ThirdPartyProxyManager.defaultModuleBaseURL`）。`raw` 那条留到
+    内容对不上时作兜底比对，不在这里重复请求——多 7 个请求要多等好几分钟。
+    """
     base = module_base_url()
     if not base:
         return []
@@ -129,11 +183,62 @@ def build_targets() -> list[tuple[str, Path]]:
     return targets
 
 
-# ---------------------------------------------------------------------------
-# 本地检查
-# ---------------------------------------------------------------------------
+def git(*args: str) -> str:
+    """跑一条 git 命令，失败返回空串。"""
+    try:
+        out = subprocess.run(
+            ["git", *args], cwd=ROOT, capture_output=True, text=True, timeout=20
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return out.stdout.strip() if out.returncode == 0 else ""
 
-def check_local(targets: list[tuple[str, Path]]) -> None:
+
+def check_git_state(offline: bool = False) -> None:
+    """确认这些文件**真的推到 GitHub 了**。
+
+    这是用户最直接的那个疑问（「是不是没上传 GitHub」）的机器答案。
+    以前只能靠联网拉远端来推断，现在本地两条 git 事实就够了，而且更快更准：
+
+      1. 工作区有没有未提交的改动 —— 有就是「改了没提交」；
+      2. 本地 HEAD 在不在 `origin/main` 上 —— 不在就是「提交了没 push」。
+
+    第 2 条只花一次 `git ls-remote`（一次握手），比逐文件拉内容便宜得多；
+    拿不到远端时跳过，不据此判失败（离线环境很常见）。
+    """
+    dirty = git("status", "--porcelain", "--", "ThirdParty")
+    if dirty:
+        files = [line.split(maxsplit=1)[-1] for line in dirty.splitlines()]
+        fail(
+            "这些第三方文件有未提交的改动，手机上拉到的仍是旧版本：\n"
+            + "\n".join(f"      {name}" for name in files)
+            + "\n      —— 先提交并 push，再出包"
+        )
+
+    head = git("rev-parse", "HEAD")
+    if not head:
+        return
+
+    if offline:
+        print("  已按 --offline 跳过「是否已 push」检查")
+        return
+
+    remote = git("ls-remote", "origin", "refs/heads/main")
+    if not remote:
+        print("  远端不可达，跳过「是否已 push」检查")
+        return
+
+    if head not in remote:
+        fail(
+            "本地 HEAD 不在 origin/main 上——**提交了但没 push**，"
+            "手机拉不到这次改动\n"
+            f"      HEAD={head[:8]}，origin/main={remote.split()[0][:8]}"
+        )
+    else:
+        print("  代码已推送：HEAD 与 origin/main 一致")
+
+
+def check_local(targets: list[tuple[str, Path]], offline: bool = False) -> None:
     print("[1/2] 本地检查")
 
     if not targets:
@@ -144,12 +249,11 @@ def check_local(targets: list[tuple[str, Path]]) -> None:
         if not path.exists():
             fail(f"URL 指向的文件在仓库里不存在：{path.relative_to(ROOT)}（{url}）")
 
-    # 2. URL 与 git remote 同源
+    # 2. 地址与 git remote 同源（raw / jsDelivr 两种形式都要认）
     origin = origin_repository()
-    base = module_base_url()
-    match = re.search(r"raw\.githubusercontent\.com/([^/]+)/([^/]+)/", base)
-    if origin and match:
-        url_repo = f"{match.group(1)}/{match.group(2)}"
+    parsed = parse_repo_url(targets[0][0])
+    if origin and parsed:
+        url_repo = f"{parsed[0]}/{parsed[1]}"
         if url_repo != origin:
             fail(
                 f"模块地址指向的仓库与 git origin 不一致：\n"
@@ -158,25 +262,38 @@ def check_local(targets: list[tuple[str, Path]]) -> None:
             )
         else:
             print(f"  仓库同源：{origin}")
+    elif origin:
+        fail(f"认不出模块地址的仓库：{targets[0][0]}")
 
-    # 3. 模块文件里出现的每个 raw URL 都要能在仓库里找到对应文件
-    repo_prefix = f"{RAW_PREFIX}/"
+    # 3. 模块文件里引用的每个脚本地址，都要能在仓库里找到对应文件
     for suffix in MODULE_SUFFIXES:
         path = MODULES / f"wloc{suffix}"
         if not path.exists():
             continue
         content = path.read_text(encoding="utf-8")
-        for url in re.findall(rf"{re.escape(repo_prefix)}\S+?\.js", content):
-            relative = url.split("/main/", 1)[-1]
-            if "/main/" not in url:
-                fail(f"{path.name} 的脚本 URL 不含 /main/：{url}")
+        # 两个坑都踩过：
+        #   - 写成 `\S+?\.js`（非贪婪）会停在 `https://cdn.js` 上，
+        #     因为 jsDelivr 的主机名本身就以 `.js` 开头；
+        #   - 只写 `\.js` 也不行，注释里那条 `.../wloc.conf` 的地址会被
+        #     回溯匹配成 `https://cdn.js`。
+        # 所以既要贪婪，又要求 `.js` 后面确实不是字母数字（真到结尾了）。
+        for url in re.findall(r"https://[^\s,;'\"]+\.js(?![A-Za-z0-9])", content):
+            parsed = parse_repo_url(url)
+            if not parsed:
+                fail(
+                    f"{path.name} 里的脚本地址既不是 raw 也不是 jsDelivr 形式，"
+                    f"检查脚本认不出来：{url}"
+                )
                 continue
+            relative = parsed[3]
             if not (ROOT / relative).exists():
                 fail(f"{path.name} 引用了仓库里不存在的脚本：{url}")
 
     config = configuration_url()
     if config and origin and origin not in config:
         warn(f"远端配置地址不属于当前仓库：{config}")
+
+    check_git_state(offline)
 
     print(f"  待检查条目：{len(targets)} 个（5 个模块 + 2 个脚本）")
 
@@ -214,17 +331,15 @@ def http_get(url: str) -> tuple[int, bytes]:
 
 
 def fetch_via_api(url: str) -> tuple[int, bytes] | None:
-    """raw 拉不动时用 GitHub contents API 兜底，用来区分「被墙」和「404」。
+    """拉不动时用 GitHub contents API 兜底，用来区分「被墙」和「404」。
 
-    返回 None 表示这个 URL 没法用 API 表达（例如不是 GitHub raw 地址）。
+    返回 None 表示这个 URL 没法用 API 表达（例如不是本仓库的地址）。
     """
-    match = re.match(
-        rf"{re.escape(RAW_PREFIX)}/([^/]+)/([^/]+)/([^/]+)/(.+)$", url
-    )
-    if not match:
+    parsed = parse_repo_url(url)
+    if not parsed:
         return None
 
-    owner, repo, branch, path = match.groups()
+    owner, repo, branch, path = parsed
     api = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}?ref={branch}"
     request = urllib.request.Request(
         api,
@@ -242,6 +357,28 @@ def fetch_via_api(url: str) -> tuple[int, bytes] | None:
         import base64
 
         return 200, base64.b64decode(payload["content"])
+    return None
+
+
+def fetch_bytes(url: str) -> bytes | None:
+    """尽力取一份内容：直连失败就走 raw 镜像、再走 GitHub API。取不到返回 None。"""
+    candidates = [url]
+    mirrored = mirror_raw(url)
+    if mirrored and mirrored != url:
+        candidates.append(mirrored)
+
+    for candidate in candidates:
+        try:
+            status, body = http_get(candidate)
+        except OSError:
+            status, body = 0, b""
+        if status == 200 and body:
+            return body
+
+        fallback = fetch_via_api(candidate)
+        if fallback and fallback[0] == 200 and fallback[1]:
+            return fallback[1]
+
     return None
 
 
@@ -282,19 +419,33 @@ def check_network(targets: list[tuple[str, Path]], allow_drift: bool) -> None:
 
         reachable += 1
 
-        # 远端内容必须与本地一致，否则客户端跑的是旧脚本
+        # 远端内容必须与本地一致，否则客户端跑的是旧脚本。
+        #
+        # 注意这里拉的是 jsDelivr，它对分支有最长 12 小时的缓存，所以
+        # 「内容不一致」有两种可能，必须分清，否则刚 push 完就会被误判成
+        # 「改了没 push」而拦住出包：
+        #   1. 仓库里是对的，只是 CDN 还在发旧副本 → 警告；
+        #   2. 仓库里也是旧的 → 真的没 push → 失败。
+        # 判据就是 raw（直读仓库）跟本地是否一致。
         if path.exists():
             local = path.read_bytes()
             if local != body:
-                drifted.append(name)
-                message = (
-                    f"{name} 远端内容与本地不一致——改了没 push，"
-                    f"客户端会拿到旧代码\n      {url}"
-                )
-                if allow_drift:
-                    warn(message)
+                mirrored_url = mirror_raw(url) or url
+                if fetch_bytes(mirrored_url) == local:
+                    warn(
+                        f"{name} 的 CDN 副本仍是旧内容（jsDelivr 分支缓存最长 12 小时），"
+                        f"仓库里已经是本地这一版。急着验证就把模块基地址换成 raw 地址"
+                    )
                 else:
-                    fail(message)
+                    drifted.append(name)
+                    message = (
+                        f"{name} 远端内容与本地不一致——改了没 push，"
+                        f"客户端会拿到旧代码\n      {url}"
+                    )
+                    if allow_drift:
+                        warn(message)
+                    else:
+                        fail(message)
 
     summary = f"  可访问：{reachable}/{len(targets)}"
     if blocked:
@@ -327,7 +478,7 @@ def main() -> int:
         print("\n无法确定模块地址，跳过。")
         return 1
 
-    check_local(targets)
+    check_local(targets, args.offline)
 
     if args.offline:
         print("\n[2/2] 联网检查（已按 --offline 跳过）")

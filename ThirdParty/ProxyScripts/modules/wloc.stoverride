@@ -1,6 +1,6 @@
-name: Floc WLOC (Stash)
-desc: 配合「Floc」应用改写 Apple 定位服务响应。本文件适用于 Stash。
-author: Floc
+name: "Floc WLOC (Stash)"
+desc: "配合「Floc」应用改写 Apple 定位服务响应。本文件适用于 Stash。"
+author: "Floc"
 
 # ─────────────────────────────────────────────────────────────
 #  本文件仅供 Stash 导入。
@@ -34,14 +34,21 @@ http:
     - bluedot.is.autonavi.com
     - bluedot.is.autonavi.com.gds.alibabadns.com
   script:
+    # binary-body-mode 不能省：定位响应是 protobuf 二进制，不开这个开关时
+    # 客户端会先按 UTF-8 解码再交给脚本，高位字节被替换成 U+FFFD，
+    # 脚本还原出来的字节流已经坏了——表现就是「模块在跑、坐标也写进去了，
+    # 定位纹丝不动」。
     - name: wloc-rewrite
       match: ^https?:\/\/(?:gs-loc(?:-cn)?\.apple\.com|gsp(?:-|\d+-|e\d+(?:-\d+)?-)ssl\.(?:ls\.)?apple\.com|bluedot\.is\.autonavi\.com(?:\.gds\.alibabadns\.com)?)\/clls\/wloc
       type: response
       require-body: true
-      max-size: 1048576
-      script: https://raw.githubusercontent.com/Lululu-0715/Floc/main/ThirdParty/ProxyScripts/wloc.js
+      binary-body-mode: true
+      max-size: 0
+      timeout: 30
+      script: https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/wloc.js
     - name: wloc-settings
       match: ^https?:\/\/gs-loc(-cn)?\.apple\.com\/wloc-settings\/save
       type: request
       require-body: false
-      script: https://raw.githubusercontent.com/Lululu-0715/Floc/main/ThirdParty/ProxyScripts/wloc-settings.js
+      timeout: 10
+      script: https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/wloc-settings.js

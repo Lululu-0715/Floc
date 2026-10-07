@@ -45,6 +45,12 @@ targets:
         INFOPLIST_FILE: Resources/Info.plist
         CODE_SIGN_ENTITLEMENTS: Resources/Floc.entitlements
         TARGETED_DEVICE_FAMILY: "1"
+        # 必须显式指定用哪个图标集。XcodeGen 不会像 Xcode 模板那样自动补这一项，
+        # 缺了它 actool 不会把 Assets.xcassets 里的 AppIcon 编译成 App 图标——
+        # 产物 Info.plist 里既没有 CFBundleIcons 也没有 CFBundleIconName，
+        # Assets.car 里只剩 AppIconPreview。装到手机上就是一个白图标，
+        # 用户每次自签安装都得自己再补一张图。
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         HEADER_SEARCH_PATHS: "$(PROJECT_DIR)/Core"
         SWIFT_OBJC_BRIDGING_HEADER: App/Floc-Bridging-Header.h
         OTHER_LDFLAGS: "$(inherited) -llocationcore"

@@ -341,8 +341,22 @@ final class ThirdPartyProxyManager: ObservableObject {
     }
 
     /// 默认脚本托管地址。换成自己的仓库时改这里。
+    ///
+    /// **为什么是 jsDelivr 而不是 `raw.githubusercontent.com`**：
+    /// 模块文件本身、以及模块里引用的两个 `.js`，都要由手机上的代理客户端
+    /// 主动去拉。`raw.githubusercontent.com` 在国内基本不可用（DNS 污染 + 无
+    /// CDN），客户端拉不到脚本时的表现是**静默失效**——模块显示已启用，
+    /// 定位却纹丝不动，或者过一阵子自己恢复真实位置。
+    ///
+    /// jsDelivr 是 GitHub 的 CDN 镜像，国内大多能直连。代价是它有缓存：
+    /// 分支（`@main`）的缓存最长 12 小时，所以**推完脚本后手机上最多要等
+    /// 12 小时才会生效**。急着验证时把基地址换成 raw 地址即可（设置页可改）。
     static let defaultModuleBaseURL =
-        "https://raw.githubusercontent.com/Lululu-0715/Floc/main/ThirdParty/ProxyScripts/modules"
+        "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules"
+
+    /// 同一份文件的 raw 地址前缀，供「换了基地址也能找到对应文件」的提示用。
+    static let rawScriptPrefix =
+        "https://raw.githubusercontent.com/Lululu-0715/Floc/main/ThirdParty/ProxyScripts"
 
     /// 把模块地址复制到剪贴板，方便用户手动导入。
     func copyModuleURLToPasteboard() -> Bool {

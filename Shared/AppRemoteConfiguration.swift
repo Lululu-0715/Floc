@@ -31,8 +31,16 @@ final class AppRemoteConfigurationStore: ObservableObject {
     }
 
     /// 默认配置地址。换成自己的托管地址时改这里。
+    ///
+    /// **为什么和模块一样用 jsDelivr 而不是 `raw.githubusercontent.com`**：
+    /// `raw.githubusercontent.com` 在国内基本不可用，`refresh()` 拉不到就
+    /// 静默沿用缓存（这是刻意的降级路径，但它意味着远端配置**永远不会更新**）。
+    /// 也就是说，写 raw 地址等于把「不发版也能改行为」这条后路悄悄堵死了，
+    /// 而且不会报错——只有翻运行日志才看得到「远程配置拉取失败」。
+    ///
+    /// jsDelivr 对分支的缓存最长 12 小时，改完配置要等一阵子才全网生效。
     static let defaultConfigurationURL =
-        "https://raw.githubusercontent.com/Lululu-0715/Floc/main/Resources/remote-config.json"
+        "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/Resources/remote-config.json"
 
     @Published private(set) var configuration = Configuration()
     @Published private(set) var lastFetchedAt: Date?

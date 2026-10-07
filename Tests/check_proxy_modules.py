@@ -164,13 +164,24 @@ def check_module_files() -> None:
             if script not in content:
                 fail(f"{name} 未引用脚本 {script}")
 
-        # 2. 脚本 URL 必须落在约定的基地址下
-        if base_url and "raw.githubusercontent.com" in content:
-            urls = re.findall(r"https://raw\.githubusercontent\.com/\S+?\.js", content)
-            for url in urls:
-                if not url.startswith(base_url.replace("/modules", "").rstrip("/")):
-                    # 只作提示：用户换成自己的仓库后这里的期望值会同步变化
-                    warn(f"{name} 的脚本 URL 与默认基地址不一致：{url}")
+        # 2. 脚本 URL 必须能算出仓库里的相对路径。
+        #    两种地址形式都合法：cdn.jsdelivr.net/gh/<owner>/<repo>@main/<path>
+        #    与 raw.githubusercontent.com/<owner>/<repo>/main/<path>。
+        #    手机实际拉的是 jsDelivr（国内可达），raw 留作对照。
+        for url in re.findall(r"https://[^\s,;'\"]+\.js(?![A-Za-z0-9])", content):
+            if "jsdelivr.net/gh/" in url:
+                repo_path = url.split("@main/", 1)
+                if len(repo_path) == 1:
+                    fail(f"{name} 的 jsDelivr 地址缺少 @main/ 分支标记：{url}")
+            elif "raw.githubusercontent.com" in url:
+                repo_path = url.split("/main/", 1)
+                if len(repo_path) == 1:
+                    fail(f"{name} 的 raw 地址缺少 /main/ 分支标记：{url}")
+            else:
+                fail(
+                    f"{name} 的脚本地址既不是 jsDelivr 也不是 raw 形式，"
+                    f"客户端可能拉不到：{url}"
+                )
 
         # 3. 配置接口路径必须与 Swift 常量一致。
         #    模块里通常写成正则转义形式（\/wloc-settings\/save），
@@ -261,6 +272,89 @@ def check_quantumultx_format() -> None:
     print(f"  Quantumult X 重写资源：{len(rules)} 条规则，无段名")
 
 
+def effective_lines(content: str, comment_prefix: str = "#") -> str:
+    """去掉注释行后的配置正文。
+
+    判据必须只看真正的配置行：这些文件里到处是对着旧写法讲道理的注释
+    （「不能写成 xxx」），拿整份文件做子串匹配会被注释里的字样骗过去——
+    反向验证时就踩过一次：把 `binary-body-mode=1` 从脚本行删掉，
+    检查却因为注释里还有这几个字而放行。
+    """
+    return "\n".join(
+        line for line in content.splitlines()
+        if not line.strip().startswith(comment_prefix)
+    )
+
+
+def check_client_module_syntax() -> None:
+    """小火箭的段名，以及各家「二进制响应体」开关。
+
+    这两件事都属于「写错了不报错、只是静默失效」那一类——用户在客户端里
+    看到模块装好了、开关也开着，定位就是不变，几乎无从排查。所以必须拦住。
+
+    **1）Shadowrocket 的段名**
+
+    Shadowrocket 模块只提供这些段：`[General]` `[Rule]` `[Host]`
+    `[URL Rewrite]` `[Header Rewrite]` `[Body Rewrite]` `[Map Local]`
+    `[Script]` `[MITM]`，脚本一律走 `[Script]` 段。
+
+    1.0.7 及以前的 `wloc.module` 写的是 `[Rewrite]` 段配
+    `url script-response-body`（那是 Quantumult X 的写法），小火箭读不懂，
+    导入后模块根本不起作用——用户反馈就是「小火箭模块都不识别了」。
+
+    **2）二进制响应体**
+
+    定位响应是 protobuf 二进制。客户端不开 `binary-body-mode` 时，会先按
+    UTF-8 解码再把 body 交给脚本，0x80 以上的字节被替换成 U+FFFD；
+    脚本 `charCodeAt(i) & 0xff` 拼回去的字节流已经坏了，系统解析失败后
+    直接丢弃这个响应——表现就是「模块在跑、状态显示已连接、定位纹丝不动」。
+    所以每个带 `wloc.js` 改写的模块文件都必须显式打开二进制体模式。
+    """
+    module = MODULES / "wloc.module"
+    if module.exists():
+        # 注释里会提到旧的错误写法（正是为了讲清楚为什么不能这么写），
+        # 所以判据只看真正的配置行。
+        effective = effective_lines(module.read_text(encoding="utf-8"))
+
+        if re.search(r"^\s*\[Rewrite\]\s*$", effective, re.M):
+            fail(
+                "wloc.module 用了 `[Rewrite]` 段——Shadowrocket 的模块没有这个段名"
+                "（URL 重写是 `[URL Rewrite]`，脚本是 `[Script]`），"
+                "导入后模块不会生效。"
+            )
+        for legacy in ("url script-response-body", "url script-echo-response"):
+            if legacy in effective:
+                fail(
+                    f"wloc.module 里出现了 `{legacy}`：那是 Quantumult X 的重写语法，"
+                    f"Shadowrocket 读不懂。小火箭的脚本要写在 [Script] 段里。"
+                )
+        if "[Script]" not in effective:
+            fail("wloc.module 缺少 [Script] 段")
+
+    binary_flags = {
+        "wloc.module": "binary-body-mode=1",
+        "wloc.sgmodule": "binary-body-mode=1",
+        "wloc.lpx": "binary-body-mode=true",
+        "wloc.stoverride": "binary-body-mode: true",
+    }
+    for name, flag in binary_flags.items():
+        path = MODULES / name
+        if not path.exists():
+            continue
+        # Stash 的 override 是 YAML，注释用 #，判据同上。
+        effective = effective_lines(path.read_text(encoding="utf-8"))
+        if "wloc.js" not in effective:
+            continue
+        if flag not in effective:
+            fail(
+                f"{name} 没打开二进制体模式（期望 `{flag}`）：定位响应是 protobuf 二进制，"
+                f"客户端会先按 UTF-8 解码，高位字节被替换后脚本还原出的字节流已损坏，"
+                f"表现为「模块在跑但定位不变」。"
+            )
+
+    print("  客户端语法：小火箭段名 + 二进制体模式")
+
+
 def check_script_syntax() -> None:
     """粗查脚本里的括号配平，避免语法错误导致整个改写静默失效。"""
     for name in ("wloc.js", "wloc-settings.js"):
@@ -339,16 +433,19 @@ def main() -> int:
     print("第三方代理模块一致性检查")
     print("=" * 60)
 
-    print("\n[1/4] 模块文件")
+    print("\n[1/5] 模块文件")
     check_module_files()
 
-    print("\n[2/4] Quantumult X 重写资源格式")
+    print("\n[2/5] Quantumult X 重写资源格式")
     check_quantumultx_format()
 
-    print("\n[3/4] 脚本语法")
+    print("\n[3/5] 客户端语法（小火箭段名 / 二进制体模式）")
+    check_client_module_syntax()
+
+    print("\n[4/5] 脚本语法")
     check_script_syntax()
 
-    print("\n[4/4] 脚本间约定")
+    print("\n[5/5] 脚本间约定")
     check_settings_key_alignment()
 
     print("\n" + "=" * 60)

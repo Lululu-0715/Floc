@@ -200,6 +200,12 @@ test -s "$STANDARD_STABLE_IPA"
 test -s "$PURE_IPA"
 test -s "$PURE_STABLE_IPA"
 
+# 静态检查看源码，看不出打包结果对不对——图标没进包、显示名带版本号
+# 这类问题只有拆开 IPA 才看得见。见 Scripts/verify-ipa.py。
+echo
+python3 "$ROOT/Scripts/verify-ipa.py" --version "$VERSION" \
+  "$STANDARD_IPA" "$PURE_IPA"
+
 BUILD_SUCCEEDED=1
 
 echo "未签名 IPA 已生成:"

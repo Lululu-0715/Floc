@@ -17,7 +17,7 @@ App 写入的坐标）。本目录的模块文件只是「外壳」——告诉�
 
 | 文件 | 对应客户端 | 格式特征 |
 |---|---|---|
-| [`wloc.module`](wloc.module) | **Shadowrocket**（小火箭） | `[Rewrite]` 段 + `url script-response-body` |
+| [`wloc.module`](wloc.module) | **Shadowrocket**（小火箭） | `[Script]` 段 + `type=http-response` / `http-request` |
 | [`wloc.sgmodule`](wloc.sgmodule) | **Surge**、**Egern** | `[Script]` 段 + `type=http-response,pattern=...` |
 | [`wloc.conf`](wloc.conf) | **Quantumult X** | 远程重写资源：`hostname =` 行 + 裸重写规则（**不能带段名**） |
 | [`wloc.lpx`](wloc.lpx) | **Loon** | `#!name=` 开头的插件格式 |
@@ -26,22 +26,42 @@ App 写入的坐标）。本目录的模块文件只是「外壳」——告诉�
 ⚠️ **Surge 和 Egern 共用 `wloc.sgmodule`**。这不是偷懒——两者都实现了 Surge
 的模块格式，同一个文件可以直接导入。
 
+⚠️ **小火箭没有 `[Rewrite]` 这个段名**。它的模块只提供 `[General]` `[Rule]`
+`[Host]` `[URL Rewrite]` `[Header Rewrite]` `[Body Rewrite]` `[Map Local]`
+`[Script]` `[MITM]`，脚本一律写在 `[Script]` 段里。1.0.7 及以前本仓库的
+`wloc.module` 写成了 `[Rewrite]` 配 `url script-response-body`（那是
+Quantumult X 的语法），小火箭读不懂，导入后模块完全不生效。
+`Tests/check_proxy_modules.py` 第 3 项现在锁死了这一点。
+
 ---
 
 ## 导入地址
 
-把对应那一行粘进客户端的「导入模块 / 添加订阅」即可：
+把对应那一行粘进客户端的「导入模块 / 添加订阅」即可。
+
+**默认地址走 jsDelivr**（`cdn.jsdelivr.net`），因为它有真正的 CDN，
+国内大多能直连；`raw.githubusercontent.com` 在国内基本拉不到，
+而**拉不到脚本的表现是静默失效**——模块显示已启用、定位却纹丝不动，
+或者过一会自己恢复真实位置。
 
 | 客户端 | 导入地址 |
 |---|---|
-| Shadowrocket | `https://raw.githubusercontent.com/Lululu-0715/Floc/main/ThirdParty/ProxyScripts/modules/wloc.module` |
-| Surge | `https://raw.githubusercontent.com/Lululu-0715/Floc/main/ThirdParty/ProxyScripts/modules/wloc.sgmodule` |
-| Egern | `https://raw.githubusercontent.com/Lululu-0715/Floc/main/ThirdParty/ProxyScripts/modules/wloc.sgmodule` |
-| Quantumult X | `https://raw.githubusercontent.com/Lululu-0715/Floc/main/ThirdParty/ProxyScripts/modules/wloc.conf` |
-| Loon | `https://raw.githubusercontent.com/Lululu-0715/Floc/main/ThirdParty/ProxyScripts/modules/wloc.lpx` |
-| Stash | `https://raw.githubusercontent.com/Lululu-0715/Floc/main/ThirdParty/ProxyScripts/modules/wloc.stoverride` |
+| Shadowrocket | `https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules/wloc.module` |
+| Surge | `https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules/wloc.sgmodule` |
+| Egern | `https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules/wloc.sgmodule` |
+| Quantumult X | `https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules/wloc.conf` |
+| Loon | `https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules/wloc.lpx` |
+| Stash | `https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules/wloc.stoverride` |
 
 直接在客户端里搜文件名是搜不到的，**要粘完整地址**。
+
+> **jsDelivr 有缓存**：对分支（`@main`）最长缓存 12 小时。刚更新完脚本、
+> 手机上还是旧行为时，要么等一等，要么把地址里的
+> `https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/`
+> 换成 `https://raw.githubusercontent.com/Lululu-0715/Floc/main/` 临时验证
+> （raw 直读仓库、没有缓存，但国内通常连不上）。
+> 应用内「设置 → 连接状态 → 第三方代理」里的模块基地址也可以直接改，
+> 改完点「复制模块订阅地址」拿到的就是新地址。
 
 ---
 
@@ -110,7 +130,19 @@ hostname = *.example.com, *.sample.com
 
 ---
 
-## 两个最常见的坑
+## 三个最常见的坑
+
+### 0. 脚本拉不到（表现为「过一会自己恢复真实位置」）
+
+模块文件只是外壳，真正的改写逻辑在两个 `.js` 里，**由客户端在每次请求时去拉**。
+拉不到时的表现非常隐蔽：模块开关看着是开的，客户端也不报错，但改写没发生。
+典型的两种观感：
+
+- 切出去一分钟后定位自己恢复成真实位置（客户端重新拉脚本失败，规则失效）；
+- 状态显示「已连接」，定位却纹丝不动。
+
+所以默认地址用的是 jsDelivr。如果换了自建地址、或者用了 raw 地址，
+请确认手机在那个网络下确实能打开脚本 URL。
 
 ### 1. 每个客户端要各自生成一次 CA，不能混用
 

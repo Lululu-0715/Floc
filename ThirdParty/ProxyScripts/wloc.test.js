@@ -851,3 +851,92 @@ test('没有诊断记录时查询响应里 diag 为 null', () => {
   const payload = JSON.parse(result.response.body);
   assert.strictEqual(payload.diag, null);
 });
+
+// ---------------------------------------------------------------------------
+// 回包形状：客户端开没开 binary-body-mode，决定 $response.body 是字节数组
+// 还是「每字符一字节」的二进制字符串，回错形状等于没改。
+//
+// 这两条是 1.0.8 修掉的老问题：早期版本一律回二进制字符串，Surge / Loon / QX
+// 拿到字符串会按 UTF-8 重新编码，0x80 以上的字节被撑成两字节，protobuf 结构
+// 当场破坏，系统解析失败直接丢弃这次定位——表现是「模块在跑、状态显示已连接、
+// 定位纹丝不动」，而脚本自己报的还是「改写成功」。
+// ---------------------------------------------------------------------------
+
+const SETTINGS_ENABLED = JSON.stringify({
+  enabled: true, latitude: 22.281508, longitude: 114.1747, accuracy: 25,
+});
+
+test('二进制模式（body 是字节数组）回 Uint8Array，并附带 bodyBytes', () => {
+  const { bytes: response, lengthOffset } = buildARPCResponse();
+  const { store } = makeStore({ wloc_settings: SETTINGS_ENABLED });
+
+  const result = runScript(WLOC_SOURCE, {
+    $response: { body: Uint8Array.from(response) },
+    $persistentStore: store,
+  });
+
+  // 跨 realm：不能用 instanceof，用 ArrayBuffer.isView 判内部槽。
+  assert.ok(ArrayBuffer.isView(result.body), 'body 应当是二进制视图');
+  assert.strictEqual(result.body.length, result.bodyBytes.byteLength);
+
+  const returned = Array.from(result.body);
+  const viaBodyBytes = Array.from(new Uint8Array(result.bodyBytes));
+  assert.deepStrictEqual(returned, viaBodyBytes, 'body 与 bodyBytes 必须是同一份内容');
+
+  // 经二进制模式绕一圈回来，内容必须仍然是一份合法的 ARPC 帧。
+  const payload = assertARPCLengthConsistent(returned, lengthOffset, 0);
+  assert.strictEqual(Number(findVarintDeep(payload, 1)),
+    Math.round(22.281508 * 1e8));
+});
+
+test('文本模式（body 是二进制字符串）仍回字符串', () => {
+  const { bytes: response, lengthOffset } = buildARPCResponse();
+  const { store } = makeStore({ wloc_settings: SETTINGS_ENABLED });
+
+  const result = runScript(WLOC_SOURCE, {
+    $response: { body: String.fromCharCode(...response) },
+    $persistentStore: store,
+  });
+
+  assert.strictEqual(typeof result.body, 'string', '没开二进制模式就必须回字符串');
+  assert.strictEqual(result.bodyBytes, undefined);
+
+  const patched = toBytes(result.body);
+  const payload = assertARPCLengthConsistent(patched, lengthOffset, 0);
+  assert.strictEqual(Number(findVarintDeep(payload, 1)),
+    Math.round(22.281508 * 1e8));
+});
+
+test('二进制模式下解压 gzip 后要去掉 Content-Encoding', () => {
+  const { bytes: response } = buildARPCResponse();
+  const gzipped = [0x1f, 0x8b, 0x08, 0x00, ...response];
+  const { store } = makeStore({ wloc_settings: SETTINGS_ENABLED });
+
+  const result = runScript(WLOC_SOURCE, {
+    $response: {
+      body: Uint8Array.from(gzipped),
+      headers: { 'Content-Encoding': 'gzip', 'Content-Length': '999', 'X-Keep': '1' },
+    },
+    $persistentStore: store,
+    // 客户端提供解压能力：直接回一份已解压的内容。
+    $utils: { ungzip: () => String.fromCharCode(...response) },
+  });
+
+  assert.ok(ArrayBuffer.isView(result.body));
+  assert.ok(result.headers, '解压过就必须回传 headers');
+  assert.strictEqual(result.headers['Content-Encoding'], undefined);
+  assert.strictEqual(result.headers['Content-Length'], undefined);
+  assert.strictEqual(result.headers['X-Keep'], '1');
+});
+
+test('诊断里记下回包形状，便于判断是不是客户端没开二进制模式', () => {
+  const { bytes: response } = buildARPCResponse();
+  const { state, store } = makeStore({ wloc_settings: SETTINGS_ENABLED });
+
+  runScript(WLOC_SOURCE, {
+    $response: { body: String.fromCharCode(...response) },
+    $persistentStore: store,
+  });
+
+  assert.strictEqual(JSON.parse(state.wloc_diag).binary, false);
+});

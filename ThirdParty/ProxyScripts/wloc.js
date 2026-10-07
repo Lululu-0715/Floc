@@ -659,6 +659,40 @@ function toBinaryString(bytes) {
   return out;
 }
 
+/**
+ * 回写改写后的响应体。
+ *
+ * **进来什么样、出去就什么样**，这是本函数存在的全部理由。
+ *
+ * 客户端开没开 `binary-body-mode`，决定了 `$response.body` 是 `Uint8Array`
+ * 还是一串「每字符一字节」的二进制字符串，两者必须回对应形状：
+ *
+ *   - 二进制模式（数组进）→ 回 `Uint8Array`。额外带一份 `ArrayBuffer` 放在
+ *     `bodyBytes`：Quantumult X 的二进制重写只认这个字段，只给 `body` 会被
+ *     当成文本处理。
+ *   - 文本模式（字符串进）→ 回二进制字符串，与 1.0.7 及以前一致，
+ *     老客户端不会因此变差。
+ *
+ * 早期版本一律回二进制字符串。Surge / Loon / QX 拿到字符串会按 UTF-8 重新
+ * 编码，0x80 以上的字节被撑成两字节，protobuf 结构当场破坏——系统解析失败
+ * 后直接丢弃这次定位，表现正是「模块装着、状态显示已连接、定位纹丝不动」，
+ * 而且脚本自己报的还是「改写成功」，非常难查。
+ */
+function finishBody(bytes, headers, binaryIn) {
+  const payload = {};
+
+  if (binaryIn) {
+    const view = Uint8Array.from(bytes);
+    payload.body = view;
+    payload.bodyBytes = view.buffer;
+  } else {
+    payload.body = toBinaryString(bytes);
+  }
+
+  if (headers) payload.headers = headers;
+  $done(payload);
+}
+
 // ---------------------------------------------------------------------------
 // 主流程
 // ---------------------------------------------------------------------------
@@ -766,6 +800,10 @@ function main() {
     return;
   }
 
+  // 客户端开了 binary-body-mode 时给的是 Uint8Array / ArrayBuffer，
+  // 没开时给的是二进制字符串。回包形状必须跟着它走，见 finishBody。
+  const binaryBody = typeof rawBody !== 'string';
+
   let bodyBytes = toBytes(rawBody);
 
   // 响应体可能是 gzip 压缩的，先尝试解压；解不开仍然放行，
@@ -796,23 +834,28 @@ function main() {
       locations: result.locations,
       envelope: result.envelope,
       gzip: wasGzip,
+      binary: binaryBody,
       in: bodyBytes.length,
       out: result.bytes.length,
     });
-    log(`改写成功，信封 ${result.envelope}，位置条目 ${result.locations} 个`);
+    log(`改写成功，信封 ${result.envelope}，位置条目 ${result.locations} 个，`
+      + `回包形状 ${binaryBody ? '二进制' : '文本'}`);
 
     // 只在解压过的情况下才回传 headers——其余情况一律不动，避免引入回归。
+    // 解压后 Content-Encoding / Content-Length 必须去掉，否则客户端会去解压
+    // 一段已经不压缩的数据，响应直接作废。
     if (wasGzip) {
-      $done({
-        body: toBinaryString(result.bytes),
-        headers: stripEntityHeaders(
+      finishBody(
+        result.bytes,
+        stripEntityHeaders(
           typeof $response !== 'undefined' ? $response.headers : undefined
         ),
-      });
+        binaryBody
+      );
       return;
     }
 
-    $done({ body: toBinaryString(result.bytes) });
+    finishBody(result.bytes, undefined, binaryBody);
   } catch (error) {
     recordDiag('error', {
       reason: String(error && error.message ? error.message : error),

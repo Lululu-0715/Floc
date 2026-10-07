@@ -147,11 +147,16 @@ Floc/
 
 | 模块文件 | 对应客户端 | 格式特征 |
 |---|---|---|
-| `wloc.module` | **Shadowrocket**（小火箭） | `[Rewrite]` + `url script-response-body` |
+| `wloc.module` | **Shadowrocket**（小火箭） | `[Script]` + `type=http-response,pattern=...` |
 | `wloc.sgmodule` | **Surge**、**Egern** | `[Script]` + `type=http-response,pattern=...` |
-| `wloc.conf` | **Quantumult X** | `[rewrite_local]` + `[mitm]` |
+| `wloc.conf` | **Quantumult X** | 裸规则列表（无段名）+ `[mitm]` |
 | `wloc.lpx` | **Loon** | `#!name=` 开头的插件格式 |
 | `wloc.stoverride` | **Stash** | YAML override |
+
+> **小火箭没有 `[Rewrite]` 段。** 1.0.7 及以前 `wloc.module` 写的是
+> `[Rewrite]` + `url script-response-body`（那是 Quantumult X 的写法），
+> 小火箭导入后整份模块都不生效——表现是「模块开关是开的，定位纹丝不动」。
+> 现在统一成 `[Script]` 段 + Surge 式规则。
 
 > Surge 与 Egern 共用 `wloc.sgmodule`：两者都实现了 Surge 的模块格式。
 

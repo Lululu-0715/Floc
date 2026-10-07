@@ -324,22 +324,35 @@ xcodebuild ... DEVELOPMENT_TEAM=你的TeamID
 
 ### 关于脚本托管地址
 
-第三方模块和远端配置指向 GitHub raw：
+第三方模块与远端配置都指向 **jsDelivr**（GitHub 的 CDN 镜像）：
 
 ```
-https://raw.githubusercontent.com/Lululu-0715/Floc/main/ThirdParty/ProxyScripts/modules
-https://raw.githubusercontent.com/Lululu-0715/Floc/main/Resources/remote-config.json
+https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules
+https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/Resources/remote-config.json
 ```
+
+> **不要改回 `raw.githubusercontent.com`。** 它在国内基本不可用（DNS 污染、
+> 无 CDN），而模块和远端配置拉不到时的表现都是**静默失效**：模块开关看着是开的、
+> 日志里只有一行 debug、远端配置永远停在缓存值。踩过的具体表现是
+> 「切出去一分钟左右自己恢复真实位置」——脚本到期后客户端重新拉取失败。
+>
+> 代价是 jsDelivr 对分支（`@main`）的缓存最长 12 小时，**改完脚本要等一阵子
+> 手机上才会生效**（这也是让用户「改完马上验证」时容易误判的地方）。
+>
+> `Tests/check_branding.py` 已经把这条锁死了：模块文件、`defaultModuleBaseURL`、
+> `defaultConfigurationURL`、`remote-config.json` 的 `moduleBaseURL`
+> 四处只要出现 raw 地址就直接失败。
 
 如果仓库迁移到其他账号，改上面表格里的
 `Shared/ThirdPartyProxyManager.swift` 与 `Shared/AppRemoteConfiguration.swift`
 两处常量，以及 `ThirdParty/ProxyScripts/modules/` 下 5 个模块文件里的脚本 URL
-（共 17 处）。
+（共 10 处）与 `Resources/remote-config.json`。
 
-改完用这个命令确认 5 个模块全部对齐：
+改完用这两个命令确认全部对齐：
 
 ```bash
-python3 Tests/check_proxy_modules.py
+python3 Tests/check_branding.py       # 托管地址与仓库归属
+python3 Tests/check_proxy_modules.py  # 模块格式与脚本路径
 ```
 
 > **前提**：仓库必须是**公开**的。第三方代理客户端无法访问私有仓库的 raw 地址，

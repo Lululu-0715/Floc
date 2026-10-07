@@ -23,8 +23,10 @@ struct SettingsView: View {
     @ObservedObject private var remoteConfiguration = AppRemoteConfigurationStore.shared
     @ObservedObject private var appearance = AppearanceStore.shared
     @ObservedObject private var fontScale = FontScaleStore.shared
+    #if !PURE_BUILD
     @ObservedObject private var license = LicenseManager.shared
     @ObservedObject private var profile = ProfileStore.shared
+    #endif
 
     @Environment(\.dismiss) private var dismiss
 
@@ -42,7 +44,13 @@ struct SettingsView: View {
 
         return NavigationView {
             List {
+                // 纯净版整组拿掉：这一组的三行分别是「我是谁（头像昵称）」
+                // 「这台机器是谁（设备码）」「我还能用多久（剩余时间 + 升级）」，
+                // 后两项本来就属于卡密那套，头像昵称留着也只是半组空壳。
+                // 用户明确要求「纯净版设置里面不要有账号这类」。
+                #if !PURE_BUILD
                 accountSection
+                #endif
                 modeSection
                 connectionSection
                 appearanceSection
@@ -77,7 +85,11 @@ struct SettingsView: View {
     /// 三行分别回答三个问题：我是谁（头像昵称）、这台机器是谁（设备码）、
     /// 我还能用多久（剩余时间 + 升级入口）。
     ///
-    /// 后两行都属于卡密那套东西，纯净版（`PURE_BUILD`）只留头像昵称。
+    /// 整组只在标准版出现：后两行本来就属于卡密那套东西，纯净版里连头像昵称
+    /// 也一并去掉——见 `body` 里的调用点。
+    // 整组（含下面的 licenseBadge）一起放进条件编译：纯净版既不显示这一组，
+    // 也就不需要编译它的辅助视图，省得留下「编译得到但没人引用」的警告。
+    #if !PURE_BUILD
     private var accountSection: some View {
         Section {
             NavigationLink {
@@ -101,7 +113,6 @@ struct SettingsView: View {
                 .padding(.vertical, 2)
             }
 
-            #if !PURE_BUILD
             HStack(spacing: SettingsMetrics.iconSpacing) {
                 SettingsIconBadge(systemImage: "iphone")
 
@@ -117,9 +128,7 @@ struct SettingsView: View {
                 licenseBadge
             }
             .padding(.vertical, SettingsMetrics.rowVerticalPadding)
-            #endif
 
-            #if !PURE_BUILD
             NavigationLink {
                 MembershipView(manager: license)
             } label: {
@@ -143,9 +152,7 @@ struct SettingsView: View {
                 }
                 .padding(.vertical, SettingsMetrics.rowVerticalPadding)
             }
-            #endif
 
-            #if !PURE_BUILD
             Button {
                 showActivateSheet = true
             } label: {
@@ -165,13 +172,11 @@ struct SettingsView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            #endif
         } header: {
             SettingsSectionHeader(title: AppLocalization.string("账号"))
         }
     }
 
-    #if !PURE_BUILD
     /// 授权状态小胶囊。颜色跟着「能不能用」走，而不是跟着具体状态枚举——
     /// 用户只需要一眼看出「现在是好的还是不好的」。
     private var licenseBadge: some View {
