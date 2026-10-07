@@ -28,10 +28,6 @@ struct SettingsView: View {
 
     @Environment(\.dismiss) private var dismiss
 
-    /// 启停代理过程中的错误，展示在「连接状态」里而不是弹窗——
-    /// 用户正在这页操作，内联提示比模态弹窗少一次点击。
-    @State private var statusMessage: String?
-
     /// 语言是在二级页里改的，改完回到这页要能立刻看到新的语言名。
     /// `AppLocalization` 是静态查表，没有发布者，只能靠通知手动顶一下。
     @State private var languageTick = 0
@@ -126,15 +122,15 @@ struct SettingsView: View {
 
                     Spacer(minLength: 8)
 
-                    Text(license.remainingText)
+                    // 这里只放「大概还有多久」。精确到分钟的文案在列表行里
+                    // （图标 + 标题 + 取值 + 箭头）一定会被截断，完整信息
+                    // 留给二级页——一级页扫一眼知道个数量级就够了。
+                    Text(license.remainingSummaryText)
                         .font(SettingsMetrics.valueFont)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-
-                    Text(AppLocalization.string("升级套餐"))
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.accentColor)
+                        .layoutPriority(1)
                 }
                 .padding(.vertical, SettingsMetrics.rowVerticalPadding)
             }
@@ -211,42 +207,15 @@ struct SettingsView: View {
 
     /// 连接状态。
     ///
-    /// 上面两行是「现在通不通」，下面四个入口是「不通的时候去哪儿修」。
+    /// 顺序固定为「环境 / 客户端 → 虚拟定位 → 定位模拟」，两种模式一致：
+    ///
+    ///   - 原来首行是「本机代理」开关 / 第三方客户端状态，和下面的二级入口
+    ///     说的是同一件事（一个可点、一个不可点），删掉首行只留入口。
+    ///     本机代理的开关挪进了「证书与环境」——它本来就属于那边的内容。
+    ///   - 第三方代理入口上移到「虚拟定位」之前：先确认链路，再看开关状态，
+    ///     最后才调参数，读起来是一条因果链。
     private var connectionSection: some View {
         Section {
-            if runtimeMode.mode == .localProxy {
-                SettingsToggleRow(
-                    systemImage: "play.circle.fill",
-                    title: AppLocalization.string("本机代理"),
-                    isOn: Binding(
-                        get: { proxy.status.isRunning },
-                        set: { setLocalProxy(enabled: $0) }
-                    )
-                )
-            } else {
-                SettingsStatusRow(
-                    systemImage: "link",
-                    title: thirdParty.selectedClient.displayName,
-                    value: thirdParty.state.displayText,
-                    valueColor: thirdParty.state.isUsable ? .green : .orange
-                )
-            }
-
-            SettingsStatusRow(
-                systemImage: "location.north.line",
-                title: AppLocalization.string("虚拟定位"),
-                value: state.isEnabled
-                    ? AppLocalization.string("已开启")
-                    : AppLocalization.string("已关闭"),
-                valueColor: state.isEnabled ? .green : .secondary
-            )
-
-            if let statusMessage {
-                Text(statusMessage)
-                    .font(.footnote)
-                    .foregroundStyle(Color.red)
-            }
-
             if runtimeMode.mode == .localProxy {
                 detailLink(
                     systemImage: "checkmark.shield.fill",
@@ -266,6 +235,15 @@ struct SettingsView: View {
                     ThirdPartySettingsView(thirdParty: thirdParty)
                 }
             }
+
+            SettingsStatusRow(
+                systemImage: "location.north.line",
+                title: AppLocalization.string("虚拟定位"),
+                value: state.isEnabled
+                    ? AppLocalization.string("已开启")
+                    : AppLocalization.string("已关闭"),
+                valueColor: state.isEnabled ? .green : .secondary
+            )
 
             detailLink(
                 systemImage: "scope",
@@ -308,25 +286,26 @@ struct SettingsView: View {
 
     private var appearanceSection: some View {
         Section {
-            // 主题用行内菜单而不是分段控件：分段控件必须独占一行，
-            // 三个选项横着铺开把这一行撑得很高，而主题是个几乎不会改的
-            // 设置项，跟语言、字体大小一样收进右侧菜单就够了。
+            // 主题用行内分段控件：三个选项必须一眼看全、点一下就切，
+            // 收进右侧菜单等于多一次点击，也看不出当前有几个选项。
+            // 分段控件本身就占满一行宽度，所以把标题压到最左、控件靠右，
+            // 两者共用一行，比让主题单独占一行矮一半。
             HStack(spacing: SettingsMetrics.iconSpacing) {
                 SettingsIconBadge(systemImage: appearance.mode.systemImage)
 
                 Text(AppLocalization.string("主题"))
                     .font(SettingsMetrics.titleFont)
+                    .fixedSize()
 
-                Spacer(minLength: 8)
+                Spacer(minLength: 6)
 
                 Picker(AppLocalization.string("主题"), selection: $appearance.mode) {
                     ForEach(AppearanceStore.Mode.allCases) { mode in
                         Text(mode.displayName).tag(mode)
                     }
                 }
-                .pickerStyle(.menu)
+                .pickerStyle(.segmented)
                 .labelsHidden()
-                .accessibilityLabel(AppLocalization.string("主题"))
             }
             .padding(.vertical, SettingsMetrics.rowVerticalPadding)
 
@@ -417,46 +396,5 @@ struct SettingsView: View {
         runtimeMode.select(mode)
         setup.reset()
         dismiss()
-    }
-
-    /// 启停本机代理。
-    ///
-    /// 与主界面「开启/停止虚拟定位」保持同一套动作顺序：先改改写配置、
-    /// 再停代理、最后复位开关，避免关闭过程中的请求仍被改写。
-    private func setLocalProxy(enabled isOn: Bool) {
-        statusMessage = nil
-
-        guard isOn else {
-            proxy.updateCoordinates(
-                latitude: 0,
-                longitude: 0,
-                enabled: false,
-                accuracy: state.accuracy,
-                motionRadius: 0
-            )
-            proxy.stop()
-            BackgroundKeepAlive.shared.stop()
-            state.disable()
-            return
-        }
-
-        // 没有选点时也允许只启动代理——安装证书本身就需要证书服务在跑。
-        let pair = state.selection
-        Task {
-            do {
-                try await proxy.start(
-                    latitude: pair?.wgs84.latitude ?? 0,
-                    longitude: pair?.wgs84.longitude ?? 0,
-                    enabled: state.isEnabled,
-                    accuracy: state.accuracy,
-                    motionRadius: state.motionDriftRadius
-                )
-                BackgroundKeepAlive.shared.start()
-                await proxy.verifyCertificateTrust()
-                await proxy.verifyWiFiProxy()
-            } catch {
-                statusMessage = error.localizedDescription
-            }
-        }
     }
 }

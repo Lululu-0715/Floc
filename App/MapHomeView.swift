@@ -341,12 +341,27 @@ struct MapHomeView: View {
         }
         .padding(14)
         .mapGlassSurface(cornerRadius: GlassMetrics.mapPanelCornerRadius)
-        .padding(.horizontal, 12)
-        .padding(.bottom, 8)
+        // 面板整体往下、往外推：左右各留 6pt、底边留 4pt。
+        //
+        // 底边这 4pt 是相对「安全区下沿」而不是屏幕物理下沿——面板仍然让开
+        // 那条 Home 指示条，只是把它和屏幕圆角之间的距离压缩到最小，
+        // 大圆角的弧线才读得出来是在呼应机身轮廓，而不是悬在半空中。
+        .padding(.horizontal, 6)
+        .padding(.bottom, 4)
     }
 
+    /// 已选位置卡片：左边地名与两行坐标，右边竖排两个入口。
+    ///
+    /// 两个圆钮摆在**坐标右侧、上下各一个**：它们和坐标一样都属于
+    /// 「这一屏顺手戳一下」的入口，贴着刚读完的坐标放，视线不必横穿整行；
+    /// 两个 30pt 圆钮加间距正好 66pt，与「标题 + 两行坐标」的高度相当，
+    /// 不会把卡片撑高。
+    ///
+    /// 注意这两个入口只在有选点时出现（整张卡片就是这个时候才有的）。
+    /// 没有选点时它们不会消失，而是落回状态行右端——否则用户手里明明有收藏、
+    /// 也能看到收藏条，却找不到打开收藏夹管理页的入口。
     private var selectionCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 // 收藏按钮紧跟在地名后面：点地名旁边就能收藏/取消，
                 // 比原来放在整行最右侧要少一次跨屏移动，单手操作更顺。
@@ -385,39 +400,41 @@ struct MapHomeView: View {
                     // 「复制坐标」按钮，既占纵向空间又要在两行坐标之间来回
                     // 对照，现在点哪行复制哪行。
                     //
-                    // 精度选择器现在挂在两行坐标的右侧，不再单独占一行：
-                    // 它是低频选项，压在右下角既顺手又不增加面板高度。
-                    HStack(alignment: .center, spacing: 10) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 6) {
-                                Text(String(format: "GCJ-02  %.6f, %.6f",
-                                            pair.gcj02.latitude, pair.gcj02.longitude))
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(.secondary)
-                                CoordinateCopyIcon(
-                                    accessibilityLabel: "GCJ-02",
-                                    value: String(format: "%.6f,%.6f",
-                                                  pair.gcj02.latitude, pair.gcj02.longitude)
-                                )
-                            }
-
-                            HStack(spacing: 6) {
-                                Text(String(format: "WGS-84  %.6f, %.6f",
-                                            pair.wgs84.latitude, pair.wgs84.longitude))
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(.secondary)
-                                CoordinateCopyIcon(
-                                    accessibilityLabel: "WGS-84",
-                                    value: String(format: "%.6f,%.6f",
-                                                  pair.wgs84.latitude, pair.wgs84.longitude)
-                                )
-                            }
+                    // 精度选择器原本挂在右侧，现已删掉：它和「设置 → 连接状态
+                    // → 定位模拟」里那个是同一个值（都绑 state.accuracy），
+                    // 两处并存只会让人怀疑哪边算数。精度的完整档位留在设置里。
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Text(String(format: "GCJ-02  %.6f, %.6f",
+                                        pair.gcj02.latitude, pair.gcj02.longitude))
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                            CoordinateCopyIcon(
+                                accessibilityLabel: "GCJ-02",
+                                value: String(format: "%.6f,%.6f",
+                                              pair.gcj02.latitude, pair.gcj02.longitude)
+                            )
                         }
 
-                        Spacer(minLength: 0)
-
-                        accuracyPicker
+                        HStack(spacing: 6) {
+                            Text(String(format: "WGS-84  %.6f, %.6f",
+                                        pair.wgs84.latitude, pair.wgs84.longitude))
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                            CoordinateCopyIcon(
+                                accessibilityLabel: "WGS-84",
+                                value: String(format: "%.6f,%.6f",
+                                              pair.wgs84.latitude, pair.wgs84.longitude)
+                            )
+                        }
                     }
+                }
+            }
+
+            if state.selection != nil {
+                VStack(spacing: 6) {
+                    favoritesCircle(size: 30)
+                    diagnosticsCircle(size: 30)
                 }
             }
         }
@@ -426,20 +443,6 @@ struct MapHomeView: View {
             RoundedRectangle(cornerRadius: GlassMetrics.mapCornerRadius, style: .continuous)
                 .fill(Color.primary.opacity(0.06))
         )
-    }
-
-    /// 精度选择器。原来单独占一行，现在挪到两行坐标的最右侧，
-    /// 底部面板因此少一行高度。
-    private var accuracyPicker: some View {
-        Picker(AppLocalization.string("精度"), selection: $state.accuracy) {
-            Text("10 m").tag(10)
-            Text("25 m").tag(25)
-            Text("50 m").tag(50)
-            Text("100 m").tag(100)
-        }
-        .pickerStyle(.menu)
-        .labelsHidden()
-        .accessibilityLabel(AppLocalization.string("精度"))
     }
 
     private var favoritesRow: some View {
@@ -462,20 +465,12 @@ struct MapHomeView: View {
         .frame(height: 38)
     }
 
-    /// 状态行：左端圆形「诊断」，中间状态胶囊，右端圆形「收藏夹」。
+    /// 状态行：只剩环境状态胶囊。
     ///
-    /// 三样东西挤在一行是有意的——它们都是「顺手戳一下」的低频入口，
-    /// 各占一行会让底部面板高出一截，而面板越矮、地图露出来的部分越多。
-    /// 圆钮用 `mapGlassCapsule()` 套在 34×34 的方框上，正好是个圆。
+    /// 「运行日志与诊断」和「收藏夹」两个入口已经移进选点卡片，摆在坐标右侧
+    /// （上下各一个），这里不再放常驻按钮。
     private var statusRow: some View {
         HStack(spacing: 8) {
-            circleButton(
-                systemImage: "doc.text.magnifyingglass",
-                accessibilityLabel: AppLocalization.string("运行日志与诊断")
-            ) {
-                activeSheet = .logs
-            }
-
             StatusPill(
                 icon: runtimeMode.mode == .localProxy ? "wifi.router" : "shield.lefthalf.filled",
                 text: runtimeMode.mode.displayName,
@@ -503,22 +498,53 @@ struct MapHomeView: View {
 
             Spacer(minLength: 0)
 
-            circleButton(
-                systemImage: "star.fill",
-                accessibilityLabel: AppLocalization.string("收藏位置"),
-                badge: favorites.favorites.count
-            ) {
-                showFavorites = true
+            // 没选点时选点卡片整块不显示，那两个入口就没了着落。而收藏条
+            // （favoritesRow）这时仍然可见——用户看得见自己的收藏，却没有入口
+            // 打开收藏夹管理页。所以留一条退路：无选点时把两个圆钮放回状态行
+            // 右端，横排。有选点时它们是竖排的，位置本身就在提示该点哪个。
+            if state.selection == nil {
+                HStack(spacing: 6) {
+                    favoritesCircle(size: 30)
+                    diagnosticsCircle(size: 30)
+                }
             }
         }
     }
 
-    /// 状态行两端的小圆按钮。
+    /// 收藏夹入口。
+    ///
+    /// 图标用 `bookmark` 而不是 `star`：地名旁边那个星标做的是「收藏/取消
+    /// 当前点」，两者现在并排在同一张卡片里，两个一模一样的星形做两件事
+    /// 必然点错。
+    private func favoritesCircle(size: CGFloat) -> some View {
+        mapCircleButton(
+            systemImage: "bookmark.fill",
+            accessibilityLabel: AppLocalization.string("收藏位置"),
+            size: size,
+            badge: favorites.favorites.count
+        ) {
+            showFavorites = true
+        }
+    }
+
+    /// 运行日志与诊断入口。
+    private func diagnosticsCircle(size: CGFloat) -> some View {
+        mapCircleButton(
+            systemImage: "doc.text.magnifyingglass",
+            accessibilityLabel: AppLocalization.string("运行日志与诊断"),
+            size: size
+        ) {
+            activeSheet = .logs
+        }
+    }
+
+    /// 选点卡片与状态行共用的小圆钮。
     ///
     /// `badge` 为 0 时不画角标——收藏夹空着还挂个「0」只是噪声。
-    private func circleButton(
+    private func mapCircleButton(
         systemImage: String,
         accessibilityLabel: String,
+        size: CGFloat,
         badge: Int = 0,
         action: @escaping () -> Void
     ) -> some View {
@@ -527,7 +553,7 @@ struct MapHomeView: View {
                 Image(systemName: systemImage)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Color.secondary)
-                    .frame(width: 34, height: 34)
+                    .frame(width: size, height: size)
                     .mapGlassCapsule()
                     .contentShape(Circle())
 
@@ -539,7 +565,7 @@ struct MapHomeView: View {
                         .padding(.horizontal, 4)
                         .padding(.vertical, 1)
                         .background(Capsule().fill(Color.accentColor))
-                        .offset(x: 5, y: -5)
+                        .offset(x: 3, y: -3)
                 }
             }
         }
@@ -571,7 +597,7 @@ struct MapHomeView: View {
                     Text(state.isEnabled
                          ? AppLocalization.string("停止虚拟定位")
                          : AppLocalization.string("开启虚拟定位"))
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 17, weight: .semibold))
                         .lineLimit(1)
                 }
                 .foregroundStyle(spoofButtonTint)
@@ -598,7 +624,8 @@ struct MapHomeView: View {
 
     /// 「实时位置」按钮。
     ///
-    /// 点一下把地图跳回设备当前真实位置（并拉到 200 米，和初始视野一致）；
+    /// 点一下把地图跳回设备当前真实位置；**不改变缩放比例**——系统地图点
+    /// 「定位」也是保持当前比例，固定缩到某个米数只会把用户刚看好的范围冲掉。
     /// 长按回到已选点——选点才是这个应用的主角，所以「回到选点」比
     /// 「回到真实位置」更次级，放在长按上。
     private var realLocationButton: some View {
@@ -644,21 +671,36 @@ struct MapHomeView: View {
 
     /// 读取设备真实位置并把地图移过去。
     ///
-    /// 定位回调给的是 WGS-84，必须按当前地图体系换算后再居中，
-    /// 否则国内会偏出几百米——和选点走的是同一套换算。
-    /// 缩放固定到 200 米，和进应用时的初始视野保持一致。
+    /// **坐标体系是这里最容易错的一处。** `CLLocationManager` 在国内给回的
+    /// 坐标已经是 GCJ-02，而地图上的蓝点就是拿同一个坐标画出来的——两者
+    /// 本来就对得上。早先这里一律按 WGS-84 解释、再换算成地图体系去居中，
+    /// 相当于又加了一次 500 米左右的偏移，表现就是「点了实时位置，准心
+    /// 不在屏幕中间，跑偏了」。
+    ///
+    /// 正确做法：把回调坐标当成**当前地图体系**的坐标，交给 `CoordinatePair`
+    /// 去补另一套。这样居中用的坐标与蓝点完全一致。
     private func goToRealLocation() {
         realLocation.requestOnce { result in
             switch result {
             case .success(let coordinate):
-                let pair = CoordinateConverter.CoordinatePair(
-                    wgs84Latitude: coordinate.latitude,
-                    wgs84Longitude: coordinate.longitude
-                )
-                mapBridge.center(
-                    on: pair.coordinate(for: state.mapCoordinateSystem),
-                    meters: MapLocationState.defaultViewportMeters
-                )
+                let pair: CoordinateConverter.CoordinatePair
+                switch state.mapCoordinateSystem {
+                case .gcj02:
+                    pair = CoordinateConverter.CoordinatePair(
+                        gcj02Latitude: coordinate.latitude,
+                        gcj02Longitude: coordinate.longitude
+                    )
+                case .wgs84:
+                    pair = CoordinateConverter.CoordinatePair(
+                        wgs84Latitude: coordinate.latitude,
+                        wgs84Longitude: coordinate.longitude
+                    )
+                }
+
+                // 只平移、不缩放（meters 传 nil）：保持用户此刻的视野比例。
+                // 早先固定缩到 200 米，从缩远了的视野一点就被「放大到只剩一条街」，
+                // 反而看不清自己到底在哪。系统地图点「定位」也是保持当前比例。
+                mapBridge.center(on: pair.coordinate(for: state.mapCoordinateSystem))
                 showBanner(AppLocalization.string("已定位到当前真实位置"), style: .info)
 
             case .failure(let failure):
@@ -716,6 +758,10 @@ struct MapHomeView: View {
     private func restoreActiveState(pair: CoordinateConverter.CoordinatePair) async {
         switch runtimeMode.mode {
         case .localProxy:
+            // 保活和代理是一对：少了它，代理能起来但活不过一次切后台。
+            // 这里放在启动之前，`start()` 是幂等的，已经在跑时只做一次检查。
+            BackgroundKeepAlive.shared.start()
+
             if !proxy.status.isRunning {
                 do {
                     try await proxy.start(
@@ -750,12 +796,38 @@ struct MapHomeView: View {
     /// 关键点：`proxy.status` 是我们自己维护的状态，进程被挂起时它**不会**
     /// 变成 `.stopped`，所以这里必须实际探一次代理是否还活着，不能只看状态。
     private func handleScenePhase(_ phase: ScenePhase) {
-        guard phase == .active else { return }
+        switch phase {
+        case .background:
+            // 进后台前的最后一次自救。音频一旦被别的应用抢走，播放停掉，
+            // 进程随后就被系统挂起——那一刻之后我们再也跑不了任何代码，
+            // 所以「检查播放是否还活着」只能放在这里。
+            guard state.isEnabled, runtimeMode.mode == .localProxy else { return }
+            BackgroundKeepAlive.shared.resumeIfNeeded()
+
+        case .active:
+            recoverAfterForeground()
+
+        default:
+            break
+        }
+    }
+
+    /// 回到前台自愈。
+    ///
+    /// 应用一旦被 iOS 挂起，进程内的拦截代理就不再接受新连接；而 Wi-Fi 里的
+    /// 手动代理配置还指着 127.0.0.1:8888，于是定位请求全部落空，系统随即退回
+    /// 真实定位——这正是「用着用着跳回真实位置」最常见的原因。
+    ///
+    /// 关键点：`proxy.status` 是我们自己维护的状态，进程被挂起时它**不会**
+    /// 变成 `.stopped`，所以这里必须实际探一次代理是否还活着，不能只看状态。
+    /// 保活同理——`isAlive` 问的是播放器，而不是我们记的布尔标志。
+    private func recoverAfterForeground() {
         guard state.isEnabled, runtimeMode.mode == .localProxy else { return }
 
-        // 保活可能被系统中断（音频会话被其他应用抢占等），回前台重新拉起。
-        // `start()` 是幂等的，已在运行时会直接返回。
-        BackgroundKeepAlive.shared.start()
+        if !BackgroundKeepAlive.shared.isAlive {
+            RuntimeLogger.warn("APP", "KeepAlive", "回前台时保活已失效，重新拉起")
+            BackgroundKeepAlive.shared.start()
+        }
 
         Task {
             await proxy.verifyWiFiProxy()

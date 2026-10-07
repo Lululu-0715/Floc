@@ -51,6 +51,80 @@ final class ThirdPartyProxyManager: ObservableObject {
     @Published private(set) var state: ConnectionState = .unknown
     @Published private(set) var lastSavedPair: CoordinateConverter.CoordinatePair?
 
+    /// 拦截这次请求的客户端。
+    ///
+    /// 来自模块回报的 `env`，与「用户在应用里选的客户端」是两回事：
+    /// 真正执行拦截的是手机上开着的那个代理软件。不区分这两者，
+    /// 「已连接，未开启」就会被当成所选客户端的状态，张冠李戴。
+    @Published private(set) var responderClient: ThirdPartyProxyClient?
+
+    /// 响应改写脚本最后一次运行的结果。见 `ModuleDiagnostics`。
+    @Published private(set) var diagnostics: ThirdPartyProxyProtocol.ModuleDiagnostics?
+
+    /// 回报的客户端与所选客户端不一致。
+    ///
+    /// 含义很明确：手机上是另一个代理软件在跑。用户往往是在应用里换了选择、
+    /// 却没在客户端那边同步切换，这时候所有状态都指向那个实际在跑的客户端。
+    var responderMismatch: Bool {
+        guard let responderClient else { return false }
+        return responderClient != selectedClient
+    }
+
+    /// 把脚本回报的结论翻成一句人话。
+    ///
+    /// 第三方模式最大的麻烦是「看不见」：规则装没装上、脚本跑到哪一步都在
+    /// 客户端自己的日志里。「没有记录」这一档尤其重要——它说明响应改写规则
+    /// 一次都没跑到，问题出在模块启用 / MITM 覆盖，而不是「格式对不上」。
+    var diagnosticsText: String {
+        guard let diagnostics else {
+            return AppLocalization.string("没有记录，响应改写规则一次都没跑到")
+        }
+
+        switch diagnostics.outcome {
+        case "rewritten":
+            let count = diagnostics.locations ?? 0
+            if diagnostics.gzip == true {
+                return String(
+                    format: AppLocalization.string("已改写 %d 个位置点（原响应为 gzip，已解压）"),
+                    count
+                )
+            }
+            return String(format: AppLocalization.string("已改写 %d 个位置点"), count)
+
+        case "disabled":
+            return AppLocalization.string("模块在运行，但还没有写入过坐标")
+
+        case "bad-target":
+            return AppLocalization.string("模块收到的坐标无效")
+
+        case "empty-body":
+            return AppLocalization.string("脚本拿不到响应体，请确认模块处于开启状态")
+
+        case "gzip":
+            return AppLocalization.string("响应是 gzip 压缩，当前客户端没有提供解压能力")
+
+        case "no-match":
+            return AppLocalization.string("响应里没有找到定位数据，系统可能换了新的响应格式")
+
+        case "error":
+            return String(
+                format: AppLocalization.string("改写过程出错：%@"),
+                diagnostics.reason ?? ""
+            )
+
+        default:
+            return AppLocalization.string("没有记录，响应改写规则一次都没跑到")
+        }
+    }
+
+    /// 诊断时间文案。没有记录时给一个占位符，不用再占一条本地化条目。
+    var diagnosticsDateText: String {
+        guard let date = diagnostics?.date else { return "—" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MM-dd HH:mm:ss"
+        return formatter.string(from: date)
+    }
+
     /// 当前选择的客户端。
     @Published var selectedClient: ThirdPartyProxyClient {
         didSet {
@@ -59,7 +133,11 @@ final class ThirdPartyProxyManager: ObservableObject {
             RuntimeLogger.info("APP", "ThirdParty", "切换客户端", details: [
                 "client": selectedClient.displayName,
             ])
+            // 上一个客户端的连通性、诊断都属于它自己，不能留给新选的这个，
+            // 否则会出现「还没换代理软件，应用里却显示已连接」。
             state = .unknown
+            responderClient = nil
+            diagnostics = nil
         }
     }
 
@@ -115,9 +193,13 @@ final class ThirdPartyProxyManager: ObservableObject {
                 // 返回了内容但不是约定 JSON，通常是客户端没装模块，
                 // 请求真的发到了 Apple 服务器。
                 state = .moduleNotInstalled
+                responderClient = nil
+                diagnostics = nil
                 RuntimeLogger.info("APP", "ThirdParty", "查询响应不符合约定格式")
                 return
             }
+
+            applyResponder(response)
 
             if response.success, let lat = response.latitude, let lon = response.longitude {
                 state = .connected(latitude: lat, longitude: lon)
@@ -134,10 +216,18 @@ final class ThirdPartyProxyManager: ObservableObject {
             }
         } catch {
             state = .failed((error as NSError).localizedDescription)
+            responderClient = nil
+            diagnostics = nil
             RuntimeLogger.warn("APP", "ThirdParty", "查询失败", details: [
                 "error": (error as NSError).localizedDescription,
             ])
         }
+    }
+
+    /// 记下「这次是谁回的话」以及它带回的运行诊断。
+    private func applyResponder(_ response: ThirdPartyProxyProtocol.Response) {
+        responderClient = response.env.flatMap(ThirdPartyProxyClient.init(rawValue:))
+        diagnostics = response.diag
     }
 
     // MARK: - 写入与清除
@@ -164,10 +254,12 @@ final class ThirdPartyProxyManager: ObservableObject {
 
         do {
             let (data, _) = try await session.data(for: request)
-            if let response = try? JSONDecoder().decode(ThirdPartyProxyProtocol.Response.self, from: data),
-               response.success {
+            let decoded = try? JSONDecoder().decode(ThirdPartyProxyProtocol.Response.self, from: data)
+
+            if let decoded, decoded.success {
+                applyResponder(decoded)
                 // 契约要求：保存成功时响应里的坐标必须与请求一致，否则说明客户端实现有偏差。
-                if let lat = response.latitude, let lon = response.longitude {
+                if let lat = decoded.latitude, let lon = decoded.longitude {
                     let echoed = CoordinateConverter.CoordinatePair(
                         wgs84Latitude: lat, wgs84Longitude: lon
                     )
@@ -184,7 +276,7 @@ final class ThirdPartyProxyManager: ObservableObject {
                 return true
             }
 
-            let message = (try? JSONDecoder().decode(ThirdPartyProxyProtocol.Response.self, from: data))?.error
+            let message = decoded?.error
             state = .failed(message ?? AppLocalization.string("客户端拒绝保存"))
             RuntimeLogger.warn("APP", "ThirdParty", "客户端拒绝保存", details: [
                 "reason": message ?? "",
@@ -192,6 +284,7 @@ final class ThirdPartyProxyManager: ObservableObject {
             return false
         } catch {
             state = .failed((error as NSError).localizedDescription)
+            responderClient = nil
             RuntimeLogger.warn("APP", "ThirdParty", "保存请求失败", details: [
                 "error": (error as NSError).localizedDescription,
             ])
@@ -209,14 +302,16 @@ final class ThirdPartyProxyManager: ObservableObject {
 
         do {
             let (data, _) = try await session.data(for: request)
-            let success = (try? JSONDecoder().decode(ThirdPartyProxyProtocol.Response.self, from: data))?.success ?? false
-            if success {
-                lastSavedPair = nil
-                defaults.removeObject(forKey: Key.savedCoordinate)
-                state = .connectedNoCoordinate
-                RuntimeLogger.info("APP", "ThirdParty", "已清除客户端坐标")
+            guard let decoded = try? JSONDecoder().decode(ThirdPartyProxyProtocol.Response.self, from: data),
+                  decoded.success else {
+                return false
             }
-            return success
+            applyResponder(decoded)
+            lastSavedPair = nil
+            defaults.removeObject(forKey: Key.savedCoordinate)
+            state = .connectedNoCoordinate
+            RuntimeLogger.info("APP", "ThirdParty", "已清除客户端坐标")
+            return true
         } catch {
             RuntimeLogger.warn("APP", "ThirdParty", "清除请求失败", details: [
                 "error": (error as NSError).localizedDescription,

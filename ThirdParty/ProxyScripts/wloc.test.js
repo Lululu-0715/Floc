@@ -223,6 +223,63 @@ function findVarintDeep(bytes, fieldNumber) {
 // 测试
 // ---------------------------------------------------------------------------
 
+/**
+ * 构造一份 ARPC 信封包裹的 wloc 响应。
+ *
+ * ARPC 是 Apple 定位服务最外层的封装：
+ *   2 字节协议头 + 3 × (uint16 前缀字符串) + functionId(4) + uint32 载荷长度 + 载荷
+ *
+ * 注意长度前缀是 **uint32 大端**，与 marker 信封的 uint16 不同。
+ */
+function buildARPCResponse({ accuracy = 65, tail = [] } = {}) {
+  const location = [
+    ...varintField(1, Math.round(22.54321 * 1e8)),
+    ...varintField(2, Math.round(114.1747 * 1e8)),
+    ...varintField(3, accuracy),
+  ];
+  const device = [
+    ...lengthDelimited(1, asciiBytes('aa:bb:cc:dd:ee:ff')),
+    ...lengthDelimited(2, location),
+  ];
+  const payload = lengthDelimited(2, device);
+
+  const header = [0x01, 0x00];
+  const pushString = (text) => {
+    const bytes = asciiBytes(text);
+    header.push((bytes.length >> 8) & 0xff, bytes.length & 0xff, ...bytes);
+  };
+  pushString('gsp-ssl.ls.apple.com');
+  pushString('/clls/wloc');
+  pushString('com.apple.gs.wloc');
+  header.push(0x00, 0x00, 0x00, 0x01); // functionId
+  header.push(
+    (payload.length >>> 24) & 0xff,
+    (payload.length >>> 16) & 0xff,
+    (payload.length >>> 8) & 0xff,
+    payload.length & 0xff
+  );
+
+  return { bytes: [...header, ...payload, ...tail], lengthOffset: header.length - 4 };
+}
+
+/**
+ * 断言 ARPC 信封的长度前缀与实际载荷长度一致，并返回载荷。
+ *
+ * 这是本轮修复的核心回归点：漏掉 ARPC 分支时，载荷被逐偏移量兜底改写了，
+ * 但 uint32 长度前缀还是旧值——改写后长度一变，系统按旧长度截取到的就是
+ * 被截断的 protobuf，整个响应被丢弃，定位纹丝不动。
+ */
+function assertARPCLengthConsistent(bytes, lengthOffset, originalTailLength) {
+  const declared = (bytes[lengthOffset] * 0x1000000)
+    + (bytes[lengthOffset + 1] << 16)
+    + (bytes[lengthOffset + 2] << 8)
+    + bytes[lengthOffset + 3];
+  const actual = bytes.length - (lengthOffset + 4) - originalTailLength;
+
+  assert.strictEqual(declared, actual, 'ARPC 的 uint32 长度前缀必须等于实际载荷长度');
+  return bytes.slice(lengthOffset + 4, bytes.length - originalTailLength);
+}
+
 /** 断言 $done 收到的是「不做修改」的空对象。
  *
  * 不能用 assert.deepStrictEqual(result, {})：结果对象产生在 vm 沙箱里，
@@ -299,6 +356,82 @@ test('改写后长度前缀与实际载荷一致', () => {
     bytes.length - 10,
     'marker 帧的长度前缀必须等于实际载荷长度'
   );
+});
+
+test('ARPC 信封：坐标被改写且长度前缀同步回填', () => {
+  const { bytes: response, lengthOffset } = buildARPCResponse({ accuracy: 65 });
+  const settings = JSON.stringify({
+    enabled: true,
+    latitude: 22.281508,
+    longitude: 114.1747,
+    accuracy: 25,
+  });
+
+  const result = runScript(WLOC_SOURCE, {
+    $response: { body: String.fromCharCode(...response) },
+    $persistentStore: {
+      read: (key) => (key === 'wloc_settings' ? settings : null),
+    },
+  });
+
+  assert.ok(result && typeof result.body === 'string', '应当返回改写后的响应体');
+
+  const patched = toBytes(result.body);
+  const payload = assertARPCLengthConsistent(patched, lengthOffset, 0);
+
+  // 载荷本身要解析得出目标坐标。
+  const latitude = findVarintDeep(payload, 1);
+  const longitude = findVarintDeep(payload, 2);
+  assert.strictEqual(Number(latitude), Math.round(22.281508 * 1e8));
+  assert.strictEqual(Number(longitude), Math.round(114.1747 * 1e8));
+
+  // 信封头必须原样保留。
+  assert.deepStrictEqual(patched.slice(0, lengthOffset), response.slice(0, lengthOffset));
+});
+
+test('ARPC 信封：载荷变短时长度前缀跟着变短', () => {
+  // 原始精度 65536 占 3 字节 varint，目标 25 只占 1 字节 → 载荷缩短 2 字节。
+  // 这正是「兜底路径改得到载荷、改不了长度前缀」会暴露的场景。
+  const tail = [0xde, 0xad, 0xbe, 0xef];
+  const { bytes: response, lengthOffset } = buildARPCResponse({ accuracy: 65536, tail });
+  const settings = JSON.stringify({
+    enabled: true,
+    latitude: 22.281508,
+    longitude: 114.1747,
+    accuracy: 25,
+  });
+
+  const result = runScript(WLOC_SOURCE, {
+    $response: { body: String.fromCharCode(...response) },
+    $persistentStore: {
+      read: (key) => (key === 'wloc_settings' ? settings : null),
+    },
+  });
+
+  const patched = toBytes(result.body);
+  assert.strictEqual(
+    patched.length,
+    response.length - 2,
+    '载荷缩短 2 字节，整包也必须同步缩短 2 字节'
+  );
+
+  const payload = assertARPCLengthConsistent(patched, lengthOffset, tail.length);
+  assert.deepStrictEqual(
+    patched.slice(patched.length - tail.length),
+    tail,
+    '信封之后的尾部字节必须原样保留'
+  );
+  assert.strictEqual(Number(findVarintDeep(payload, 3)), 25, '精度应被改写为目标值');
+});
+
+test('ARPC 信封：未启用时原样放行', () => {
+  const { bytes: response } = buildARPCResponse();
+  const result = runScript(WLOC_SOURCE, {
+    $response: { body: String.fromCharCode(...response) },
+    $persistentStore: { read: () => null },
+  });
+
+  assertPassthrough(result);
 });
 
 test('坐标无效时放行', () => {
@@ -612,4 +745,109 @@ test('非 Quantumult X 环境仍用 response 包裹', () => {
   assert.strictEqual(result.response.status, 200);
   const payload = JSON.parse(result.response.body);
   assert.strictEqual(payload.latitude, 1.5);
+});
+
+// ---------------------------------------------------------------------------
+// 运行诊断
+// ---------------------------------------------------------------------------
+
+/** 带写入记录的存储桩。 */
+function makeStore(initial) {
+  const state = { ...initial };
+  return {
+    state,
+    store: {
+      read: (key) => (key in state ? state[key] : null),
+      write: (value, key) => { state[key] = value; return true; },
+    },
+  };
+}
+
+test('未启用时也写下 disabled 诊断', () => {
+  const { state, store } = makeStore({});
+
+  const result = runScript(WLOC_SOURCE, {
+    $response: { body: String.fromCharCode(...buildSampleResponse()) },
+    $persistentStore: store,
+  });
+
+  assertPassthrough(result);
+  const diag = JSON.parse(state.wloc_diag);
+  assert.strictEqual(diag.outcome, 'disabled');
+  assert.ok(typeof diag.ts === 'number' && diag.ts > 0, '应当带时间戳');
+});
+
+test('响应为 gzip 且无解压 API 时写 gzip 诊断', () => {
+  const { state, store } = makeStore({
+    wloc_settings: JSON.stringify({
+      enabled: true, latitude: 22.281508, longitude: 114.1747, accuracy: 25,
+    }),
+  });
+  // gzip 魔数开头的一段假数据：只要前两字节对，脚本就会走解压分支。
+  const gzipLike = [0x1f, 0x8b, 0x08, 0x00, 0x01, 0x02, 0x03, 0x04];
+
+  const result = runScript(WLOC_SOURCE, {
+    $response: { body: String.fromCharCode(...gzipLike) },
+    $persistentStore: store,
+  });
+
+  // 当前沙箱没有 $utils.ungzip，应当原样放行并留下原因。
+  assertPassthrough(result);
+  assert.strictEqual(JSON.parse(state.wloc_diag).outcome, 'gzip');
+});
+
+test('改写成功时诊断带上信封与条目数', () => {
+  const { bytes: response } = buildARPCResponse();
+  const { state, store } = makeStore({
+    wloc_settings: JSON.stringify({
+      enabled: true, latitude: 22.281508, longitude: 114.1747, accuracy: 25,
+    }),
+  });
+
+  const result = runScript(WLOC_SOURCE, {
+    $response: { body: String.fromCharCode(...response) },
+    $persistentStore: store,
+  });
+
+  assert.ok(result && typeof result.body === 'string');
+  const diag = JSON.parse(state.wloc_diag);
+  assert.strictEqual(diag.outcome, 'rewritten');
+  assert.strictEqual(diag.envelope, 'arpc');
+  assert.ok(diag.locations >= 1, '应当至少改写一个位置点');
+});
+
+test('配置接口把模块诊断一起返回', () => {
+  const diag = JSON.stringify({ outcome: 'rewritten', ts: 1700000000000, locations: 2 });
+  const result = runScript(SETTINGS_SOURCE, {
+    $request: { url: 'https://gs-loc.apple.com/wloc-settings/save?action=query' },
+    $persistentStore: {
+      read: (key) => {
+        if (key === 'wloc_settings') {
+          return JSON.stringify({
+            enabled: true, latitude: 22.5, longitude: 114.1, accuracy: 25,
+          });
+        }
+        if (key === 'wloc_diag') return diag;
+        return null;
+      },
+    },
+  });
+
+  const payload = JSON.parse(result.response.body);
+  assert.strictEqual(payload.diag.outcome, 'rewritten');
+  assert.strictEqual(payload.diag.locations, 2);
+});
+
+test('没有诊断记录时查询响应里 diag 为 null', () => {
+  const result = runScript(SETTINGS_SOURCE, {
+    $request: { url: 'https://gs-loc.apple.com/wloc-settings/save?action=query' },
+    $persistentStore: {
+      read: (key) => (key === 'wloc_settings'
+        ? JSON.stringify({ enabled: true, latitude: 22.5, longitude: 114.1, accuracy: 25 })
+        : null),
+    },
+  });
+
+  const payload = JSON.parse(result.response.body);
+  assert.strictEqual(payload.diag, null);
 });

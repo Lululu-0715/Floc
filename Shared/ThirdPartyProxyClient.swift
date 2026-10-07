@@ -181,5 +181,41 @@ enum ThirdPartyProxyProtocol {
         let accuracy: Int?
         let driftRadius: Int?
         let error: String?
+        /// 拦截这次请求的客户端标识（`shadowrocket` / `surge` / `quantumultx`…）。
+        ///
+        /// 由脚本自己探测运行环境得出。它回答的是一个别的方式答不了的问题：
+        /// 「现在这套模块，到底是哪个客户端在跑」。用户在应用里换了客户端选择、
+        /// 但手机上其实还开着另一个代理时，状态就不会张冠李戴。
+        let env: String?
+        /// 响应改写脚本最后一次运行的结果。见 `ModuleDiagnostics`。
+        let diag: ModuleDiagnostics?
+    }
+
+    /// 响应改写脚本（`wloc.js`）最后一次运行的结果。
+    ///
+    /// 第三方模式最大的麻烦是「看不见」：规则装没装上、脚本跑到哪一步，
+    /// 全在客户端自己的日志里，用户够不着。脚本每次运行都把结论写进存储，
+    /// 配置接口查询时一并带回，应用就能把原因直接翻成一句话。
+    struct ModuleDiagnostics: Codable, Equatable {
+
+        /// 结论码。取值见 `wloc.js` 的 `recordDiag`。
+        let outcome: String?
+        /// 记录时间（Unix 毫秒）。
+        let ts: Double?
+        /// 改写到的位置条目数。
+        let locations: Int?
+        /// 命中的信封格式：arpc / marker / length-prefix / raw。
+        let envelope: String?
+        /// 该次响应原本是否为 gzip，脚本是否解压过。
+        let gzip: Bool?
+        /// 脚本运行所在的客户端（与 `Response.env` 同源）。
+        let env: String?
+        /// 出错时的原因。
+        let reason: String?
+
+        var date: Date? {
+            guard let ts, ts > 0 else { return nil }
+            return Date(timeIntervalSince1970: ts / 1000)
+        }
     }
 }

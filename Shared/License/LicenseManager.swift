@@ -107,6 +107,25 @@ final class LicenseManager: ObservableObject {
         return Self.describe(remainingMs: remainingMs)
     }
 
+    /// 设置页第一层那行用的短文案。
+    ///
+    /// 列表行里是「图标 + 标题 + 取值 + 箭头」，塞不下
+    /// 「30 天 5 小时 12 分钟」，硬放会被截断成「30 天 5 小…」。
+    /// 这一层只需要「大概还有多久」，精确到分钟的完整文案留在二级页。
+    var remainingSummaryText: String {
+        if isLocalMode { return AppLocalization.string("本地模式") }
+        guard remainingMs > 0 else { return AppLocalization.string("已到期") }
+
+        let totalSeconds = Int(remainingMs / 1000)
+        let days = totalSeconds / 86_400
+        if days > 0 { return String(format: AppLocalization.string("%ld 天"), days) }
+
+        let hours = (totalSeconds % 86_400) / 3_600
+        if hours > 0 { return String(format: AppLocalization.string("%ld 小时"), hours) }
+
+        return String(format: AppLocalization.string("%ld 分钟"), (totalSeconds % 3_600) / 60)
+    }
+
     /// 把毫秒数格式化成「x 天 x 小时 x 分钟」。
     ///
     /// 单独抽出来是为了能单测——边界（刚好 1 天 / 刚好 1 小时 / 不足 1 分钟）

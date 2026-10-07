@@ -32,6 +32,17 @@ const TAG = '[WLOC]';
 /** 持久化存储键名，与 wloc-settings.js 共用。 */
 const SETTINGS_KEY = 'wloc_settings';
 
+/**
+ * 运行诊断键名。
+ *
+ * 第三方模式下「规则装没装上」「脚本跑没跑」「跑到了哪一步」全靠客户端自己
+ * 的日志，用户看不到；本应用只能通过配置接口间接读回来。每次改写都会把
+ * 最后一步的结果写进这个键，`wloc-settings.js` 查询时一并返回，
+ * 于是「设置 → 连接状态 → 第三方代理 → 模块运行情况」就能直接说出原因，
+ * 而不是让用户对着「定位不生效」干猜。
+ */
+const DIAG_KEY = 'wloc_diag';
+
 // ---------------------------------------------------------------------------
 // 存储读写
 // ---------------------------------------------------------------------------
@@ -39,10 +50,10 @@ const SETTINGS_KEY = 'wloc_settings';
 // 各客户端的持久化 API 名字不同。这里按「能力探测」而非「客户端名字」来选择，
 // 好处是遇到未列出的客户端（或客户端改了 API 名字）时仍能工作。
 // 按优先级排列：Quantumult X 用 $prefs，其余用 $persistentStore，少数用 $rocket.settings。
-function readRawSettings() {
+function readRawKey(key) {
   try {
     if (typeof $prefs !== 'undefined' && typeof $prefs.valueForKey === 'function') {
-      return $prefs.valueForKey(SETTINGS_KEY);
+      return $prefs.valueForKey(key);
     }
   } catch (error) {
     log(`$prefs 读取失败: ${error}`);
@@ -51,7 +62,7 @@ function readRawSettings() {
   try {
     if (typeof $persistentStore !== 'undefined'
         && typeof $persistentStore.read === 'function') {
-      return $persistentStore.read(SETTINGS_KEY);
+      return $persistentStore.read(key);
     }
   } catch (error) {
     log(`$persistentStore 读取失败: ${error}`);
@@ -60,13 +71,51 @@ function readRawSettings() {
   try {
     if (typeof $rocket !== 'undefined' && $rocket.settings
         && typeof $rocket.settings.read === 'function') {
-      return $rocket.settings.read(SETTINGS_KEY);
+      return $rocket.settings.read(key);
     }
   } catch (error) {
     log(`$rocket.settings 读取失败: ${error}`);
   }
 
   return null;
+}
+
+/** 写一个键。写不进去时返回 false——诊断写失败不影响改写本身。 */
+function writeRawKey(key, value) {
+  try {
+    if (typeof $prefs !== 'undefined' && typeof $prefs.setValueForKey === 'function') {
+      $prefs.setValueForKey(value, key);
+      return true;
+    }
+  } catch (error) {
+    log(`$prefs 写入失败: ${error}`);
+  }
+
+  try {
+    if (typeof $persistentStore !== 'undefined'
+        && typeof $persistentStore.write === 'function') {
+      $persistentStore.write(value, key);
+      return true;
+    }
+  } catch (error) {
+    log(`$persistentStore 写入失败: ${error}`);
+  }
+
+  try {
+    if (typeof $rocket !== 'undefined' && $rocket.settings
+        && typeof $rocket.settings.write === 'function') {
+      $rocket.settings.write(key, value);
+      return true;
+    }
+  } catch (error) {
+    log(`$rocket.settings 写入失败: ${error}`);
+  }
+
+  return false;
+}
+
+function readRawSettings() {
+  return readRawKey(SETTINGS_KEY);
 }
 
 function readSettings() {
@@ -80,6 +129,38 @@ function readSettings() {
   } catch (error) {
     log(`配置解析失败: ${error}`);
     return null;
+  }
+}
+
+/**
+ * 记录一次运行结果，供本应用回读。
+ *
+ * `outcome` 是机器可读的结论，取值固定为下面几个，应用侧据此显示中文：
+ *   rewritten    改写成功
+ *   disabled     模块在跑，但坐标没写入（虚拟定位没开过）
+ *   bad-target   配置里的坐标非法
+ *   empty-body   脚本拿不到响应体（客户端没给 body）
+ *   gzip         响应是 gzip 且当前客户端不提供解压 API
+ *   no-match     响应里找不到可改写的位置数据
+ *   error        改写过程抛异常
+ *
+ * 写诊断本身失败不影响改写，所以整体包在 try 里。
+ */
+function recordDiag(outcome, extra) {
+  try {
+    const record = {
+      outcome,
+      ts: Date.now(),
+      env: ENV,
+    };
+    for (const key in extra) {
+      if (Object.prototype.hasOwnProperty.call(extra, key)) {
+        record[key] = extra[key];
+      }
+    }
+    writeRawKey(DIAG_KEY, JSON.stringify(record));
+  } catch (error) {
+    log(`诊断写入失败: ${error}`);
   }
 }
 
@@ -336,6 +417,70 @@ function patchWlocPayload(payload, target) {
   return { bytes: out, changed, locations };
 }
 
+/** 尝试按 ARPC 信封解析。
+ *
+ * ARPC 布局（与 `Core/wloc.go` 的 `patchARPCPayload` 一一对应）：
+ *
+ *   2 字节协议头
+ *   3 × (uint16 大端长度 + 字符串)   通常是 host / path / 服务名
+ *   4 字节 functionId
+ *   4 字节 uint32 大端**载荷长度**
+ *   载荷
+ *   可能的尾部字节
+ *
+ * 为什么必须单独处理：这里是 Apple 定位服务最外层的封装，**长度前缀是
+ * uint32**。如果漏掉它而靠「逐偏移量扫描」的兜底路径命中，载荷会被改写、
+ * 但那个 uint32 前缀不会跟着更新 —— 只要改写后载荷长度与原长度不等
+ * （精度从 65 变成 25、经纬度 varint 少一字节都会触发），系统按旧长度
+ * 截取到的就是一段被截断的 protobuf，解析失败后这次定位请求被直接丢弃，
+ * 表现正是「模块装着、坐标写进去了，定位却纹丝不动」。
+ */
+function patchARPCFrame(bytes, target) {
+  if (bytes.length < 10) return null;
+
+  let cursor = 2;
+  for (let i = 0; i < 3; i += 1) {
+    if (cursor + 2 > bytes.length) return null;
+    const length = (bytes[cursor] << 8) | bytes[cursor + 1];
+    cursor += 2;
+    if (length > bytes.length - cursor) return null;
+    cursor += length;
+  }
+
+  if (cursor + 8 > bytes.length) return null;
+
+  const lengthOffset = cursor + 4;
+  const payloadOffset = lengthOffset + 4;
+  // 用乘法而不是 << 24：JS 的位移是 32 位有符号运算，首字节 ≥ 0x80 时会变成负数。
+  const payloadLength = (bytes[lengthOffset] * 0x1000000)
+    + (bytes[lengthOffset + 1] << 16)
+    + (bytes[lengthOffset + 2] << 8)
+    + bytes[lengthOffset + 3];
+
+  if (payloadLength <= 0 || payloadOffset + payloadLength > bytes.length) return null;
+
+  let result;
+  try {
+    result = patchWlocPayload(bytes.slice(payloadOffset, payloadOffset + payloadLength), target);
+  } catch (error) {
+    return null;
+  }
+  if (!result.changed) return null;
+
+  const lengthBytes = [
+    (result.bytes.length >>> 24) & 0xff,
+    (result.bytes.length >>> 16) & 0xff,
+    (result.bytes.length >>> 8) & 0xff,
+    result.bytes.length & 0xff,
+  ];
+
+  return {
+    bytes: [...bytes.slice(0, lengthOffset), ...lengthBytes, ...result.bytes,
+            ...bytes.slice(payloadOffset + payloadLength)],
+    locations: result.locations,
+  };
+}
+
 /** 尝试按 marker 信封解析。
  *
  * marker 信封有两种常见布局，二者都以「uint16 大端长度 + 载荷」收尾：
@@ -414,15 +559,25 @@ function patchAtOffset(bytes, offset, target) {
   };
 }
 
-/** 主改写入口：依次尝试各种信封格式。 */
+/** 主改写入口：依次尝试各种信封格式。
+ *
+ * 顺序与 `Core/wloc.go` 的 `patchWlocBody` 保持一致——ARPC 是 Apple 定位
+ * 服务最外层最常见的封装，必须第一个试；先命中它，长度前缀才会被正确回填。
+ * 兜底路径（逐偏移量扫描）虽然也能改到载荷，但没有信封上下文，改不了长度
+ * 前缀，只能作为最后手段。
+ */
 function patchWlocBody(bytes, target) {
-  const marker = patchMarkerFrame(bytes, target);
-  if (marker) return marker;
+  const arpc = patchARPCFrame(bytes, target);
+  if (arpc) return { ...arpc, envelope: 'arpc' };
 
+  const marker = patchMarkerFrame(bytes, target);
+  if (marker) return { ...marker, envelope: 'marker' };
+
+  // 常见偏移优先尝试，再补齐扫描范围内剩余的位置。
   const limit = Math.min(96, Math.max(0, bytes.length - 10));
   for (let offset = 0; offset <= limit; offset += 1) {
     const result = patchAtOffset(bytes, offset, target);
-    if (result) return result;
+    if (result) return { ...result, envelope: 'length-prefix' };
   }
 
   const fallbackLimit = Math.min(256, bytes.length);
@@ -430,7 +585,11 @@ function patchWlocBody(bytes, target) {
     try {
       const result = patchWlocPayload(bytes.slice(i), target);
       if (result.changed) {
-        return { bytes: [...bytes.slice(0, i), ...result.bytes], locations: result.locations };
+        return {
+          bytes: [...bytes.slice(0, i), ...result.bytes],
+          locations: result.locations,
+          envelope: 'raw',
+        };
       }
     } catch (error) {
       // 该偏移处解析失败是预期内的，继续尝试下一个。
@@ -447,6 +606,32 @@ function patchWlocBody(bytes, target) {
 /** 判断数据是否为 gzip。 */
 function isGzip(bytes) {
   return bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+}
+
+/**
+ * 尝试解压 gzip 响应体，返回字节数组；拿不到解压能力时返回 null。
+ *
+ * 为什么必须做这件事：Apple 的定位响应经常带 `Content-Encoding: gzip`。
+ * 部分客户端会把 body 解压后再交给脚本，另一些直接给原始 gzip 流。
+ * 旧版本遇到 gzip 直接 `$done({})` 放行——注释写着「在能解压的情况下处理」，
+ * 实际一行解压代码都没有，于是**在所有这类客户端上改写都静默不发生**，
+ * 表现就是「模块装着、坐标写进去了、定位纹丝不动」。
+ *
+ * Surge / Egern / Loon / Stash 提供 `$utils.ungzip`，能用就用；用不上时
+ * 由调用方把这件事记进诊断，让用户在应用里直接看到原因。
+ */
+function gunzipBytes(bytes) {
+  try {
+    if (typeof $utils !== 'undefined' && typeof $utils.ungzip === 'function') {
+      const out = $utils.ungzip(toBinaryString(bytes));
+      if (!out) return null;
+      if (typeof out === 'string') return toBytes(out);
+      return Array.from(out, (byte) => byte & 0xff);
+    }
+  } catch (error) {
+    log(`gzip 解压失败: ${error}`);
+  }
+  return null;
 }
 
 /** 把响应体转成字节数组。
@@ -530,9 +715,30 @@ function driftTarget(target) {
   };
 }
 
+/** 去掉与实体编码 / 长度相关的响应头。
+ *
+ * 解压过 body 之后这两条必须删掉：留着 `Content-Encoding: gzip` 会让
+ * 客户端或系统去解压一段已经不压缩的数据，响应直接作废。
+ */
+function stripEntityHeaders(headers) {
+  if (!headers || typeof headers !== 'object') return undefined;
+  const out = {};
+  for (const key in headers) {
+    if (!Object.prototype.hasOwnProperty.call(headers, key)) continue;
+    const lower = String(key).toLowerCase();
+    if (lower === 'content-encoding' || lower === 'content-length'
+        || lower === 'transfer-encoding') {
+      continue;
+    }
+    out[key] = headers[key];
+  }
+  return out;
+}
+
 function main() {
   const settings = readSettings();
   if (!settings || settings.enabled !== true) {
+    recordDiag('disabled');
     log('未启用虚拟定位，放行原始响应');
     $done({});
     return;
@@ -546,6 +752,7 @@ function main() {
   };
 
   if (target.latitude === null || target.longitude === null) {
+    recordDiag('bad-target');
     log('配置中的坐标无效，放行原始响应');
     $done({});
     return;
@@ -553,6 +760,7 @@ function main() {
 
   const rawBody = typeof $response !== 'undefined' ? $response.body : undefined;
   if (!rawBody) {
+    recordDiag('empty-body');
     log('响应体为空，放行');
     $done({});
     return;
@@ -560,25 +768,55 @@ function main() {
 
   let bodyBytes = toBytes(rawBody);
 
-  // 响应体可能是 gzip 压缩的。各客户端脚本引擎对 gzip 支持不一，
-  // 这里只在能解压的情况下处理，否则原样放行并记一条日志。
+  // 响应体可能是 gzip 压缩的，先尝试解压；解不开仍然放行，
+  // 但把原因写进诊断，用户在应用里能看到「响应是 gzip，客户端未解压」。
+  let wasGzip = false;
   if (isGzip(bodyBytes)) {
-    log('响应体为 gzip 压缩，当前客户端环境不支持解压，放行');
-    $done({});
-    return;
+    const unzipped = gunzipBytes(bodyBytes);
+    if (!unzipped) {
+      recordDiag('gzip', { in: bodyBytes.length });
+      log('响应体为 gzip 压缩，当前客户端未提供解压 API，放行');
+      $done({});
+      return;
+    }
+    wasGzip = true;
+    bodyBytes = unzipped;
   }
 
   try {
     const result = patchWlocBody(bodyBytes, driftTarget(target));
     if (!result) {
+      recordDiag('no-match', { in: bodyBytes.length });
       log('未找到可改写的位置数据，放行原始响应');
       $done({});
       return;
     }
 
-    log(`改写成功，位置条目 ${result.locations} 个`);
+    recordDiag('rewritten', {
+      locations: result.locations,
+      envelope: result.envelope,
+      gzip: wasGzip,
+      in: bodyBytes.length,
+      out: result.bytes.length,
+    });
+    log(`改写成功，信封 ${result.envelope}，位置条目 ${result.locations} 个`);
+
+    // 只在解压过的情况下才回传 headers——其余情况一律不动，避免引入回归。
+    if (wasGzip) {
+      $done({
+        body: toBinaryString(result.bytes),
+        headers: stripEntityHeaders(
+          typeof $response !== 'undefined' ? $response.headers : undefined
+        ),
+      });
+      return;
+    }
+
     $done({ body: toBinaryString(result.bytes) });
   } catch (error) {
+    recordDiag('error', {
+      reason: String(error && error.message ? error.message : error),
+    });
     log(`改写失败: ${error && error.message ? error.message : error}`);
     $done({});
   }

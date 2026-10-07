@@ -33,16 +33,25 @@ const ENV = (() => {
 const TAG = '[WLOC-SETTINGS]';
 const SETTINGS_KEY = 'wloc_settings';
 
+/**
+ * 运行诊断键名，由 `wloc.js` 写入。
+ *
+ * 第三方模式下「规则装没装上」「脚本跑到哪一步」原本只能看客户端自己的
+ * 日志，用户够不着。这里把它跟着查询响应一起回给本应用，于是应用里
+ * 能直接显示「模块运行情况」，不用再靠猜。
+ */
+const DIAG_KEY = 'wloc_diag';
+
 // ---------------------------------------------------------------------------
 // 存储读写
 // ---------------------------------------------------------------------------
 
 // 与 wloc.js 保持同样的策略：按 API 能力探测而不是按客户端名字分派，
 // 这样未列出的客户端也能正常读写同一份配置。
-function readRaw() {
+function readRawKey(key) {
   try {
     if (typeof $prefs !== 'undefined' && typeof $prefs.valueForKey === 'function') {
-      return $prefs.valueForKey(SETTINGS_KEY);
+      return $prefs.valueForKey(key);
     }
   } catch (error) {
     log(`$prefs 读取失败: ${error}`);
@@ -51,7 +60,7 @@ function readRaw() {
   try {
     if (typeof $persistentStore !== 'undefined'
         && typeof $persistentStore.read === 'function') {
-      return $persistentStore.read(SETTINGS_KEY);
+      return $persistentStore.read(key);
     }
   } catch (error) {
     log(`$persistentStore 读取失败: ${error}`);
@@ -60,13 +69,29 @@ function readRaw() {
   try {
     if (typeof $rocket !== 'undefined' && $rocket.settings
         && typeof $rocket.settings.read === 'function') {
-      return $rocket.settings.read(SETTINGS_KEY);
+      return $rocket.settings.read(key);
     }
   } catch (error) {
     log(`$rocket.settings 读取失败: ${error}`);
   }
 
   return null;
+}
+
+function readRaw() {
+  return readRawKey(SETTINGS_KEY);
+}
+
+/** 读回 wloc.js 记录的最后一次运行结果。读不到返回 null。 */
+function readDiag() {
+  const raw = readRawKey(DIAG_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch (error) {
+    return null;
+  }
 }
 
 function writeRaw(value) {
@@ -137,9 +162,14 @@ function parseQuery(url) {
   return result;
 }
 
-/** 统一的 JSON 响应。 */
+/** 统一的 JSON 响应。
+ *
+ * `env` 无条件带上：它回答的是「刚才是哪个客户端在执行这套模块」。
+ * 应用侧拿它跟用户选的客户端比对——不一致就说明手机上真正在跑的是另一个
+ * 代理软件，此时任何「已连接 / 未生效」都描述的是那个客户端，必须讲清楚。
+ */
 function respond(payload) {
-  const body = JSON.stringify(payload);
+  const body = JSON.stringify({ env: ENV, ...payload });
   const headers = {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
@@ -188,10 +218,13 @@ function normalizeDrift(value) {
 
 function handleQuery() {
   const settings = readSettings();
+  const diag = readDiag();
+
   if (!settings || settings.enabled !== true) {
     // 用 success:false 表示「模块在，但虚拟定位没开」，
     // 应用侧据此区分「模块未生效」和「模块已连接但未开启」。
-    respond({ success: false, error: '无已保存的坐标' });
+    // 诊断信息照样带上：用户没开虚拟定位时，也要能看出模块到底跑没跑。
+    respond({ success: false, error: '无已保存的坐标', diag });
     return;
   }
 
@@ -201,6 +234,7 @@ function handleQuery() {
     latitude: Number(settings.latitude),
     accuracy: Number(settings.accuracy) || 25,
     driftRadius: normalizeDrift(settings.driftRadius),
+    diag,
   });
 }
 

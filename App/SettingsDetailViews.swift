@@ -317,6 +317,33 @@ struct ThirdPartySettingsView: View {
                     valueColor: thirdParty.state.isUsable ? .green : .orange
                 )
 
+                // 「实际拦截」回答的是一个别处答不了的问题：模块回话的到底是
+                // 哪个客户端。用户在应用里换了选择、手机上却还开着另一个代理时，
+                // 上一行的状态描述的是那个客户端——不写出来就会张冠李戴。
+                SettingsStatusRow(
+                    systemImage: "antenna.radiowaves.left.and.right",
+                    title: AppLocalization.string("实际拦截"),
+                    value: thirdParty.responderClient?.displayName
+                        ?? AppLocalization.string("未检测"),
+                    valueColor: thirdParty.responderMismatch ? .red : .secondary
+                )
+
+                // 脚本每次改写都把结论写进存储，这里直接翻成人话。
+                // 「没有记录」是最有价值的一档：说明响应改写规则一次都没跑到，
+                // 问题在模块启用 / MITM 覆盖，而不在格式对不上。
+                SettingsStatusRow(
+                    systemImage: "waveform.path.ecg",
+                    title: AppLocalization.string("模块运行情况"),
+                    value: thirdParty.diagnosticsText,
+                    valueColor: diagnosticsColor
+                )
+
+                SettingsStatusRow(
+                    systemImage: "clock.arrow.circlepath",
+                    title: AppLocalization.string("最近一次"),
+                    value: thirdParty.diagnosticsDateText
+                )
+
                 // 仓库里有 5 个 wloc.* 模块文件，把当前客户端该用哪个直接写出来，
                 // 省得用户对着文件名猜。
                 SettingsStatusRow(
@@ -328,7 +355,15 @@ struct ThirdPartySettingsView: View {
             } header: {
                 SettingsSectionHeader(title: AppLocalization.string("第三方代理"))
             } footer: {
-                Text(AppLocalization.string("模块由第三方客户端执行拦截，本应用只负责写入坐标。"))
+                if let responder = thirdParty.responderClient, thirdParty.responderMismatch {
+                    Text(String(
+                        format: AppLocalization.string("当前拦截定位请求的是 %@，与上面选择的 %@ 不一致。请确认手机上只开着一个代理客户端，并在它里面启用本模块。"),
+                        responder.displayName,
+                        thirdParty.selectedClient.displayName
+                    ))
+                } else {
+                    Text(AppLocalization.string("模块由第三方客户端执行拦截，本应用只负责写入坐标。"))
+                }
             }
 
             Section {
@@ -403,6 +438,17 @@ struct ThirdPartySettingsView: View {
         .sheet(isPresented: $showModuleURLSheet) { moduleURLSheet }
     }
 
+    /// 诊断行的颜色：改写成功是绿的，「没有记录」是橙的（需要用户去查模块），
+    /// 其余失败原因一律红。
+    private var diagnosticsColor: Color {
+        guard let outcome = thirdParty.diagnostics?.outcome else { return .orange }
+        switch outcome {
+        case "rewritten": return .green
+        case "disabled": return .orange
+        default: return .red
+        }
+    }
+
     private var moduleURLSheet: some View {
         NavigationView {
             List {
@@ -458,9 +504,24 @@ struct CertificateEnvironmentView: View {
     /// 只能把路径写出来让用户自己点两下。
     @State private var jumpHint: String?
 
+    /// 启停代理过程中的错误。摆在这一页内联显示，比弹窗少一次点击。
+    @State private var statusMessage: String?
+
     var body: some View {
         List {
             Section {
+                // 本机代理开关。原来挂在设置页的「连接状态」里，和这里的
+                // 「代理状态」说的是同一件事（一个能点、一个不能点），
+                // 所以并到这里：开关紧挨着它控制的状态看，最不容易混。
+                SettingsToggleRow(
+                    systemImage: "play.circle.fill",
+                    title: AppLocalization.string("本机代理"),
+                    isOn: Binding(
+                        get: { proxy.status.isRunning },
+                        set: { setLocalProxy(enabled: $0) }
+                    )
+                )
+
                 SettingsStatusRow(
                     systemImage: "checkmark.shield.fill",
                     title: AppLocalization.string("证书信任"),
@@ -484,6 +545,12 @@ struct CertificateEnvironmentView: View {
                         title: AppLocalization.string("当前网络"),
                         value: proxy.currentWiFiName
                     )
+                }
+
+                if let statusMessage {
+                    Text(statusMessage)
+                        .font(.footnote)
+                        .foregroundStyle(Color.red)
                 }
 
                 Button {
@@ -523,10 +590,11 @@ struct CertificateEnvironmentView: View {
                 }
 
                 Button {
-                    let reached = SystemSettingsNavigator.openWiFiSettings()
-                    jumpHint = reached
-                        ? AppLocalization.string("已打开「无线局域网」。点当前网络右侧的 ⓘ，进去把「配置代理」设为「手动」，服务器填 127.0.0.1、端口 8888。")
-                        : AppLocalization.string("没能直接跳到 Wi-Fi 设置。请手动打开：设置 → 无线局域网 → 当前网络右侧 ⓘ → 配置代理 → 手动，服务器 127.0.0.1、端口 8888。")
+                    // 跳转是尽力而为的：私有 scheme 在不同 iOS 版本上落点不同，
+                    // 有时只到设置首页。所以不论返回值如何，都把完整手动路径写出来，
+                    // 免得用户以为「跳准了」，结果在设置里找不到那一屏。
+                    SystemSettingsNavigator.openWiFiSettings()
+                    jumpHint = AppLocalization.string("最后两下要自己点：设置 → 无线局域网 → 当前网络右侧 ⓘ → 配置代理 → 手动，服务器填 127.0.0.1、端口 8888。")
                 } label: {
                     SettingsLabel(
                         systemImage: "wifi",
@@ -567,6 +635,47 @@ struct CertificateEnvironmentView: View {
         .listStyle(.insetGrouped)
         .navigationTitle(AppLocalization.string("证书与环境"))
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// 启停本机代理。
+    ///
+    /// 与主界面「开启/停止虚拟定位」保持同一套动作顺序：先改改写配置、
+    /// 再停代理、最后复位开关，避免关闭过程中的请求仍被改写。
+    private func setLocalProxy(enabled isOn: Bool) {
+        statusMessage = nil
+
+        guard isOn else {
+            proxy.updateCoordinates(
+                latitude: 0,
+                longitude: 0,
+                enabled: false,
+                accuracy: state.accuracy,
+                motionRadius: 0
+            )
+            proxy.stop()
+            BackgroundKeepAlive.shared.stop()
+            state.disable()
+            return
+        }
+
+        // 没有选点时也允许只启动代理——安装证书本身就需要证书服务在跑。
+        let pair = state.selection
+        Task {
+            do {
+                try await proxy.start(
+                    latitude: pair?.wgs84.latitude ?? 0,
+                    longitude: pair?.wgs84.longitude ?? 0,
+                    enabled: state.isEnabled,
+                    accuracy: state.accuracy,
+                    motionRadius: state.motionDriftRadius
+                )
+                BackgroundKeepAlive.shared.start()
+                await proxy.verifyCertificateTrust()
+                await proxy.verifyWiFiProxy()
+            } catch {
+                statusMessage = error.localizedDescription
+            }
+        }
     }
 }
 
@@ -639,20 +748,18 @@ struct AboutFlocView: View {
         List {
             Section {
                 VStack(spacing: 10) {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.blue, Color.cyan],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                    // 用真实应用图标，而不是画一个渐变方块 + SF Symbol。
+                    // 桌面上的图标和这一页的图标是同一个东西，两者不一致
+                    // 会让人怀疑自己装错了应用。
+                    //
+                    // 图标资源本身是方形的，这里按 iOS 主屏的比例加圆角；
+                    // App Store 之外的自签包拿不到系统那层高光，就不模拟了。
+                    Image("AppIconPreview")
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
                         .frame(width: 68, height: 68)
-                        .overlay(
-                            Image(systemName: "location.north.line.fill")
-                                .font(.system(size: 30, weight: .medium))
-                                .foregroundStyle(.white)
-                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 15.5, style: .continuous))
 
                     Text("Floc")
                         .font(.title3.bold())
@@ -700,19 +807,6 @@ struct AboutFlocView: View {
                 }
             } header: {
                 SettingsSectionHeader(title: AppLocalization.string("版本信息"))
-            }
-
-            Section {
-                NavigationLink {
-                    PrinciplesView()
-                } label: {
-                    SettingsLabel(
-                        systemImage: "gearshape.2",
-                        title: AppLocalization.string("工作原理")
-                    )
-                }
-            } footer: {
-                Text(AppLocalization.string("本应用用于定位服务的开发测试与研究，请仅在你拥有或获得授权的设备与网络环境中使用。"))
             }
 
             Section {
@@ -907,6 +1001,9 @@ struct FeedbackView: View {
 // MARK: - 联系我们
 
 /// 联系方式。
+///
+/// 只留两个能直接找到人的入口：邮箱与公众号。仓库地址、Issue 页面一律不出现——
+/// 对外只要「怎么找到你」，不要「代码在哪」。
 struct ContactView: View {
 
     @State private var copiedItem: String?
@@ -922,11 +1019,11 @@ struct ContactView: View {
                             value: AppContact.supportEmail
                         )
                     }
-                    if !AppContact.wechat.isEmpty {
+                    if !AppContact.officialAccount.isEmpty {
                         contactRow(
                             icon: "message.fill",
-                            title: AppLocalization.string("微信"),
-                            value: AppContact.wechat
+                            title: AppLocalization.string("公众号"),
+                            value: AppContact.officialAccount
                         )
                     }
                 } header: {
@@ -934,35 +1031,9 @@ struct ContactView: View {
                 } footer: {
                     Text(AppLocalization.string("点一下即可复制。购买卡密、续费、换设备解绑都可以直接找这里。"))
                 }
-            }
-
-            Section {
-                Button {
-                    copy(AppContact.issuesURL, label: AppLocalization.string("反馈地址"))
-                } label: {
-                    SettingsLabel(
-                        systemImage: "ladybug",
-                        title: AppLocalization.string("复制问题反馈地址"),
-                        isSecondary: true
-                    )
-                }
-
-                if let url = URL(string: AppContact.homepageURL) {
-                    Link(destination: url) {
-                        SettingsLabel(
-                            systemImage: "link",
-                            title: AppLocalization.string("打开项目主页"),
-                            isSecondary: true
-                        )
-                    }
-                }
-            } header: {
-                SettingsSectionHeader(title: AppLocalization.string("反馈与主页"))
-            }
-
-            if !AppContact.hasDirectContact {
+            } else {
                 Section {
-                    Text(AppLocalization.string("作者还没有填写联系方式。发布前请在 Shared/AppContact.swift 里补上邮箱或微信，否则用户想购买时找不到入口。"))
+                    Text(AppLocalization.string("这里会显示作者的邮箱与公众号。发布前请在 Shared/AppContact.swift 里补上，否则用户想购买时找不到入口。"))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

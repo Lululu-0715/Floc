@@ -26,7 +26,8 @@ final class MapViewBridge: ObservableObject {
     /// 把地图中心移动到指定坐标。
     ///
     /// `meters` 为 nil 时保持当前缩放级别（只是平移）；传值则同时缩放。
-    /// 「实时位置」和启动时的初始视野都要落到 200 米，靠传这个参数实现。
+    /// 只有「恢复上次视野」这类场景才需要传值——「实时位置」故意不传，
+    /// 免得用户刚看好的范围被一次跳转冲掉。
     func center(on coordinate: CLLocationCoordinate2D,
                 animated: Bool = true,
                 meters: Double? = nil) {

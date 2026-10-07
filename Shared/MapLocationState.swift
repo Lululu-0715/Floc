@@ -38,7 +38,7 @@ final class MapLocationState: ObservableObject {
     ///
     /// 200 米大约是「一条街」的尺度：虚拟定位选点通常就是要精确到某个
     /// 楼或某个路口，进应用先给到这个精度，比默认给几公里再手动放大省事。
-    /// 也是「实时位置」跳转时统一使用的缩放级别。
+    /// 只用于**首次进入**的初始视野；「实时位置」不改缩放，保持用户当前比例。
     static let defaultViewportMeters: Double = 200
 
     // MARK: - 选点
