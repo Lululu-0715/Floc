@@ -152,7 +152,17 @@ struct MapHomeView: View {
                 state.viewportMeters = meters
             }
         )
-        .ignoresSafeArea(edges: .bottom)
+        // 全面屏：地图铺满整块屏幕，状态栏与 Home 指示条底下也是地图。
+        //
+        // 1.0.7 及以前只 `.ignoresSafeArea(edges: .bottom)`，顶上那条安全区
+        // 就空出来了——空的区域露出的是窗口底色，浅色模式下就是一条白带，
+        // 状态栏（时间 / 信号 / 电量）像贴在一条白条上，和下面的地图断开。
+        //
+        // 这里**只让地图层**忽略安全区。ZStack 里的覆盖层（搜索框、图层
+        // 切换、底部面板）不受兄弟节点影响，仍然按安全区排布，所以搜索框
+        // 不会顶到刘海或状态栏下面去——底边同理：底部面板一直让开 Home
+        // 指示条，靠的就是这条性质。
+        .ignoresSafeArea()
     }
 
     // MARK: - 覆盖层

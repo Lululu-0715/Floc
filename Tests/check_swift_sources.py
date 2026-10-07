@@ -8,6 +8,10 @@
   2. 桥接头与 Go 导出对齐    —— 少一个声明就是链接错误
   3. 测试引用的类型确实存在  —— 避免 @testable import 后编译失败
   4. project.yml 源目录存在  —— XcodeGen 配错路径会静默漏文件
+  5. 资源完整性              —— 图标 / plist / 三语言文案
+  6. 系统设置跳转            —— 不许退回 canOpenURL 与老 scheme 写法
+  7. 双口味出包              —— 标准版 + 纯净版必须成对
+  8. 地图页全面屏            —— 地图层铺满，覆盖层守安全区
 
 运行：python3 Tests/check_swift_sources.py
 """
@@ -434,6 +438,81 @@ def check_build_flavors() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 8. 地图页全面屏
+# ---------------------------------------------------------------------------
+
+def swift_block(source: str, declaration: str) -> str:
+    """取出 `declaration` 声明的那个花括号块（配对到底）。
+
+    只按花括号配平找结尾，不依赖缩进——这个项目里嵌套层级不浅，
+    数空格一定会数错。
+    """
+    start = source.find(declaration)
+    if start == -1:
+        return ""
+
+    brace = source.find("{", start + len(declaration))
+    if brace == -1:
+        return ""
+
+    depth = 0
+    for index in range(brace, len(source)):
+        char = source[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return source[brace : index + 1]
+    return ""
+
+
+def check_full_bleed_map() -> None:
+    """地图页必须是全面屏。
+
+    1.0.7 及以前地图层写的是 `.ignoresSafeArea(edges: .bottom)`，顶上那条
+    安全区就空着，露出的是窗口底色——浅色模式下状态栏底下就是一整条白带，
+    和下面的地图断开。用户要求「状态栏那里不要白色了，全面屏」。
+
+    两条约束必须同时成立：
+      A. 地图层忽略**全部**边（不能只写 `.bottom`）；
+      B. 覆盖层不许忽略安全区。
+
+    B 是 A 的前提：地图层放开之后，搜索框会不会顶到状态栏下面、底部面板
+    会不会压住 Home 指示条，全看覆盖层有没有守住安全区。只查 A 会漏掉
+    另一半——把搜索框顶上去，用户看到的还是坏的。
+    """
+    path = ROOT / "App" / "MapHomeView.swift"
+    if not path.exists():
+        fail("缺少 App/MapHomeView.swift")
+        return
+
+    source = strip_strings_and_comments(path.read_text(encoding="utf-8"))
+
+    map_layer = swift_block(source, "private var mapLayer: some View")
+    if not map_layer:
+        fail("MapHomeView 里找不到 mapLayer：检查脚本的定位字串已失效")
+    elif ".ignoresSafeArea()" not in map_layer:
+        detail = (
+            "只忽略了部分边"
+            if ".ignoresSafeArea(edges:" in map_layer
+            else "完全没有 ignoresSafeArea"
+        )
+        fail(
+            f"mapLayer 没有铺满整块屏幕（{detail}），状态栏底下会露出一条白带：\n"
+            "      期望 .ignoresSafeArea()"
+        )
+
+    overlay = swift_block(source, "private var overlayLayer: some View")
+    if not overlay:
+        fail("MapHomeView 里找不到 overlayLayer：检查脚本的定位字串已失效")
+    elif ".ignoresSafeArea" in overlay:
+        fail(
+            "overlayLayer 忽略了安全区，搜索框/底部面板会顶到状态栏或 Home 指示条下面"
+        )
+
+
+# ---------------------------------------------------------------------------
 # 主流程
 # ---------------------------------------------------------------------------
 
@@ -447,28 +526,31 @@ def main() -> int:
         + list((ROOT / "Tests").rglob("*.swift"))
     )
 
-    print(f"\n[1/7] 括号配平（{len(swift_files)} 个 Swift 文件）")
+    print(f"\n[1/8] 括号配平（{len(swift_files)} 个 Swift 文件）")
     for path in swift_files:
         check_balance(path, path.read_text(encoding="utf-8"))
     print(f"      已检查 {len(swift_files)} 个文件")
 
-    print("\n[2/7] 桥接头与 Go 导出对齐")
+    print("\n[2/8] 桥接头与 Go 导出对齐")
     check_bridging_header()
 
-    print("\n[3/7] 测试类型引用")
+    print("\n[3/8] 测试类型引用")
     check_test_references()
 
-    print("\n[4/7] project.yml 源路径")
+    print("\n[4/8] project.yml 源路径")
     check_project_sources()
 
-    print("\n[5/7] 资源完整性")
+    print("\n[5/8] 资源完整性")
     check_resources()
 
-    print("\n[6/7] 系统设置跳转")
+    print("\n[6/8] 系统设置跳转")
     check_settings_navigator()
 
-    print("\n[7/7] 双口味出包")
+    print("\n[7/8] 双口味出包")
     check_build_flavors()
+
+    print("\n[8/8] 地图页全面屏")
+    check_full_bleed_map()
 
     print("\n" + "=" * 60)
 

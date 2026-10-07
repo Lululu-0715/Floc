@@ -76,9 +76,11 @@ Floc-纯净-unsigned.ipa             纯净版的固定名副本
 桌面图标名字恒为 `Floc`，不随版本变化。裁剪范围见 `Shared/BuildFlavor.swift`，
 完整说明见 **[docs/BUILD.md](docs/BUILD.md)**。
 
-> **第三方模块的脚本地址写死在本仓库的 raw 地址上**（`Lululu-0715/Floc`）。
-> 如果你 fork 或迁移到其他账号，必须同步改 3 个常量与 5 个模块文件（共 17 处 URL），
-> 否则模块下载会 404。改动点见
+> **第三方模块与远端配置都指向本仓库在 jsDelivr 上的镜像**（`Lululu-0715/Floc@main`）。
+> 用 jsDelivr 而不是 `raw.githubusercontent.com` 是有原因的：raw 国内基本拉不到，
+> 而模块拉不到时的表现是**静默失效**（开关是开的、定位不动）。
+> 如果你 fork 或迁移到其他账号，必须同步改 3 个常量、`Resources/remote-config.json`
+> 以及 5 个模块文件里的 10 条脚本地址，否则模块下载会 404。改动点见
 > [BUILD.md 第 7 节](docs/BUILD.md#关于脚本托管地址)，
 > 改完用 `python3 Tests/check_branding.py` 确认对齐。
 
