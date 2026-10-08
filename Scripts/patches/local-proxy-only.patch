@@ -125,7 +125,7 @@ index 24f7ed0..e66da9c 100644
          environmentChecks = results
          reload()
 diff --git a/App/MapHomeView.swift b/App/MapHomeView.swift
-index 019fec3..e21cf2c 100644
+index d3a8c4d..7459522 100644
 --- a/App/MapHomeView.swift
 +++ b/App/MapHomeView.swift
 @@ -15,8 +15,6 @@ struct MapHomeView: View {
@@ -137,7 +137,7 @@ index 019fec3..e21cf2c 100644
      @ObservedObject private var remoteConfiguration = AppRemoteConfigurationStore.shared
      #if !PURE_BUILD
      @ObservedObject private var license = LicenseManager.shared
-@@ -487,29 +485,15 @@ struct MapHomeView: View {
+@@ -528,38 +526,24 @@ struct MapHomeView: View {
      private var statusRow: some View {
          HStack(spacing: 8) {
              StatusPill(
@@ -147,35 +147,49 @@ index 019fec3..e21cf2c 100644
 +                icon: proxy.certificateTrustState.isTrusted ? "checkmark.shield.fill" : "shield.slash",
 +                text: proxy.certificateTrustState.displayText,
 +                color: proxy.certificateTrustState.isTrusted ? .green : .orange
-+            )
-+            StatusPill(
-+                icon: proxy.wiFiProxyState == .configured ? "link" : "link.badge.plus",
-+                text: proxy.wiFiProxyState.displayText,
-+                color: proxy.wiFiProxyState == .configured ? .green : .orange
              )
 -
 -            if runtimeMode.mode == .localProxy {
--                StatusPill(
++            // 蜂窝下「Wi-Fi 代理」这一格没有意义：手动代理只挂在某个 Wi-Fi 上，
++            // 蜂窝根本没这个入口。这时直接把原因摆出来（用户一眼就知道为什么
++            // 开不起来），好过显示一个永远不会变绿的「未配置」。
++            if proxy.networkTransport.blocksInAppProxy {
+                 StatusPill(
 -                    icon: proxy.certificateTrustState.isTrusted ? "checkmark.shield.fill" : "shield.slash",
 -                    text: proxy.certificateTrustState.displayText,
 -                    color: proxy.certificateTrustState.isTrusted ? .green : .orange
--                )
--                StatusPill(
--                    icon: proxy.wiFiProxyState == .configured ? "link" : "link.badge.plus",
--                    text: proxy.wiFiProxyState.displayText,
--                    color: proxy.wiFiProxyState == .configured ? .green : .orange
--                )
--            } else {
--                StatusPill(
++                    icon: "wifi.slash",
++                    text: AppLocalization.string("未连接 Wi-Fi"),
++                    color: .orange
+                 )
+-                // 蜂窝下「Wi-Fi 代理」这一格没有意义：手动代理只挂在某个 Wi-Fi 上，
+-                // 蜂窝根本没这个入口。这时直接把原因摆出来（用户一眼就知道为什么
+-                // 开不起来），好过显示一个永远不会变绿的「未配置」。
+-                if proxy.networkTransport.blocksInAppProxy {
+-                    StatusPill(
+-                        icon: "wifi.slash",
+-                        text: AppLocalization.string("未连接 Wi-Fi"),
+-                        color: .orange
+-                    )
+-                } else {
+-                    StatusPill(
+-                        icon: proxy.wiFiProxyState == .configured ? "link" : "link.badge.plus",
+-                        text: proxy.wiFiProxyState.displayText,
+-                        color: proxy.wiFiProxyState == .configured ? .green : .orange
+-                    )
+-                }
+             } else {
+                 StatusPill(
 -                    icon: thirdParty.state.isUsable ? "link" : "link.badge.plus",
 -                    text: thirdParty.state.displayText,
 -                    color: thirdParty.state.isUsable ? .green : .orange
--                )
--            }
++                    icon: proxy.wiFiProxyState == .configured ? "link" : "link.badge.plus",
++                    text: proxy.wiFiProxyState.displayText,
++                    color: proxy.wiFiProxyState == .configured ? .green : .orange
+                 )
+             }
  
-             Spacer(minLength: 0)
- 
-@@ -733,9 +717,7 @@ struct MapHomeView: View {
+@@ -800,9 +784,7 @@ struct MapHomeView: View {
  
          // 进入主界面就刷新一次环境状态，让用户立刻看到还差什么。
          Task {
@@ -186,7 +200,7 @@ index 019fec3..e21cf2c 100644
                  await proxy.verifyCertificateTrust()
                  await proxy.verifyWiFiProxy()
              }
-@@ -771,32 +753,23 @@ struct MapHomeView: View {
+@@ -838,32 +820,23 @@ struct MapHomeView: View {
      /// 注意 MapLocationState 初始化时会把 isEnabled 置为 false，
      /// 这里处理的是「同一次运行中从设置页返回」这种情况。
      private func restoreActiveState(pair: CoordinateConverter.CoordinatePair) async {
@@ -234,7 +248,7 @@ index 019fec3..e21cf2c 100644
          }
      }
  
-@@ -816,7 +789,7 @@ struct MapHomeView: View {
+@@ -883,7 +856,7 @@ struct MapHomeView: View {
              // 进后台前的最后一次自救。音频一旦被别的应用抢走，播放停掉，
              // 进程随后就被系统挂起——那一刻之后我们再也跑不了任何代码，
              // 所以「检查播放是否还活着」只能放在这里。
@@ -243,7 +257,7 @@ index 019fec3..e21cf2c 100644
              BackgroundKeepAlive.shared.resumeIfNeeded()
  
          case .active:
-@@ -837,7 +810,7 @@ struct MapHomeView: View {
+@@ -904,7 +877,7 @@ struct MapHomeView: View {
      /// 变成 `.stopped`，所以这里必须实际探一次代理是否还活着，不能只看状态。
      /// 保活同理——`isAlive` 问的是播放器，而不是我们记的布尔标志。
      private func recoverAfterForeground() {
@@ -252,7 +266,7 @@ index 019fec3..e21cf2c 100644
  
          if !BackgroundKeepAlive.shared.isAlive {
              RuntimeLogger.warn("APP", "KeepAlive", "回前台时保活已失效，重新拉起")
-@@ -852,7 +825,7 @@ struct MapHomeView: View {
+@@ -919,7 +892,7 @@ struct MapHomeView: View {
              proxy.stop()
  
              // 停掉之后 `status` 变成 `.stopped`，`restoreActiveState` 会把它重新拉起来。
@@ -261,12 +275,27 @@ index 019fec3..e21cf2c 100644
              await restoreActiveState(pair: pair)
  
              await proxy.verifyWiFiProxy()
-@@ -943,48 +916,31 @@ struct MapHomeView: View {
+@@ -1010,63 +983,46 @@ struct MapHomeView: View {
      #endif
  
      private func startSpoofing(pair: CoordinateConverter.CoordinatePair) async {
 -        switch runtimeMode.mode {
 -        case .localProxy:
+-            // 蜂窝下必须拦：应用内代理靠「当前 Wi-Fi 的手动代理设置」生效，
+-            // iOS 没有给蜂窝配 HTTP 代理的入口。不拦的话代理一样能起来、
+-            // 开关一样会亮、界面还提示「已开启」，但没有任何流量经过本机，
+-            // 定位纹丝不动 —— 这是最难排查的一类假成功。
+-            guard proxy.canUseInAppProxy else {
+-                RuntimeLogger.warn("APP", "Proxy", "蜂窝网络下拒绝开启应用内代理", details: [
+-                    "transport": proxy.networkTransport.debugName,
+-                ])
+-                showBanner(
+-                    AppLocalization.string("当前使用移动网络，应用内代理只在 Wi-Fi 下生效。请先连接 Wi-Fi，再开启虚拟定位。"),
+-                    style: .error
+-                )
+-                return
+-            }
+-
 -            do {
 -                try await proxy.start(
 -                    latitude: pair.wgs84.latitude,
@@ -293,7 +322,21 @@ index 019fec3..e21cf2c 100644
 -            } catch {
 -                showBanner(error.localizedDescription, style: .error)
 -            }
--
++        // 蜂窝下必须拦：应用内代理靠「当前 Wi-Fi 的手动代理设置」生效，
++        // iOS 没有给蜂窝配 HTTP 代理的入口。不拦的话代理一样能起来、
++        // 开关一样会亮、界面还提示「已开启」，但没有任何流量经过本机，
++        // 定位纹丝不动 —— 这是最难排查的一类假成功。
++        guard proxy.canUseInAppProxy else {
++            RuntimeLogger.warn("APP", "Proxy", "蜂窝网络下拒绝开启应用内代理", details: [
++                "transport": proxy.networkTransport.debugName,
++            ])
++            showBanner(
++                AppLocalization.string("当前使用移动网络，应用内代理只在 Wi-Fi 下生效。请先连接 Wi-Fi，再开启虚拟定位。"),
++                style: .error
++            )
++            return
++        }
+ 
 -        case .thirdParty:
 -            let success = await thirdParty.save(
 -                pair: pair,
@@ -330,7 +373,7 @@ index 019fec3..e21cf2c 100644
          }
      }
  
-@@ -1000,29 +956,21 @@ struct MapHomeView: View {
+@@ -1082,29 +1038,21 @@ struct MapHomeView: View {
      }
  
      private func stopSpoofing() async {
@@ -673,7 +716,7 @@ index 284db0b..a23a07f 100644
 -    }
 -}
 diff --git a/App/SettingsDetailViews.swift b/App/SettingsDetailViews.swift
-index 56e43c7..2aa371d 100644
+index 57e536f..df93dfc 100644
 --- a/App/SettingsDetailViews.swift
 +++ b/App/SettingsDetailViews.swift
 @@ -7,67 +7,6 @@ import SwiftUI
@@ -985,7 +1028,7 @@ index 56e43c7..2aa371d 100644
  // MARK: - 证书与环境
  
  /// 证书信任、Wi-Fi 代理与跳转。
-@@ -942,7 +663,6 @@ struct UserGuideView: View {
+@@ -952,7 +673,6 @@ struct UserGuideView: View {
              (AppLocalization.string("失效说明"), .disableSpoofing),
              (AppLocalization.string("关闭 WiFi 代理"), .disableWiFiProxy),
              (TipKind.certificateTrust.settingsLabel, .certificateTrust),
@@ -1486,7 +1529,7 @@ index 83e3f0c..6fcb170 100644
      }
  }
 diff --git a/Resources/en.lproj/Localizable.strings b/Resources/en.lproj/Localizable.strings
-index 749ad42..e677b67 100644
+index 2a02cf7..44caed4 100644
 --- a/Resources/en.lproj/Localizable.strings
 +++ b/Resources/en.lproj/Localizable.strings
 @@ -24,16 +24,11 @@
@@ -1627,7 +1670,7 @@ index 749ad42..e677b67 100644
  "调整后立即生效，只影响本应用，不会改动系统的显示设置。" = "Takes effect immediately and only affects this app; it does not change system display settings.";
  "精度 %@ 米" = "%@ m accuracy";
  "版本信息" = "Version info";
-@@ -401,18 +350,5 @@
+@@ -401,19 +350,6 @@
  "%ld 天" = "%ld d";
  "%ld 小时" = "%ld h";
  "公众号" = "Official account";
@@ -1646,6 +1689,7 @@ index 749ad42..e677b67 100644
 -"当前拦截定位请求的是 %@，与上面选择的 %@ 不一致。请确认手机上只开着一个代理客户端，并在它里面启用本模块。" = "Location requests are intercepted by %@, not the selected %@. Keep only one proxy client running and enable this module in it.";
  "最后两下要自己点：设置 → 无线局域网 → 当前网络右侧 ⓘ → 配置代理 → 手动，服务器填 127.0.0.1、端口 8888。" = "Two taps are left to you: Settings → Wi-Fi → ⓘ next to the current network → Configure Proxy → Manual, server 127.0.0.1, port 8888.";
  "这里会显示作者的邮箱与公众号。发布前请在 Shared/AppContact.swift 里补上，否则用户想购买时找不到入口。" = "The author's email and official account show here. Fill them in Shared/AppContact.swift before release, or buyers cannot reach you.";
+ "未连接 Wi-Fi" = "Not on Wi-Fi";
 diff --git a/Resources/remote-config.json b/Resources/remote-config.json
 index 458a1e9..7d8cfb0 100644
 --- a/Resources/remote-config.json
@@ -1660,7 +1704,7 @@ index 458a1e9..7d8cfb0 100644
 +  "_note": "应用启动时拉取本文件，用于「不发版也能改行为」。blockedFromSystemVersion 写 \"27.0\" 这样的版本号，命中时界面会给兼容性警示；announcement 挂一条公告，announcementExpiresAt 到期后自动不再展示。三项都可以留空。1.0.8 起只剩应用内代理，原来的 moduleBaseURL 与 scriptVersion 已随第三方模式一起删除。"
  }
 diff --git a/Resources/zh-Hans.lproj/Localizable.strings b/Resources/zh-Hans.lproj/Localizable.strings
-index bc8f6f3..10b6cb8 100644
+index 3336239..7df608a 100644
 --- a/Resources/zh-Hans.lproj/Localizable.strings
 +++ b/Resources/zh-Hans.lproj/Localizable.strings
 @@ -24,16 +24,11 @@
@@ -1801,7 +1845,7 @@ index bc8f6f3..10b6cb8 100644
  "调整后立即生效，只影响本应用，不会改动系统的显示设置。" = "调整后立即生效，只影响本应用，不会改动系统的显示设置。";
  "精度 %@ 米" = "精度 %@ 米";
  "版本信息" = "版本信息";
-@@ -401,18 +350,5 @@
+@@ -401,19 +350,6 @@
  "%ld 天" = "%ld 天";
  "%ld 小时" = "%ld 小时";
  "公众号" = "公众号";
@@ -1820,8 +1864,9 @@ index bc8f6f3..10b6cb8 100644
 -"当前拦截定位请求的是 %@，与上面选择的 %@ 不一致。请确认手机上只开着一个代理客户端，并在它里面启用本模块。" = "当前拦截定位请求的是 %@，与上面选择的 %@ 不一致。请确认手机上只开着一个代理客户端，并在它里面启用本模块。";
  "最后两下要自己点：设置 → 无线局域网 → 当前网络右侧 ⓘ → 配置代理 → 手动，服务器填 127.0.0.1、端口 8888。" = "最后两下要自己点：设置 → 无线局域网 → 当前网络右侧 ⓘ → 配置代理 → 手动，服务器填 127.0.0.1、端口 8888。";
  "这里会显示作者的邮箱与公众号。发布前请在 Shared/AppContact.swift 里补上，否则用户想购买时找不到入口。" = "这里会显示作者的邮箱与公众号。发布前请在 Shared/AppContact.swift 里补上，否则用户想购买时找不到入口。";
+ 
 diff --git a/Resources/zh-Hant.lproj/Localizable.strings b/Resources/zh-Hant.lproj/Localizable.strings
-index 9a139b6..58de7d7 100644
+index ec1d015..6601dd0 100644
 --- a/Resources/zh-Hant.lproj/Localizable.strings
 +++ b/Resources/zh-Hant.lproj/Localizable.strings
 @@ -24,16 +24,11 @@
@@ -1962,7 +2007,7 @@ index 9a139b6..58de7d7 100644
  "调整后立即生效，只影响本应用，不会改动系统的显示设置。" = "調整後立即生效，只影響本應用，不會改動系統的顯示設定。";
  "精度 %@ 米" = "精度 %@ 公尺";
  "版本信息" = "版本資訊";
-@@ -401,18 +350,5 @@
+@@ -401,19 +350,6 @@
  "%ld 天" = "%ld 天";
  "%ld 小时" = "%ld 小時";
  "公众号" = "公眾號";
@@ -1981,6 +2026,7 @@ index 9a139b6..58de7d7 100644
 -"当前拦截定位请求的是 %@，与上面选择的 %@ 不一致。请确认手机上只开着一个代理客户端，并在它里面启用本模块。" = "目前攔截定位請求的是 %@，與上面選擇的 %@ 不一致。請確認手機上只開著一個代理用戶端，並在它裡面啟用本模組。";
  "最后两下要自己点：设置 → 无线局域网 → 当前网络右侧 ⓘ → 配置代理 → 手动，服务器填 127.0.0.1、端口 8888。" = "最後兩下要自己點：設定 → 無線區域網路 → 目前網路右側 ⓘ → 設定代理 → 手動，伺服器填 127.0.0.1、連接埠 8888。";
  "这里会显示作者的邮箱与公众号。发布前请在 Shared/AppContact.swift 里补上，否则用户想购买时找不到入口。" = "這裡會顯示作者的電子郵件與公眾號。發布前請在 Shared/AppContact.swift 裡補上，否則使用者想購買時找不到入口。";
+ 
 diff --git a/Shared/AppRemoteConfiguration.swift b/Shared/AppRemoteConfiguration.swift
 index d5bf61b..bda859b 100644
 --- a/Shared/AppRemoteConfiguration.swift
