@@ -1,8 +1,25 @@
 import SwiftUI
 
+/// 全应用共用的玻璃外观。
+///
+/// **这是全工程唯一允许出现 iOS 26 液态玻璃 API（`glassEffect` / `Glass`）的文件。**
+/// 两个原因：
+///   1. 界面侧只有三个入口（`glassCard` / `mapGlassSurface` / `mapGlassCapsule`），
+///      散出去就会出现「改一处漏一处」的老问题；
+///   2. `Tests/check_swift_sources.py` 第 9 项靠这个不变量做静态守卫 ——
+///      任何绕过 `if #available(iOS 26, *)` 直接用玻璃 API 的写法都会被拦下，
+///      同时它还会断言 `project.yml` 的 `deploymentTarget` 仍然是 iOS 15.0。
+///
+/// 分叉点是 `if #available(iOS 26.0, *)`，而不是提高 deploymentTarget：
+/// **同一个二进制**在 iOS 26 及以上自动换成液态玻璃、在 iOS 15~18 维持原样。
+/// 开关是「编译时用的 SDK」（Xcode 26 自带 iOS 26 SDK），不是运行系统版本。
+
 /// 玻璃质感卡片。
 ///
-/// iOS 15 上没有系统级的玻璃材质，这里用 Material 手工模拟：
+/// iOS 26 及以上交给系统的液态玻璃（`.glassEffect`）——边缘高光、背景折射、
+/// 深浅色适配全部由系统负责，这里不再自己描边、投影。
+///
+/// iOS 15 ~ 18 上没有系统级的玻璃材质，用 Material 手工模拟：
 ///
 ///   1. `.ultraThinMaterial` 提供底色与背景透射（真实感的来源）
 ///   2. 一圈 0.5pt 的**白色半透明描边**模拟玻璃边缘的高光反射
@@ -26,12 +43,17 @@ struct GlassCardModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        content
-            .background(shape.fill(.ultraThinMaterial))
-            .overlay(
-                shape.stroke(Color.white.opacity(0.15), lineWidth: 0.5)
-            )
-            .shadow(color: .black.opacity(0.15), radius: shadowRadius, y: 4)
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(Glass.regular, in: shape)
+        } else {
+            content
+                .background(shape.fill(.ultraThinMaterial))
+                .overlay(
+                    shape.stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+                )
+                .shadow(color: .black.opacity(0.15), radius: shadowRadius, y: 4)
+        }
     }
 }
 
@@ -43,6 +65,10 @@ struct GlassCardModifier: ViewModifier {
 ///
 /// 底色用 `systemBackground` 而不是写死白色：浅色模式下压白、
 /// 深色模式下压黑，两种外观下都是「更实」的方向。
+///
+/// iOS 26 及以上走系统液态玻璃，但**保留这层「压底」的意图** ——
+/// 用 `Glass.tint(Color(.systemBackground).opacity(...))` 表达，而不是
+/// 在玻璃上再叠一层不透明色块（那会把折射和高光完全盖掉）。
 /// 形状参数化的版本：圆角矩形和胶囊共用同一套材质、描边与投影。
 ///
 /// 之前只支持圆角矩形，要做胶囊按钮就得再抄一份 modifier——材质或描边
@@ -51,18 +77,41 @@ struct MapGlassSurfaceModifier<S: Shape>: ViewModifier {
 
     var shape: S
 
+    /// 这一层是不是**贴在另一块玻璃上**（底部面板里的动作按钮、状态行小圆钮）。
+    ///
+    /// iOS 26 的液态玻璃不能嵌套：内层会被外层吃掉，表现是按钮的底色整块
+    /// 消失——1.0.10 第一版就踩了这个坑，底部面板的主按钮直接变成一片透明。
+    /// 所以贴玻璃的那一档在 iOS 26 上不再叠玻璃，改用一层淡色填充把可点区域
+    /// 画出来，玻璃感由外层面板负责。iOS 15~18 行为不变。
+    var nested: Bool = false
+
     func body(content: Content) -> some View {
-        content
-            .background(
-                ZStack {
-                    shape.fill(.regularMaterial)
-                    shape.fill(Color(.systemBackground).opacity(GlassMetrics.mapSurfaceTint))
-                }
-            )
-            .overlay(
-                shape.stroke(Color.white.opacity(0.18), lineWidth: 0.5)
-            )
-            .shadow(color: .black.opacity(0.18), radius: GlassMetrics.mapShadowRadius, y: 4)
+        if #available(iOS 26.0, *) {
+            if nested {
+                content
+                    .background(shape.fill(Color.primary.opacity(GlassMetrics.mapCapsuleTint)))
+            } else {
+                content
+                    .glassEffect(
+                        Glass.regular.tint(
+                            Color(.systemBackground).opacity(GlassMetrics.mapGlassTint)
+                        ),
+                        in: shape
+                    )
+            }
+        } else {
+            content
+                .background(
+                    ZStack {
+                        shape.fill(.regularMaterial)
+                        shape.fill(Color(.systemBackground).opacity(GlassMetrics.mapSurfaceTint))
+                    }
+                )
+                .overlay(
+                    shape.stroke(Color.white.opacity(0.18), lineWidth: 0.5)
+                )
+                .shadow(color: .black.opacity(0.18), radius: GlassMetrics.mapShadowRadius, y: 4)
+        }
     }
 }
 
@@ -79,6 +128,9 @@ extension View {
     /// 地图上同时存在搜索框、图层切换、底部面板等多个浮层，圆角和材质
     /// 各自写一套很快就会走形（之前就出现过 12 / 14 / 20 混用、材质在
     /// regular 与 ultraThin 之间跳的情况）。统一从这里取。
+    ///
+    /// 用于**直接贴在地图上**的浮层；已经在大玻璃面板内部的元素走
+    /// `mapGlassCapsule()`（那一档不能再叠玻璃）。
     func mapGlassSurface(cornerRadius: CGFloat = GlassMetrics.mapCornerRadius) -> some View {
         modifier(MapGlassSurfaceModifier(
             shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -90,8 +142,12 @@ extension View {
     /// 底部面板里的动作按钮用它：44pt 高的按钮配上 28pt 圆角，肉眼看已经
     /// 接近胶囊，但用 `Capsule` 语义更准，也不必让圆角跟着高度算。
     /// 34×34 的方形套上去就是一个圆，所以状态行里的圆形按钮也复用这套。
-    func mapGlassCapsule() -> some View {
-        modifier(MapGlassSurfaceModifier(shape: Capsule(style: .continuous)))
+    ///
+    /// **它只出现在 `mapGlassSurface()` 铺出来的底部面板内部**，所以默认
+    /// `nested: true`。要拿它当独立浮层（直接贴在地图上）时传 `false`，
+    /// 否则 iOS 26 上会少一层玻璃。
+    func mapGlassCapsule(nested: Bool = true) -> some View {
+        modifier(MapGlassSurfaceModifier(shape: Capsule(style: .continuous), nested: nested))
     }
 }
 
@@ -125,7 +181,24 @@ enum GlassMetrics {
     ///
     /// 0 就是纯 material（旧版的行为，卫星图上小字会被纹理吃掉），
     /// 1 就是完全实心、没有玻璃感。0.55 是「看得清」和「还像玻璃」的折中。
+    ///
+    /// 只在 **iOS 15 ~ 18** 这条路径上生效。
     static let mapSurfaceTint: Double = 0.55
+
+    /// iOS 26 液态玻璃的地图浮层染色强度。
+    ///
+    /// 语义与 `mapSurfaceTint` 相同（把浮层压实一点、压住卫星图的碎纹理），
+    /// 但走的是 `Glass.tint(_:)` 而不是叠一层色块 —— 玻璃本身已经提供了
+    /// 折射与高光，压得太狠反而会退回成一块不透明的板。
+    /// 所以数值比 `mapSurfaceTint` 小一档。
+    static let mapGlassTint: Double = 0.35
+
+    /// iOS 26 上「贴在玻璃面板里的胶囊」的填充强度。
+    ///
+    /// 这一档**不能**再叠一层 `.glassEffect`（嵌套玻璃会被外层吃掉），
+    /// 于是退回成一层淡色填充。取值对标 iOS 15~18 那套在白色面板上
+    /// 呈现出来的浅灰：既画出可点区域，又不至于变成一块实心色块。
+    static let mapCapsuleTint: Double = 0.08
 }
 
 /// 玻璃胶囊按钮组里的单个按钮。

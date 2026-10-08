@@ -2,6 +2,53 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+> 1.0.5 ~ 1.0.9 的详细记录见各版本的 `dist/RELEASE_NOTES_v*.md`（出包时会一并
+> 归档到 `~/Desktop/Floc 发布包/<口味>/`），本文件从 1.0.10 起继续维护。
+
+## [1.0.10] - 2026-10-09
+
+iOS 26 及以上换成系统「液态玻璃」，iOS 15 ~ 18 维持原样；修掉 5 个用户反馈的问题。
+
+### 液态玻璃（Liquid Glass）
+
+- 用 Xcode 26.3（自带的 iOS 26 SDK）编译。**开关是编译时的 SDK，不是运行系统版本**：
+  同一个二进制在 iOS 26+ 自动换皮、在 15 ~ 18 保持旧外观，
+  `project.yml` 的 `deploymentTarget` 仍是 **iOS 15.0**，没有提高
+- 改动只落在 `Shared/GlassCard.swift` 的 **3 个入口**（`glassCard()` /
+  `mapGlassSurface()` / `mapGlassCapsule()`）：iOS 26 走 `glassEffect`，
+  老系统走原来的 Material 手工模拟（**逐字保留**，观感零漂移）
+- **液态玻璃不能嵌套**：底部面板内部的胶囊一开始也套了玻璃，结果被外层吃掉、
+  按钮底色整块消失。改由 `mapGlassCapsule(nested:)` 的 `nested` 参数区分——
+  贴玻璃的那一档在 iOS 26 上退回淡色填充
+- 新增 `Tests/check_swift_sources.py` **第 9 项**：玻璃 API 只能出现在
+  `Shared/GlassCard.swift` 的 `if #available(iOS 26, *)` 块内，且最低版本必须
+  仍是 15.0。已做负向测试确认能拦住越界写法
+
+### 修复
+
+- **蜂窝网络下仍显示 Wi-Fi 可用、还能开虚拟定位**：`NWPathMonitor` 原来指定了
+  `requiredInterfaceType: .wifi`，**根本看不到蜂窝路径**，区分不了「没连 Wi-Fi」
+  和「在用蜂窝」；且回调只在状态变化时触发，冷启动走蜂窝时一次都不来。
+  改为不限接口类型的监听 + `NetworkTransport`（wifi / cellular / other）判定
+  + 每次都回调 + 冷启动主动拉一次；**只有 `.cellular` 拦截**（`.other` 放行，
+  误拦的代价是功能直接不可用）。蜂窝下开启会被拦下并提示，状态行同步换成
+  「未连接 Wi-Fi」，设置页新增「当前接入方式」一行
+- **「实时位置」反应慢**：原来每次都 `requestLocation()` 等 GPS 解算，
+  改为优先采用 60 秒内的系统缓存位置
+- **「实时位置」不放大**：推翻 1.0.6 起「只平移不缩放」的取舍，改回缩放到街道尺度
+- **刚装好不自动弹定位授权**：欢迎页 / 权限页出现时自动请求一次
+  （请求前复查 `notDetermined`；静态持有 manager，防弹窗未响应时被释放）
+- **搜索结果列表显示不完整**：`VStack` + `.frame(maxHeight:)` **不产生滚动**，
+  超出部分被裁且点不到。改成 `ScrollView` + 量高取 `min(内容高度, 280)`
+
+### 备注
+
+- 引导第一步「选择运行模式」的两张卡仍是系统分组列表样式
+  （`secondarySystemGroupedBackground`），未改成玻璃 —— 理由见
+  `dist/RELEASE_NOTES_v1.0.10.md`
+- 「第三方代理改不了位置」这条**仍未定位**：托管与改写链路均已排除，
+  缺真机环境，已向用户索取三条排查信息
+
 ## [1.0.4] - 2026-10-07
 
 设置页重构为五个分组、新增账号体系与外观个性化；修复「未部署授权服务端

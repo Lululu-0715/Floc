@@ -12,6 +12,7 @@
   6. 系统设置跳转            —— 不许退回 canOpenURL 与老 scheme 写法
   7. 出包口味                —— 全功能版 + 仅内置代理版必须成对；补丁不许漂移
   8. 地图页全面屏            —— 地图层铺满，覆盖层守安全区
+  9. 液态玻璃可用性          —— iOS 26 API 只能待在 GlassCard 的 #available 里
 
 运行：python3 Tests/check_swift_sources.py
 """
@@ -556,6 +557,151 @@ def check_full_bleed_map() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 9. 液态玻璃可用性
+# ---------------------------------------------------------------------------
+
+# iOS 26 才有的液态玻璃 API。
+# `Glass.` 后面必须跟成员名，否则会把 `GlassMetrics` 一起匹配进来。
+GLASS_API_PATTERNS = (
+    r"\bglassEffect\s*\(",
+    r"\bglassEffectTransition\s*\(",
+    r"\bGlassEffectContainer\b",
+    r"\bGlassButtonStyle\b",
+    r"\bGlassProminentButtonStyle\b",
+    r"\bGlass\.(?:regular|clear|identity)\b",
+    r"buttonStyle\s*\(\s*\.glass",
+)
+
+GLASS_API_RE = re.compile("|".join(GLASS_API_PATTERNS))
+
+# 唯一允许出现这些 API 的文件。
+GLASS_ENTRY_FILE = "Shared/GlassCard.swift"
+
+IOS_26_GUARD_RE = re.compile(r"if\s+#available\s*\(\s*iOS\s+26")
+
+
+def line_brace_depths(source: str) -> list[int]:
+    """逐行的「行首花括号深度」。
+
+    `if #available(iOS 26, *) {` 自己也会开一层花括号，所以块内语句的
+    行首深度一定比那行 `if` 大 1。用这个差值反查「这一句是不是在这个
+    守卫里面」，比数缩进可靠（这个项目的缩进层级不浅，而且 ViewBuilder
+    里 `if` 不产生缩进之外的额外结构）。
+    """
+    depths: list[int] = []
+    depth = 0
+    for line in source.splitlines():
+        depths.append(depth)
+        depth += line.count("{") - line.count("}")
+    return depths
+
+
+def check_liquid_glass() -> None:
+    """液态玻璃只能待在 GlassCard.swift 的 `if #available(iOS 26, *)` 里。
+
+    1.0.10 起用 iOS 26 SDK 编译，同一个二进制在 iOS 26+ 换皮、在 15~18
+    保持原样。这个分叉有两处极容易写坏：
+
+      A. 顺手把 `deploymentTarget` 提到 26 —— 老设备直接装不上，
+         而本地测试（模拟器都是 iOS 18 / 26）完全看不出来；
+      B. 在别处直接写 `glassEffect(...)` —— 编译能过（编译器只按 SDK
+         判定可用性），但一跑到 iOS 18 就是 `dyld` 符号缺失级别的崩溃，
+         而且是运行时才炸。
+
+    所以这里锁三件事：
+      1. `project.yml` 的最低版本仍是 iOS 15.0；
+      2. 玻璃 API 只出现在 `Shared/GlassCard.swift`；
+      3. 该文件里每一处调用都落在 `if #available(iOS 26, ...)` 块内，
+         并且每个这样的守卫块里至少有一处调用（防止守卫变成死分支）。
+    """
+    # 1. 最低支持版本
+    project_path = ROOT / "project.yml"
+    if not project_path.exists():
+        fail("缺少 project.yml")
+    else:
+        project = project_path.read_text(encoding="utf-8")
+        match = re.search(
+            r"deploymentTarget:\s*\n\s*iOS:\s*\"([^\"]+)\"", project
+        )
+        if not match:
+            fail("project.yml 里找不到 options.deploymentTarget.iOS：检查脚本的定位字串已失效")
+        elif match.group(1) != "15.0":
+            fail(
+                f"最低支持版本被改成了 iOS {match.group(1)}，"
+                "液态玻璃「新系统换皮、老系统不变」的前提是本包仍然支持 iOS 15.0"
+            )
+
+    # 2. 玻璃 API 不许散到别的文件
+    swift_files = sorted(
+        list((ROOT / "App").glob("*.swift"))
+        + list((ROOT / "Shared").rglob("*.swift"))
+        + list((ROOT / "Tests").rglob("*.swift"))
+    )
+    for path in swift_files:
+        rel = path.relative_to(ROOT).as_posix()
+        if rel == GLASS_ENTRY_FILE:
+            continue
+        stripped = strip_strings_and_comments(path.read_text(encoding="utf-8"))
+        hit = GLASS_API_RE.search(stripped)
+        if hit:
+            fail(
+                f"{rel} 直接用了 iOS 26 的玻璃 API（{hit.group(0)}）："
+                f"改成走 {GLASS_ENTRY_FILE} 里的 glassCard()/mapGlassSurface()/mapGlassCapsule()"
+            )
+
+    # 3. 入口文件内部必须逐处守在可用性守卫里
+    entry = ROOT / GLASS_ENTRY_FILE
+    if not entry.exists():
+        fail(f"缺少 {GLASS_ENTRY_FILE}")
+        return
+
+    lines = strip_strings_and_comments(entry.read_text(encoding="utf-8")).splitlines()
+    depths = line_brace_depths("\n".join(lines))
+
+    def scope_end(start: int) -> int:
+        """`if #available(iOS 26, ...)` 那一行所在的块在哪里结束（行号，不含）。
+
+        守卫行自己的行首深度是 `depths[start]`；它那个 `}` 收尾之后深度会
+        回到同一个值，所以「第一个行首深度 <= depths[start] 的后继行」
+        就是块的边界。
+        """
+        base = depths[start]
+        for index in range(start + 1, len(lines)):
+            if depths[index] <= base:
+                return index
+        return len(lines)
+
+    guard_ranges = [
+        (index, scope_end(index))
+        for index, line in enumerate(lines)
+        if IOS_26_GUARD_RE.search(line)
+    ]
+
+    guarded_calls = 0
+    for index, line in enumerate(lines):
+        if not GLASS_API_RE.search(line):
+            continue
+        if any(start < index < end for start, end in guard_ranges):
+            guarded_calls += 1
+            continue
+        fail(
+            f"{GLASS_ENTRY_FILE}:{index + 1} 的玻璃 API 不在 "
+            f"`if #available(iOS 26, *)` 里，iOS 18 上会直接崩：\n"
+            f"      {line.strip()}"
+        )
+
+    for start, end in guard_ranges:
+        if not any(GLASS_API_RE.search(l) for l in lines[start:end]):
+            fail(
+                f"{GLASS_ENTRY_FILE}:{start + 1} 的 `if #available(iOS 26, *)` "
+                "块里没有任何玻璃 API，守卫成了死分支"
+            )
+
+    if guarded_calls == 0:
+        fail(f"{GLASS_ENTRY_FILE} 里找不到任何玻璃 API：检查脚本的定位字串已失效")
+
+
+# ---------------------------------------------------------------------------
 # 主流程
 # ---------------------------------------------------------------------------
 
@@ -569,31 +715,34 @@ def main() -> int:
         + list((ROOT / "Tests").rglob("*.swift"))
     )
 
-    print(f"\n[1/8] 括号配平（{len(swift_files)} 个 Swift 文件）")
+    print(f"\n[1/9] 括号配平（{len(swift_files)} 个 Swift 文件）")
     for path in swift_files:
         check_balance(path, path.read_text(encoding="utf-8"))
     print(f"      已检查 {len(swift_files)} 个文件")
 
-    print("\n[2/8] 桥接头与 Go 导出对齐")
+    print("\n[2/9] 桥接头与 Go 导出对齐")
     check_bridging_header()
 
-    print("\n[3/8] 测试类型引用")
+    print("\n[3/9] 测试类型引用")
     check_test_references()
 
-    print("\n[4/8] project.yml 源路径")
+    print("\n[4/9] project.yml 源路径")
     check_project_sources()
 
-    print("\n[5/8] 资源完整性")
+    print("\n[5/9] 资源完整性")
     check_resources()
 
-    print("\n[6/8] 系统设置跳转")
+    print("\n[6/9] 系统设置跳转")
     check_settings_navigator()
 
-    print("\n[7/8] 出包口味")
+    print("\n[7/9] 出包口味")
     check_build_flavors()
 
-    print("\n[8/8] 地图页全面屏")
+    print("\n[8/9] 地图页全面屏")
     check_full_bleed_map()
+
+    print("\n[9/9] 液态玻璃可用性")
+    check_liquid_glass()
 
     print("\n" + "=" * 60)
 
