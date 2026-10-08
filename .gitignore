@@ -40,6 +40,9 @@ xcuserdata/
 node_modules/
 *.log
 
+# Python 静态检查脚本跑过之后落的字节码缓存
+__pycache__/
+
 # 卡密生成脚本的产物：SQL 与卡密清单都算凭据，绝不入库
 Server/license-worker/out/
 # Cloudflare 本地开发时 wrangler 落的 D1 数据
