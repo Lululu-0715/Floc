@@ -53,8 +53,30 @@ require_command() {
   fi
 }
 
+# 默认跑在哪台模拟器上。
+#
+# 别写死 `name=iPhone 16`：那个写法隐含 `OS=latest`，机器上一旦装了更新的
+# 运行时（本项目 2026-10-09 装了 iOS 26.3.1），"latest" 就变成 26.x，而
+# `iPhone 16` 这个机型只有 18.4 的实例，于是直接报
+# "Unable to find a device matching the provided destination specifier"。
+# 改成从当前可用设备里取一台真机型的 UDID，增删运行时都不受影响。
+# 取列表里的**第一台 iPhone**（simctl 按运行时升序排列）= 优先挑最老的
+# iOS —— 顺带让单测也在「最低支持版本附近」的系统上真跑一遍。
+default_simulator_destination() {
+  local udid
+  udid="$(xcrun simctl list devices available \
+    | sed -n 's/^ *iPhone [^(]*(\([0-9A-F-]\{36\}\)) .*/\1/p' \
+    | head -1)"
+  if [ -n "$udid" ]; then
+    echo "platform=iOS Simulator,id=$udid"
+  else
+    echo "platform=iOS Simulator,name=iPhone 16"
+  fi
+}
+
 run_simulator_tests() {
-  local destination="${SIMULATOR_DESTINATION:-platform=iOS Simulator,name=iPhone 16}"
+  local destination="${SIMULATOR_DESTINATION:-$(default_simulator_destination)}"
+  echo "    模拟器: $destination"
   xcodebuild \
     -project "$APP_NAME.xcodeproj" \
     -scheme "$APP_NAME" \
