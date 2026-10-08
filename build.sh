@@ -222,6 +222,22 @@ archive_ipa() {
   echo "    $ARCHIVE_ROOT/$folder/$(basename "$src")"
 }
 
+# 变更记录跟着包一起归档：用户要求「每个版本的包出来的时候，
+# 增加的和修改的要有对应的记录」。记录是手写的（dist/RELEASE_NOTES_v<版本>.md），
+# 没写就跳过——这里只负责搬，不负责生成。
+archive_notes() {
+  local folder="$1"
+  local notes="$ROOT/dist/RELEASE_NOTES_v$VERSION.md"
+
+  if [ ! -f "$notes" ]; then
+    echo "    （${folder}：还没有 dist/RELEASE_NOTES_v${VERSION}.md，变更记录没归档）"
+    return 0
+  fi
+  mkdir -p "$ARCHIVE_ROOT/$folder"
+  cp -f "$notes" "$ARCHIVE_ROOT/$folder/"
+  echo "    $ARCHIVE_ROOT/$folder/RELEASE_NOTES_v$VERSION.md"
+}
+
 BUILD_SUCCEEDED=1
 
 echo "未签名 IPA 已生成:"
@@ -235,7 +251,9 @@ echo "    $LOCAL_ONLY_STABLE_IPA"
 echo
 echo "已归档到桌面:"
 archive_ipa "$STANDARD_IPA" "全功能版"
+archive_notes "全功能版"
 archive_ipa "$LOCAL_ONLY_IPA" "仅内置代理版"
+archive_notes "仅内置代理版"
 # 纯净版默认不出；真要出时（FLAVORS 里带上 pure）也一并归档。
 archive_ipa "$ROOT/dist/$APP_NAME-$VERSION-$PURE_SUFFIX-unsigned.ipa" "纯净版"
 
