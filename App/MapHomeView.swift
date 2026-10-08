@@ -33,6 +33,9 @@ struct MapHomeView: View {
     @State private var searchError: String?
     @State private var searchTask: Task<Void, Never>?
 
+    /// 搜索结果列表的实际内容高度，用于把滚动区域卡在「内容高度」与上限之间。
+    @State private var searchResultsHeight: CGFloat = 0
+
     @State private var activeSheet: HomeSheet?
     @State private var editingFavorite: FavoriteLocationStore.FavoriteLocation?
     @State private var editName = ""
@@ -75,6 +78,20 @@ struct MapHomeView: View {
         let id = UUID()
         let text: String
         let style: InlineAlert.Style
+    }
+
+    /// 搜索结果列表的高度上限。超过就滚动。
+    ///
+    /// 280pt 是「一眼能扫完、又不会把地图全挡住」的折中：约 6 条两行结果，
+    /// 或者 12 条单行结果。
+    private static let searchResultsMaxHeight: CGFloat = 280
+
+    /// 量取搜索结果内容的实际高度。
+    private struct SearchResultsHeightKey: PreferenceKey {
+        static var defaultValue: CGFloat = 0
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+            value = max(value, nextValue())
+        }
     }
 
     var body: some View {
@@ -292,44 +309,68 @@ struct MapHomeView: View {
         .padding(.top, 8)
     }
 
+    /// 搜索结果列表。
+    ///
+    /// **必须能滚动。** 一次最多返回 12 条结果，每条约 46pt 起（有第二行副标题
+    /// 的话更高）。以前这里只有一个 `VStack` 配 `.frame(maxHeight: 280)` ——
+    /// `.frame` 只限制容器尺寸，**不会产生滚动**，于是 VStack 照排下去，超出
+    /// 280pt 的部分直接被裁掉。表现就是用户报的「下面跳出来的选项显示不完整」，
+    /// 而且被裁掉的那几条根本点不到（它们仍在布局里，只是画不出来）。
+    ///
+    /// 高度取「内容高度」与上限的较小值，而不是直接给 `maxHeight`：
+    /// `ScrollView` 在滚动轴上是贪心的，只给上限的话，两条结果也会撑出一大块
+    /// 空玻璃，看起来像个 bug。
     private var searchResultsList: some View {
-        VStack(spacing: 0) {
-            ForEach(searchResults) { result in
-                Button {
-                    applySearchResult(result)
-                } label: {
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: "mappin.circle.fill")
-                            .foregroundStyle(Color.accentColor)
-                            .font(.title3)
+        ScrollView {
+            VStack(spacing: 0) {
+                ForEach(searchResults) { result in
+                    Button {
+                        applySearchResult(result)
+                    } label: {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "mappin.circle.fill")
+                                .foregroundStyle(Color.accentColor)
+                                .font(.title3)
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(result.name)
-                                .font(.subheadline.weight(.medium))
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                            if !result.subtitle.isEmpty {
-                                Text(result.subtitle)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(result.name)
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                if !result.subtitle.isEmpty {
+                                    Text(result.subtitle)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                }
                             }
+                            Spacer(minLength: 0)
                         }
-                        Spacer(minLength: 0)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 11)
+                        .contentShape(Rectangle())
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 11)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+                    .buttonStyle(.plain)
 
-                if result.id != searchResults.last?.id {
-                    Divider().padding(.leading, 46)
+                    if result.id != searchResults.last?.id {
+                        Divider().padding(.leading, 46)
+                    }
                 }
             }
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: SearchResultsHeightKey.self,
+                        value: proxy.size.height
+                    )
+                }
+            )
         }
+        .onPreferenceChange(SearchResultsHeightKey.self) { height in
+            searchResultsHeight = height
+        }
+        .frame(height: min(max(searchResultsHeight, 1), Self.searchResultsMaxHeight))
         .mapGlassSurface()
-        .frame(maxHeight: 280)
     }
 
     // MARK: - 底部面板
@@ -498,11 +539,22 @@ struct MapHomeView: View {
                     text: proxy.certificateTrustState.displayText,
                     color: proxy.certificateTrustState.isTrusted ? .green : .orange
                 )
-                StatusPill(
-                    icon: proxy.wiFiProxyState == .configured ? "link" : "link.badge.plus",
-                    text: proxy.wiFiProxyState.displayText,
-                    color: proxy.wiFiProxyState == .configured ? .green : .orange
-                )
+                // 蜂窝下「Wi-Fi 代理」这一格没有意义：手动代理只挂在某个 Wi-Fi 上，
+                // 蜂窝根本没这个入口。这时直接把原因摆出来（用户一眼就知道为什么
+                // 开不起来），好过显示一个永远不会变绿的「未配置」。
+                if proxy.networkTransport.blocksInAppProxy {
+                    StatusPill(
+                        icon: "wifi.slash",
+                        text: AppLocalization.string("未连接 Wi-Fi"),
+                        color: .orange
+                    )
+                } else {
+                    StatusPill(
+                        icon: proxy.wiFiProxyState == .configured ? "link" : "link.badge.plus",
+                        text: proxy.wiFiProxyState.displayText,
+                        color: proxy.wiFiProxyState == .configured ? .green : .orange
+                    )
+                }
             } else {
                 StatusPill(
                     icon: thirdParty.state.isUsable ? "link" : "link.badge.plus",
@@ -639,8 +691,8 @@ struct MapHomeView: View {
 
     /// 「实时位置」按钮。
     ///
-    /// 点一下把地图跳回设备当前真实位置；**不改变缩放比例**——系统地图点
-    /// 「定位」也是保持当前比例，固定缩到某个米数只会把用户刚看好的范围冲掉。
+    /// 点一下把地图跳到设备当前真实位置，并**把视野收进到街道尺度**
+    /// （`MapLocationState.defaultViewportMeters`）。
     /// 长按回到已选点——选点才是这个应用的主角，所以「回到选点」比
     /// 「回到真实位置」更次级，放在长按上。
     private var realLocationButton: some View {
@@ -712,10 +764,21 @@ struct MapHomeView: View {
                     )
                 }
 
-                // 只平移、不缩放（meters 传 nil）：保持用户此刻的视野比例。
-                // 早先固定缩到 200 米，从缩远了的视野一点就被「放大到只剩一条街」，
-                // 反而看不清自己到底在哪。系统地图点「定位」也是保持当前比例。
-                mapBridge.center(on: pair.coordinate(for: state.mapCoordinateSystem))
+                // 缩小到街道尺度再居中。
+                //
+                // 1.0.9 及以前这里只平移（meters 传 nil），理由是「系统地图点
+                // 定位也是保持当前比例」。实际用起来不对：地图缩得比较远时
+                // 点一下只是把蓝点挪到屏幕中间，**看不出自己到底在哪**，
+                // 用户的原话是「点了也不把地图放大」。
+                //
+                // 现在固定收到 defaultViewportMeters（200 米，与选点、恢复视野
+                // 同一档）：这个应用的操作尺度就是「一个楼、一个路口」，
+                // 200 米正好是能认出街区的范围。`MapViewBridge.center` 内部
+                // 还有 200 米的下限，所以缩得比 200 米更近的视野不会被动拉远。
+                mapBridge.center(
+                    on: pair.coordinate(for: state.mapCoordinateSystem),
+                    meters: MapLocationState.defaultViewportMeters
+                )
                 showBanner(AppLocalization.string("已定位到当前真实位置"), style: .info)
 
             case .failure(let failure):
@@ -730,6 +793,10 @@ struct MapHomeView: View {
     private func handleAppear() {
         restoreLastSelection()
         RuntimeLogger.info("APP", "Home", "主界面已显示")
+
+        // 主动读一次接入方式。网络路径没变化时监听不会回调，不主动拉的话
+        // 冷启动后状态会一直停在「未知」，蜂窝下的拦截就不会生效。
+        proxy.refreshNetworkTransport()
 
         // 进入主界面就刷新一次环境状态，让用户立刻看到还差什么。
         Task {
@@ -945,6 +1012,21 @@ struct MapHomeView: View {
     private func startSpoofing(pair: CoordinateConverter.CoordinatePair) async {
         switch runtimeMode.mode {
         case .localProxy:
+            // 蜂窝下必须拦：应用内代理靠「当前 Wi-Fi 的手动代理设置」生效，
+            // iOS 没有给蜂窝配 HTTP 代理的入口。不拦的话代理一样能起来、
+            // 开关一样会亮、界面还提示「已开启」，但没有任何流量经过本机，
+            // 定位纹丝不动 —— 这是最难排查的一类假成功。
+            guard proxy.canUseInAppProxy else {
+                RuntimeLogger.warn("APP", "Proxy", "蜂窝网络下拒绝开启应用内代理", details: [
+                    "transport": proxy.networkTransport.debugName,
+                ])
+                showBanner(
+                    AppLocalization.string("当前使用移动网络，应用内代理只在 Wi-Fi 下生效。请先连接 Wi-Fi，再开启虚拟定位。"),
+                    style: .error
+                )
+                return
+            }
+
             do {
                 try await proxy.start(
                     latitude: pair.wgs84.latitude,

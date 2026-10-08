@@ -63,6 +63,10 @@ struct WelcomeView: View {
         }
         .onAppear {
             RuntimeLogger.info("APP", "Welcome", "欢迎页已显示")
+            // 全新安装后的第一屏：把定位授权直接弹出来，别让用户自己去找。
+            // 这里只在欢迎页出现（`hasSeenWelcome` 为 false）时触发，
+            // 所以不会在每次启动时打扰用户。
+            LocationPermissionAutoRequester.requestIfUndetermined()
         }
     }
 

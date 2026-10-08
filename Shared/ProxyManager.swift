@@ -62,11 +62,24 @@ final class ProxyManager: ObservableObject {
     @Published private(set) var wiFiProxyState: WiFiProxyState = .unknown
     @Published private(set) var currentWiFiName: String = ""
 
+    /// 当前接入方式（Wi-Fi / 蜂窝 / 未知）。
+    ///
+    /// 应用内代理依赖「当前 Wi-Fi 的手动代理设置」，蜂窝下没有这个入口，
+    /// 流量不会经过本机 8888 端口。界面据此在开启前拦住并把原因讲清楚。
+    @Published private(set) var networkTransport: NetworkTransport = .other
+
     private var proxyHandle: UInt = 0
     private let certificateService = LocalCertificateService()
     private let networkMonitor = NetworkMonitor()
 
     private init() {
+        networkMonitor.onTransportChanged = { [weak self] transport, name in
+            Task { @MainActor in
+                guard let self else { return }
+                self.networkTransport = transport
+                self.currentWiFiName = name
+            }
+        }
         networkMonitor.onWiFiChanged = { [weak self] name in
             Task { @MainActor in
                 self?.currentWiFiName = name
@@ -78,6 +91,18 @@ final class ProxyManager: ObservableObject {
             }
         }
     }
+
+    /// 主动重读一次接入方式。
+    ///
+    /// 路径没变化时监听不会回调，所以进入主界面这类时点要自己拉一次，
+    /// 否则冷启动后 `networkTransport` 会一直停在初始的 `.other`。
+    func refreshNetworkTransport() {
+        networkMonitor.refresh()
+        networkTransport = networkMonitor.transport
+    }
+
+    /// 应用内代理在当前接入方式下能不能用。理由见 `NetworkTransport`。
+    var canUseInAppProxy: Bool { !networkTransport.blocksInAppProxy }
 
     var certificateDownloadURL: URL? { certificateService.downloadURL }
     var certificateProbeURL: URL? { certificateService.probeURL }

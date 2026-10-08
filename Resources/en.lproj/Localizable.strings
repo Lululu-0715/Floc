@@ -416,3 +416,9 @@
 "当前拦截定位请求的是 %@，与上面选择的 %@ 不一致。请确认手机上只开着一个代理客户端，并在它里面启用本模块。" = "Location requests are intercepted by %@, not the selected %@. Keep only one proxy client running and enable this module in it.";
 "最后两下要自己点：设置 → 无线局域网 → 当前网络右侧 ⓘ → 配置代理 → 手动，服务器填 127.0.0.1、端口 8888。" = "Two taps are left to you: Settings → Wi-Fi → ⓘ next to the current network → Configure Proxy → Manual, server 127.0.0.1, port 8888.";
 "这里会显示作者的邮箱与公众号。发布前请在 Shared/AppContact.swift 里补上，否则用户想购买时找不到入口。" = "The author's email and official account show here. Fill them in Shared/AppContact.swift before release, or buyers cannot reach you.";
+"未连接 Wi-Fi" = "Not on Wi-Fi";
+"当前使用移动网络，应用内代理只在 Wi-Fi 下生效。请先连接 Wi-Fi，再开启虚拟定位。" = "You are on a cellular network. The in-app proxy only works over Wi-Fi. Connect to Wi-Fi first, then start location spoofing.";
+"当前接入方式" = "Current connection";
+"Wi-Fi" = "Wi-Fi";
+"移动网络" = "Cellular";
+"未知网络" = "Unknown network";

@@ -699,6 +699,16 @@ EN = {
     '试用已结束，请在「设置 → 账号」输入卡密后继续使用': 'Your trial has ended. Enter a code under Settings → Account to continue.',
     '卡密已过期，请在「设置 → 账号」续期后继续使用': 'Your license has expired. Renew it under Settings → Account to continue.',
     '尚未激活，请在「设置 → 账号」输入卡密或确认网络连接': 'Not activated yet. Enter a code under Settings → Account, or check your connection.',
+
+    # 接入方式：蜂窝网络下应用内代理不可能生效，开启前拦下
+    '未连接 Wi-Fi': 'Not on Wi-Fi',
+    '当前使用移动网络，应用内代理只在 Wi-Fi 下生效。请先连接 Wi-Fi，再开启虚拟定位。':
+        'You are on a cellular network. The in-app proxy only works over Wi-Fi. '
+        'Connect to Wi-Fi first, then start location spoofing.',
+    '当前接入方式': 'Current connection',
+    'Wi-Fi': 'Wi-Fi',
+    '移动网络': 'Cellular',
+    '未知网络': 'Unknown network',
 }
 
 

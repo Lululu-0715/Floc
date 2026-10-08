@@ -539,6 +539,16 @@ struct CertificateEnvironmentView: View {
                     value: proxy.wiFiProxyState.displayText,
                     valueColor: proxy.wiFiProxyState == .configured ? .green : .orange
                 )
+                // 接入方式：蜂窝下上面那两行永远不会变绿，原因就在这里。
+                // 摆出来省得用户对着「未配置」反复重配 Wi-Fi 代理。
+                SettingsStatusRow(
+                    systemImage: proxy.networkTransport.blocksInAppProxy
+                        ? "antenna.radiowaves.left.and.right"
+                        : "wifi",
+                    title: AppLocalization.string("当前接入方式"),
+                    value: proxy.networkTransport.displayText,
+                    valueColor: proxy.canUseInAppProxy ? .green : .orange
+                )
                 if !proxy.currentWiFiName.isEmpty {
                     SettingsStatusRow(
                         systemImage: "wifi",

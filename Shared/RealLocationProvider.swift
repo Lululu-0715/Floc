@@ -33,6 +33,10 @@ final class RealLocationProvider: NSObject, ObservableObject {
 
     @Published private(set) var isLocating = false
 
+    /// 缓存位置的有效期（秒）。超过这个年龄就重新定位一次。
+    /// 取值理由见 `requestLocationOrUseCache`。
+    private static let cacheValidity: TimeInterval = 60
+
     private let manager = CLLocationManager()
     /// 本次请求的回调。拿到结果或失败后立即清空，保证只回调一次。
     private var pendingCompletion: ((Result<CLLocationCoordinate2D, Failure>) -> Void)?
@@ -55,7 +59,7 @@ final class RealLocationProvider: NSObject, ObservableObject {
         case .notDetermined:
             manager.requestWhenInUseAuthorization()
         case .authorizedAlways, .authorizedWhenInUse:
-            manager.requestLocation()
+            requestLocationOrUseCache()
         case .denied:
             finish(.failure(.denied))
         case .restricted:
@@ -63,6 +67,26 @@ final class RealLocationProvider: NSObject, ObservableObject {
         @unknown default:
             finish(.failure(.denied))
         }
+    }
+
+    /// 有足够新的缓存就直接用，否则才真正去要一次定位。
+    ///
+    /// `requestLocation()` 要等 GPS 解出一次位置，室内、地下车库、刚进隧道
+    /// 常常要 5–10 秒，用户看到的就是「点了半天没反应」。系统本来就维护着
+    /// 一份最近位置，**一分钟内的直接采用**：这个按钮要回答的是「我在哪」，
+    /// 一分钟内的漂移对肉眼没有意义，而等待的代价是实打实的。
+    ///
+    /// 超过一分钟（或从来没有过）才回退到现取，保证结果不会离谱。
+    private func requestLocationOrUseCache() {
+        if let cached = manager.location,
+           abs(cached.timestamp.timeIntervalSinceNow) < Self.cacheValidity {
+            RuntimeLogger.debug("APP", "Location", "实时位置命中缓存", details: [
+                "ageSeconds": String(format: "%.1f", -cached.timestamp.timeIntervalSinceNow),
+            ])
+            finish(.success(cached.coordinate))
+            return
+        }
+        manager.requestLocation()
     }
 
     private func finish(_ result: Result<CLLocationCoordinate2D, Failure>) {
@@ -112,7 +136,7 @@ extension RealLocationProvider: CLLocationManagerDelegate {
 
         switch manager.authorizationStatus {
         case .authorizedAlways, .authorizedWhenInUse:
-            manager.requestLocation()
+            requestLocationOrUseCache()
         case .denied:
             finish(.failure(.denied))
         case .restricted:

@@ -33,6 +33,25 @@ struct PermissionStep: View {
         }
         .onAppear {
             locator.refresh()
+            autoRequestIfNeeded()
+        }
+    }
+
+    /// 进入这一页就自动弹系统授权框，不用用户再点一次按钮。
+    ///
+    /// 用户明确要求「定位授权要自动跳出来」：这一页只有一件事要做，
+    /// 让用户先读一段说明再手动点「授权」纯属多余。
+    ///
+    /// 延迟 400ms 是为了让页面先画出来 —— 系统弹窗从一个还是空白的页面上
+    /// 盖下来会显得莫名其妙。再点之前重新查一次状态：这 400ms 里用户可能
+    /// 已经从别处（欢迎页的自动申请）授权过了，重复请求会白弹一次。
+    private func autoRequestIfNeeded() {
+        guard locator.authorizationStatus == .notDetermined else { return }
+        Task {
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard locator.authorizationStatus == .notDetermined else { return }
+            locator.request()
+            requested = true
         }
     }
 
@@ -154,6 +173,38 @@ final class PermissionLocator: NSObject, ObservableObject, CLLocationManagerDele
         let status = manager.authorizationStatus
         Task { @MainActor in
             self.authorizationStatus = status
+        }
+    }
+}
+
+/// 首次启动时自动申请定位权限。
+///
+/// 用户要求「刚下载进去的时候定位授权要自动跳出来」：全新安装后第一次打开
+/// 应用，不等用户翻完欢迎页、选完运行模式，系统授权框就该弹出来。
+/// 定位是这个应用的硬前提（地图要画真实位置、要和虚拟位置对照），
+/// 早问一次比让用户自己找入口要直接。
+///
+/// 这里持有自己的 `CLLocationManager` 而不是复用某处的实例：静态属性保证
+/// 它在整个进程生命周期内存活，不会出现「弹窗还没被响应，manager 先被释放」。
+@MainActor
+enum LocationPermissionAutoRequester {
+
+    private static let manager = CLLocationManager()
+
+    /// 当前还未询问过。已经授权或已拒绝都不该再弹（系统也不会再弹）。
+    static var isUndetermined: Bool { manager.authorizationStatus == .notDetermined }
+
+    /// 如果还没问过，就弹一次系统授权框。
+    ///
+    /// - Parameter delay: 延迟多久再弹。默认 800ms，让首屏先渲染出来。
+    static func requestIfUndetermined(delay: UInt64 = 800_000_000) {
+        guard isUndetermined else { return }
+        Task {
+            try? await Task.sleep(nanoseconds: delay)
+            // 再确认一次：这段延迟里用户可能已经从引导页的权限步骤授权过了。
+            guard isUndetermined else { return }
+            RuntimeLogger.info("APP", "Permission", "首次启动自动申请定位权限")
+            manager.requestWhenInUseAuthorization()
         }
     }
 }
