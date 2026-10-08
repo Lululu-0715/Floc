@@ -10,7 +10,7 @@
   4. project.yml 源目录存在  —— XcodeGen 配错路径会静默漏文件
   5. 资源完整性              —— 图标 / plist / 三语言文案
   6. 系统设置跳转            —— 不许退回 canOpenURL 与老 scheme 写法
-  7. 双口味出包              —— 标准版 + 纯净版必须成对
+  7. 出包口味                —— 全功能版 + 仅内置代理版必须成对；补丁不许漂移
   8. 地图页全面屏            —— 地图层铺满，覆盖层守安全区
 
 运行：python3 Tests/check_swift_sources.py
@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -385,15 +386,19 @@ def check_settings_navigator() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 7. 双口味出包
+# 7. 出包口味
 # ---------------------------------------------------------------------------
 
 def check_build_flavors() -> None:
-    """每次出包必须成对：标准版 + 纯净版。
+    """每次出包必须成对：全功能版 + 仅内置代理版。
 
-    用户明确要求「以后每次帮我打包两个 ipa，一个纯净版不带卡密那些功能的」。
-    这条约定最容易在改构建脚本时被无声破坏——少打一个包不会报错，
-    只是 dist/ 里少一个文件，等东西发出去才发现。
+    用户的要求是「以后专门就做第一个版本全功能的带第三方和内置带授权卡密的，
+    第三个版本就是只有应用内代理」，纯净版暂时按需。
+
+    「仅内置代理版」不是在源码里铺 `#if`，而是出包时**临时应用一个补丁**
+    （`Scripts/patches/local-proxy-only.patch`）把第三方那条链路摘掉，构完撤回。
+    这样做的软肋是补丁会随主源码漂移——所以这里直接试跑一次
+    `git apply --check`，漂移了当场报出来，而不是等出包失败才发现。
     """
     flavor = ROOT / "Shared" / "BuildFlavor.swift"
     if not flavor.exists():
@@ -409,9 +414,47 @@ def check_build_flavors() -> None:
     script = ipa_script.read_text(encoding="utf-8")
     if "PURE_BUILD" not in script:
         fail("打包脚本没有用 PURE_BUILD 构建纯净版")
-    # 1 次函数定义 + 2 次调用（标准版、纯净版）
+    # 1 次函数定义 + 至少 2 次调用（默认的全功能版、仅内置代理版）
     if script.count("pack_ipa") < 3:
         fail("打包脚本似乎只打了一个包：pack_ipa 调用不足两次")
+
+    # 默认口味必须是「全功能版 + 仅内置代理版」这两个。
+    if 'FLAVORS="${FLAVORS:-standard localOnly}"' not in script:
+        fail("打包脚本的默认口味不再是「全功能版 + 仅内置代理版」")
+    if "仅内置" not in script:
+        fail("打包脚本里找不到「仅内置代理版」这个口味")
+
+    # 「仅内置代理」靠补丁实现：补丁要在，且**此刻就能干净应用**。
+    # 这条是整套做法的命门——主源码一改，补丁就可能对不上，
+    # 那时候出包会直接失败，不如在这里先拦下来。
+    patch = ROOT / "Scripts" / "patches" / "local-proxy-only.patch"
+    if not patch.exists():
+        fail("缺少 Scripts/patches/local-proxy-only.patch（仅内置代理版靠它生成）")
+    else:
+        touched = ["App", "Shared", "Resources", "Tests"]
+        dirty = subprocess.run(
+            ["git", "diff", "--quiet", "--", *touched],
+            cwd=ROOT,
+            capture_output=True,
+        ).returncode != 0
+        if dirty:
+            warn("工作区有未提交改动，「仅内置代理」补丁的可用性这轮没能验证")
+        else:
+            probe = subprocess.run(
+                ["git", "apply", "--check", str(patch)],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+            if probe.returncode != 0:
+                fail(
+                    "「仅内置代理」补丁已经不能干净应用"
+                    "（多半是主源码改过、补丁漂移了）："
+                    + probe.stderr.strip()
+                )
+
+    if 'apply -R "$LOCAL_ONLY_PATCH"' not in script:
+        fail("打包脚本应用了「仅内置代理」补丁，却看不到撤回动作")
 
     # 脚本里 `$VAR` 后面紧跟着中文字符时，bash 在部分 locale 下会把多字节字符
     # 的首字节当成变量名的一部分（报 `label?: unbound variable`，报错位置还很难认）。
@@ -546,7 +589,7 @@ def main() -> int:
     print("\n[6/8] 系统设置跳转")
     check_settings_navigator()
 
-    print("\n[7/8] 双口味出包")
+    print("\n[7/8] 出包口味")
     check_build_flavors()
 
     print("\n[8/8] 地图页全面屏")

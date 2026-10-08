@@ -1,0 +1,3085 @@
+diff --git a/App/BugReportView.swift b/App/BugReportView.swift
+index 090cadc..4aa2d8b 100644
+--- a/App/BugReportView.swift
++++ b/App/BugReportView.swift
+@@ -7,8 +7,6 @@ import SwiftUI
+ struct BugReportView: View {
+ 
+     @ObservedObject private var proxy = ProxyManager.shared
+-    @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
+-    @ObservedObject private var runtimeMode = RuntimeModeStore.shared
+ 
+     @Environment(\.dismiss) private var dismiss
+ 
+@@ -98,12 +96,8 @@ struct BugReportView: View {
+         defer { isGenerating = false }
+ 
+         // 生成前跑一轮环境检查，让报告里带上真实状态。
+-        if runtimeMode.mode == .localProxy {
+-            await proxy.verifyCertificateTrust()
+-            await proxy.verifyWiFiProxy()
+-        } else {
+-            await thirdParty.refresh()
+-        }
++        await proxy.verifyCertificateTrust()
++        await proxy.verifyWiFiProxy()
+ 
+         var lines: [String] = []
+         lines.append("## \(AppLocalization.string("环境信息"))")
+@@ -111,20 +105,13 @@ struct BugReportView: View {
+         lines.append("- \(AppLocalization.string("内核版本")): \(CoreBridge.coreVersion)")
+         lines.append("- iOS: \(UIDevice.current.systemVersion)")
+         lines.append("- \(AppLocalization.string("设备型号")): \(deviceModel())")
+-        lines.append("- \(AppLocalization.string("运行模式")): \(runtimeMode.mode.displayName)")
+ 
+         lines.append("")
+         lines.append("## \(AppLocalization.string("环境状态"))")
+-        switch runtimeMode.mode {
+-        case .localProxy:
+-            lines.append("- \(AppLocalization.string("代理状态")): \(proxy.status.displayText)")
+-            lines.append("- \(AppLocalization.string("证书信任")): \(proxy.certificateTrustState.displayText)")
+-            lines.append("- Wi-Fi \(AppLocalization.string("代理")): \(proxy.wiFiProxyState.displayText)")
+-            lines.append("- \(AppLocalization.string("当前网络")): \(proxy.currentWiFiName.isEmpty ? "未知" : proxy.currentWiFiName)")
+-        case .thirdParty:
+-            lines.append("- \(AppLocalization.string("客户端")): \(thirdParty.selectedClient.displayName)")
+-            lines.append("- \(AppLocalization.string("连接状态")): \(thirdParty.state.displayText)")
+-        }
++        lines.append("- \(AppLocalization.string("代理状态")): \(proxy.status.displayText)")
++        lines.append("- \(AppLocalization.string("证书信任")): \(proxy.certificateTrustState.displayText)")
++        lines.append("- Wi-Fi \(AppLocalization.string("代理")): \(proxy.wiFiProxyState.displayText)")
++        lines.append("- \(AppLocalization.string("当前网络")): \(proxy.currentWiFiName.isEmpty ? "未知" : proxy.currentWiFiName)")
+         lines.append("- \(AppLocalization.string("数据共享")): \(AppGroup.isAvailable ? "可用" : "不可用")")
+ 
+         lines.append("")
+diff --git a/App/DiagnosticsView.swift b/App/DiagnosticsView.swift
+index 24f7ed0..e66da9c 100644
+--- a/App/DiagnosticsView.swift
++++ b/App/DiagnosticsView.swift
+@@ -6,8 +6,6 @@ struct DiagnosticsView: View {
+     @ObservedObject var state: MapLocationState
+ 
+     @ObservedObject private var proxy = ProxyManager.shared
+-    @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
+-    @ObservedObject private var runtimeMode = RuntimeModeStore.shared
+ 
+     @Environment(\.dismiss) private var dismiss
+ 
+@@ -138,7 +136,6 @@ struct DiagnosticsView: View {
+ 
+     private var configurationSection: some View {
+         Section {
+-            KeyValueRow(AppLocalization.string("运行模式"), value: runtimeMode.mode.displayName)
+             KeyValueRow(AppLocalization.string("代理状态"), value: proxy.status.displayText)
+             KeyValueRow(
+                 AppLocalization.string("虚拟定位"),
+@@ -248,34 +245,23 @@ struct DiagnosticsView: View {
+             detail: selfCheck
+         ))
+ 
+-        switch runtimeMode.mode {
+-        case .localProxy:
+-            await proxy.verifyCertificateTrust()
+-            results.append(VerificationResult(
+-                kind: .certificateTrust,
+-                outcome: proxy.certificateTrustState.isTrusted
+-                    ? .passed
+-                    : .failed(proxy.certificateTrustState.displayText),
+-                detail: proxy.certificateDownloadURL?.absoluteString ?? ""
+-            ))
+-
+-            await proxy.verifyWiFiProxy()
+-            results.append(VerificationResult(
+-                kind: .wifiProxy,
+-                outcome: proxy.wiFiProxyState == .configured
+-                    ? .passed
+-                    : .failed(proxy.wiFiProxyState.displayText),
+-                detail: "\(ProxyManager.proxyHost):\(ProxyManager.proxyPort)"
+-            ))
+-
+-        case .thirdParty:
+-            await thirdParty.refresh()
+-            results.append(VerificationResult(
+-                kind: .thirdPartyModule,
+-                outcome: thirdParty.state.isUsable ? .passed : .failed(thirdParty.state.displayText),
+-                detail: thirdParty.selectedClient.displayName
+-            ))
+-        }
++        await proxy.verifyCertificateTrust()
++        results.append(VerificationResult(
++            kind: .certificateTrust,
++            outcome: proxy.certificateTrustState.isTrusted
++                ? .passed
++                : .failed(proxy.certificateTrustState.displayText),
++            detail: proxy.certificateDownloadURL?.absoluteString ?? ""
++        ))
++
++        await proxy.verifyWiFiProxy()
++        results.append(VerificationResult(
++            kind: .wifiProxy,
++            outcome: proxy.wiFiProxyState == .configured
++                ? .passed
++                : .failed(proxy.wiFiProxyState.displayText),
++            detail: "\(ProxyManager.proxyHost):\(ProxyManager.proxyPort)"
++        ))
+ 
+         environmentChecks = results
+         reload()
+diff --git a/App/MapHomeView.swift b/App/MapHomeView.swift
+index 019fec3..e21cf2c 100644
+--- a/App/MapHomeView.swift
++++ b/App/MapHomeView.swift
+@@ -15,8 +15,6 @@ struct MapHomeView: View {
+ 
+     @ObservedObject var setup: SetupCoordinator
+     @ObservedObject private var proxy = ProxyManager.shared
+-    @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
+-    @ObservedObject private var runtimeMode = RuntimeModeStore.shared
+     @ObservedObject private var remoteConfiguration = AppRemoteConfigurationStore.shared
+     #if !PURE_BUILD
+     @ObservedObject private var license = LicenseManager.shared
+@@ -487,29 +485,15 @@ struct MapHomeView: View {
+     private var statusRow: some View {
+         HStack(spacing: 8) {
+             StatusPill(
+-                icon: runtimeMode.mode == .localProxy ? "wifi.router" : "shield.lefthalf.filled",
+-                text: runtimeMode.mode.displayName,
+-                color: .blue
++                icon: proxy.certificateTrustState.isTrusted ? "checkmark.shield.fill" : "shield.slash",
++                text: proxy.certificateTrustState.displayText,
++                color: proxy.certificateTrustState.isTrusted ? .green : .orange
++            )
++            StatusPill(
++                icon: proxy.wiFiProxyState == .configured ? "link" : "link.badge.plus",
++                text: proxy.wiFiProxyState.displayText,
++                color: proxy.wiFiProxyState == .configured ? .green : .orange
+             )
+-
+-            if runtimeMode.mode == .localProxy {
+-                StatusPill(
+-                    icon: proxy.certificateTrustState.isTrusted ? "checkmark.shield.fill" : "shield.slash",
+-                    text: proxy.certificateTrustState.displayText,
+-                    color: proxy.certificateTrustState.isTrusted ? .green : .orange
+-                )
+-                StatusPill(
+-                    icon: proxy.wiFiProxyState == .configured ? "link" : "link.badge.plus",
+-                    text: proxy.wiFiProxyState.displayText,
+-                    color: proxy.wiFiProxyState == .configured ? .green : .orange
+-                )
+-            } else {
+-                StatusPill(
+-                    icon: thirdParty.state.isUsable ? "link" : "link.badge.plus",
+-                    text: thirdParty.state.displayText,
+-                    color: thirdParty.state.isUsable ? .green : .orange
+-                )
+-            }
+ 
+             Spacer(minLength: 0)
+ 
+@@ -733,9 +717,7 @@ struct MapHomeView: View {
+ 
+         // 进入主界面就刷新一次环境状态，让用户立刻看到还差什么。
+         Task {
+-            if runtimeMode.mode == .thirdParty {
+-                await thirdParty.refresh()
+-            } else if proxy.syncStatusWithReality() {
++            if proxy.syncStatusWithReality() {
+                 await proxy.verifyCertificateTrust()
+                 await proxy.verifyWiFiProxy()
+             }
+@@ -771,32 +753,23 @@ struct MapHomeView: View {
+     /// 注意 MapLocationState 初始化时会把 isEnabled 置为 false，
+     /// 这里处理的是「同一次运行中从设置页返回」这种情况。
+     private func restoreActiveState(pair: CoordinateConverter.CoordinatePair) async {
+-        switch runtimeMode.mode {
+-        case .localProxy:
+-            // 保活和代理是一对：少了它，代理能起来但活不过一次切后台。
+-            // 这里放在启动之前，`start()` 是幂等的，已经在跑时只做一次检查。
+-            BackgroundKeepAlive.shared.start()
++        // 保活和代理是一对：少了它，代理能起来但活不过一次切后台。
++        // 这里放在启动之前，`start()` 是幂等的，已经在跑时只做一次检查。
++        BackgroundKeepAlive.shared.start()
+ 
+-            if !proxy.status.isRunning {
+-                do {
+-                    try await proxy.start(
+-                        latitude: pair.wgs84.latitude,
+-                        longitude: pair.wgs84.longitude,
+-                        enabled: true,
+-                        accuracy: state.accuracy,
+-                        motionRadius: state.motionDriftRadius
+-                    )
+-                } catch {
+-                    state.disable()
+-                    showBanner(error.localizedDescription, style: .error)
+-                }
++        if !proxy.status.isRunning {
++            do {
++                try await proxy.start(
++                    latitude: pair.wgs84.latitude,
++                    longitude: pair.wgs84.longitude,
++                    enabled: true,
++                    accuracy: state.accuracy,
++                    motionRadius: state.motionDriftRadius
++                )
++            } catch {
++                state.disable()
++                showBanner(error.localizedDescription, style: .error)
+             }
+-        case .thirdParty:
+-            await thirdParty.save(
+-                pair: pair,
+-                accuracy: state.accuracy,
+-                motionRadius: state.motionDriftRadius
+-            )
+         }
+     }
+ 
+@@ -816,7 +789,7 @@ struct MapHomeView: View {
+             // 进后台前的最后一次自救。音频一旦被别的应用抢走，播放停掉，
+             // 进程随后就被系统挂起——那一刻之后我们再也跑不了任何代码，
+             // 所以「检查播放是否还活着」只能放在这里。
+-            guard state.isEnabled, runtimeMode.mode == .localProxy else { return }
++            guard state.isEnabled else { return }
+             BackgroundKeepAlive.shared.resumeIfNeeded()
+ 
+         case .active:
+@@ -837,7 +810,7 @@ struct MapHomeView: View {
+     /// 变成 `.stopped`，所以这里必须实际探一次代理是否还活着，不能只看状态。
+     /// 保活同理——`isAlive` 问的是播放器，而不是我们记的布尔标志。
+     private func recoverAfterForeground() {
+-        guard state.isEnabled, runtimeMode.mode == .localProxy else { return }
++        guard state.isEnabled else { return }
+ 
+         if !BackgroundKeepAlive.shared.isAlive {
+             RuntimeLogger.warn("APP", "KeepAlive", "回前台时保活已失效，重新拉起")
+@@ -852,7 +825,7 @@ struct MapHomeView: View {
+             proxy.stop()
+ 
+             // 停掉之后 `status` 变成 `.stopped`，`restoreActiveState` 会把它重新拉起来。
+-            guard runtimeMode.mode == .localProxy, let pair = state.selection else { return }
++            guard let pair = state.selection else { return }
+             await restoreActiveState(pair: pair)
+ 
+             await proxy.verifyWiFiProxy()
+@@ -943,48 +916,31 @@ struct MapHomeView: View {
+     #endif
+ 
+     private func startSpoofing(pair: CoordinateConverter.CoordinatePair) async {
+-        switch runtimeMode.mode {
+-        case .localProxy:
+-            do {
+-                try await proxy.start(
+-                    latitude: pair.wgs84.latitude,
+-                    longitude: pair.wgs84.longitude,
+-                    enabled: true,
+-                    accuracy: state.accuracy,
+-                    motionRadius: state.motionDriftRadius
+-                )
+-                BackgroundKeepAlive.shared.start()
+-                state.enable()
+-
+-                // 启动后立刻验证链路，问题早发现比定位不生效再排查省事。
+-                await proxy.verifyCertificateTrust()
+-                await proxy.verifyWiFiProxy()
+-
+-                if proxy.certificateTrustState == .notTrusted {
+-                    showBanner(AppLocalization.string("证书尚未被信任，定位不会生效"), style: .error)
+-                } else if proxy.wiFiProxyState != .configured {
+-                    showBanner(AppLocalization.string("Wi-Fi 代理未生效，请检查代理配置"), style: .error)
+-                } else {
+-                    showBanner(AppLocalization.string("虚拟定位已开启"), style: .info)
+-                    presentLocationRefreshPromptIfNeeded()
+-                }
+-            } catch {
+-                showBanner(error.localizedDescription, style: .error)
+-            }
+-
+-        case .thirdParty:
+-            let success = await thirdParty.save(
+-                pair: pair,
++        do {
++            try await proxy.start(
++                latitude: pair.wgs84.latitude,
++                longitude: pair.wgs84.longitude,
++                enabled: true,
+                 accuracy: state.accuracy,
+                 motionRadius: state.motionDriftRadius
+             )
+-            if success {
+-                state.enable()
+-                showBanner(AppLocalization.string("坐标已写入客户端"), style: .info)
+-                presentLocationRefreshPromptIfNeeded()
++            BackgroundKeepAlive.shared.start()
++            state.enable()
++
++            // 启动后立刻验证链路，问题早发现比定位不生效再排查省事。
++            await proxy.verifyCertificateTrust()
++            await proxy.verifyWiFiProxy()
++
++            if proxy.certificateTrustState == .notTrusted {
++                showBanner(AppLocalization.string("证书尚未被信任，定位不会生效"), style: .error)
++            } else if proxy.wiFiProxyState != .configured {
++                showBanner(AppLocalization.string("Wi-Fi 代理未生效，请检查代理配置"), style: .error)
+             } else {
+-                showBanner(AppLocalization.string("写入失败，请检查客户端模块是否生效"), style: .error)
++                showBanner(AppLocalization.string("虚拟定位已开启"), style: .info)
++                presentLocationRefreshPromptIfNeeded()
+             }
++        } catch {
++            showBanner(error.localizedDescription, style: .error)
+         }
+     }
+ 
+@@ -1000,29 +956,21 @@ struct MapHomeView: View {
+     }
+ 
+     private func stopSpoofing() async {
+-        switch runtimeMode.mode {
+-        case .localProxy:
+-            // 先关开关再停代理，避免关闭过程中的请求仍被改写。
+-            proxy.updateCoordinates(
+-                latitude: 0, longitude: 0,
+-                enabled: false,
+-                accuracy: state.accuracy,
+-                motionRadius: 0
+-            )
+-            proxy.stop()
+-            BackgroundKeepAlive.shared.stop()
+-            state.disable()
+-            showBanner(AppLocalization.string("已停止虚拟定位，请同时关闭 Wi-Fi 代理"), style: .warning)
+-
+-        case .thirdParty:
+-            await thirdParty.clear()
+-            state.disable()
+-            showBanner(AppLocalization.string("已清除客户端坐标"), style: .info)
+-        }
++        // 先关开关再停代理，避免关闭过程中的请求仍被改写。
++        proxy.updateCoordinates(
++            latitude: 0, longitude: 0,
++            enabled: false,
++            accuracy: state.accuracy,
++            motionRadius: 0
++        )
++        proxy.stop()
++        BackgroundKeepAlive.shared.stop()
++        state.disable()
++        showBanner(AppLocalization.string("已停止虚拟定位，请同时关闭 Wi-Fi 代理"), style: .warning)
+     }
+ 
+     private func pushConfigurationToBackend() {
+-        guard runtimeMode.mode == .localProxy, proxy.status.isRunning else { return }
++        guard proxy.status.isRunning else { return }
+         let pair = state.selection
+         proxy.updateCoordinates(
+             latitude: pair?.wgs84.latitude ?? 0,
+diff --git a/App/ModeSelectionStep.swift b/App/ModeSelectionStep.swift
+deleted file mode 100644
+index d08b659..0000000
+--- a/App/ModeSelectionStep.swift
++++ /dev/null
+@@ -1,82 +0,0 @@
+-import SwiftUI
+-
+-/// 引导第一步：选择运行模式。
+-struct ModeSelectionStep: View {
+-
+-    @ObservedObject var setup: SetupCoordinator
+-
+-    var body: some View {
+-        VStack(spacing: 14) {
+-            ForEach(ProxyRuntimeMode.allCases) { mode in
+-                ModeCard(
+-                    mode: mode,
+-                    isSelected: setup.runtimeMode.hasSelectedMode && setup.selectedMode == mode
+-                ) {
+-                    setup.select(mode)
+-                }
+-            }
+-
+-            if setup.runtimeMode.hasSelectedMode {
+-                HStack(alignment: .top, spacing: 8) {
+-                    Image(systemName: "exclamationmark.triangle.fill")
+-                        .foregroundStyle(.orange)
+-                        .font(.footnote)
+-                    Text(AppLocalization.string("不要同时开启应用内代理和第三方代理，两条链路会互相干扰。"))
+-                        .font(.footnote)
+-                        .foregroundStyle(.secondary)
+-                }
+-                .padding(12)
+-                .frame(maxWidth: .infinity, alignment: .leading)
+-                .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+-            }
+-        }
+-    }
+-}
+-
+-private struct ModeCard: View {
+-
+-    let mode: ProxyRuntimeMode
+-    let isSelected: Bool
+-    let action: () -> Void
+-
+-    var body: some View {
+-        Button(action: action) {
+-            HStack(alignment: .top, spacing: 14) {
+-                Image(systemName: mode.systemImage)
+-                    .font(.title2)
+-                    .frame(width: 36, height: 36)
+-                    .foregroundStyle(isSelected ? Color.white : Color.accentColor)
+-                    .background(
+-                        isSelected ? Color.accentColor : Color.accentColor.opacity(0.12),
+-                        in: RoundedRectangle(cornerRadius: 9)
+-                    )
+-
+-                VStack(alignment: .leading, spacing: 6) {
+-                    Text(mode.displayName)
+-                        .font(.headline)
+-                        .foregroundStyle(.primary)
+-                    Text(mode.summary)
+-                        .font(.footnote)
+-                        .foregroundStyle(.secondary)
+-                        .fixedSize(horizontal: false, vertical: true)
+-                }
+-
+-                Spacer(minLength: 0)
+-
+-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+-                    .font(.title3)
+-                    .foregroundStyle(isSelected ? Color.accentColor : Color(.tertiaryLabel))
+-            }
+-            .padding(16)
+-            .background(
+-                RoundedRectangle(cornerRadius: 14)
+-                    .fill(Color(.secondarySystemGroupedBackground))
+-            )
+-            .overlay(
+-                RoundedRectangle(cornerRadius: 14)
+-                    .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+-            )
+-        }
+-        .buttonStyle(.plain)
+-    }
+-}
+diff --git a/App/ProxySetupStep.swift b/App/ProxySetupStep.swift
+index 284db0b..a23a07f 100644
+--- a/App/ProxySetupStep.swift
++++ b/App/ProxySetupStep.swift
+@@ -1,37 +1,17 @@
+ import SwiftUI
+ 
+-/// 引导第三步：按所选模式配置代理环境。
++/// 引导第二步：配置应用内代理环境。
++///
++/// 1.0.8 起只剩应用内代理这一条链路，所以这一步不再分模式。
+ struct ProxySetupStep: View {
+ 
+     @ObservedObject var setup: SetupCoordinator
+     @ObservedObject private var proxy = ProxyManager.shared
+-    @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
+ 
+     @State private var isStarting = false
+     @State private var errorMessage: String?
+ 
+     var body: some View {
+-        VStack(alignment: .leading, spacing: 18) {
+-            switch setup.selectedMode {
+-            case .localProxy: localProxyContent
+-            case .thirdParty: thirdPartyContent
+-            }
+-        }
+-        .task {
+-            // 进入本步就把代理起起来，这样证书服务可用，用户能立刻去装证书。
+-            // 先实测一次端口：状态可能停在 .running 而进程实际已被系统回收。
+-            if setup.selectedMode == .localProxy {
+-                proxy.syncStatusWithReality()
+-                if !proxy.status.isRunning {
+-                    await startLocalProxy()
+-                }
+-            }
+-        }
+-    }
+-
+-    // MARK: - 应用内代理
+-
+-    private var localProxyContent: some View {
+         VStack(alignment: .leading, spacing: 18) {
+             StatusCard(
+                 title: AppLocalization.string("代理服务"),
+@@ -112,6 +92,14 @@ struct ProxySetupStep: View {
+                 .disabled(isStarting)
+             }
+         }
++        .task {
++            // 进入本步就把代理起起来，这样证书服务可用，用户能立刻去装证书。
++            // 先实测一次端口：状态可能停在 .running 而进程实际已被系统回收。
++            proxy.syncStatusWithReality()
++            if !proxy.status.isRunning {
++                await startLocalProxy()
++            }
++        }
+     }
+ 
+     private func startLocalProxy() async {
+@@ -134,103 +122,6 @@ struct ProxySetupStep: View {
+             ])
+         }
+     }
+-
+-    // MARK: - 第三方代理
+-
+-    private var thirdPartyContent: some View {
+-        VStack(alignment: .leading, spacing: 18) {
+-            VStack(alignment: .leading, spacing: 10) {
+-                Text(AppLocalization.string("选择你使用的客户端"))
+-                    .font(.headline)
+-
+-                ForEach(ThirdPartyProxyClient.allCases) { client in
+-                    ClientRow(
+-                        client: client,
+-                        isSelected: thirdParty.selectedClient == client
+-                    ) {
+-                        thirdParty.selectedClient = client
+-                    }
+-                }
+-            }
+-            .padding(16)
+-            .frame(maxWidth: .infinity, alignment: .leading)
+-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+-
+-            StatusCard(
+-                title: AppLocalization.string("模块连接"),
+-                value: thirdParty.state.displayText,
+-                isGood: thirdParty.state.isUsable,
+-                icon: "link.circle"
+-            )
+-
+-            VStack(alignment: .leading, spacing: 10) {
+-                Text(AppLocalization.string("配置步骤"))
+-                    .font(.headline)
+-
+-                ForEach(Array(thirdPartyInstructions.enumerated()), id: \.offset) { index, instruction in
+-                    HStack(alignment: .top, spacing: 10) {
+-                        Text("\(index + 1)")
+-                            .font(.caption.weight(.bold))
+-                            .frame(width: 20, height: 20)
+-                            .background(Color.accentColor.opacity(0.15), in: Circle())
+-                            .foregroundStyle(Color.accentColor)
+-                        Text(instruction)
+-                            .font(.subheadline)
+-                            .fixedSize(horizontal: false, vertical: true)
+-                    }
+-                }
+-            }
+-            .padding(16)
+-            .frame(maxWidth: .infinity, alignment: .leading)
+-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+-
+-            Button {
+-                if thirdParty.copyModuleURLToPasteboard() {
+-                    RuntimeLogger.info("APP", "Setup", "模块地址已复制到剪贴板")
+-                }
+-            } label: {
+-                Label(AppLocalization.string("复制模块订阅地址"), systemImage: "doc.on.doc")
+-                    .frame(maxWidth: .infinity)
+-                    .padding(.vertical, 12)
+-            }
+-            .buttonStyle(.bordered)
+-
+-            HStack(spacing: 10) {
+-                Button {
+-                    thirdParty.selectedClient.open()
+-                } label: {
+-                    Label(AppLocalization.string("打开客户端"), systemImage: "arrow.up.forward.app")
+-                        .frame(maxWidth: .infinity)
+-                        .padding(.vertical, 12)
+-                }
+-                .buttonStyle(.bordered)
+-                .disabled(!thirdParty.selectedClient.isInstalled)
+-
+-                Button {
+-                    Task { await thirdParty.refresh() }
+-                } label: {
+-                    Label(AppLocalization.string("重新检测"), systemImage: "arrow.clockwise")
+-                        .frame(maxWidth: .infinity)
+-                        .padding(.vertical, 12)
+-                }
+-                .buttonStyle(.borderedProminent)
+-            }
+-        }
+-    }
+-
+-    private var thirdPartyInstructions: [String] {
+-        let client = thirdParty.selectedClient
+-        var steps = [
+-            AppLocalization.string("复制下方的模块订阅地址。"),
+-            AppLocalization.string("在 %@ 中导入该地址对应的模块。", client.displayName),
+-            AppLocalization.string("确认模块已启用，并为定位相关主机名开启 HTTPS 解密。"),
+-            AppLocalization.string("回到本应用点击「重新检测」，状态变为「已连接」即可。"),
+-        ]
+-        if !client.supportsCellular {
+-            steps.append(AppLocalization.string("注意：该客户端在当前版本下可能无法覆盖蜂窝网络。"))
+-        }
+-        return steps
+-    }
+ }
+ 
+ /// 状态卡片。
+@@ -339,47 +230,3 @@ struct InlineAlert: View {
+         }
+     }
+ }
+-
+-/// 客户端选择行。
+-struct ClientRow: View {
+-
+-    let client: ThirdPartyProxyClient
+-    let isSelected: Bool
+-    let action: () -> Void
+-
+-    var body: some View {
+-        Button(action: action) {
+-            HStack(spacing: 12) {
+-                Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
+-                    .foregroundStyle(isSelected ? Color.accentColor : Color(.tertiaryLabel))
+-
+-                VStack(alignment: .leading, spacing: 3) {
+-                    Text(client.displayName)
+-                        .font(.subheadline.weight(.medium))
+-                        .foregroundStyle(.primary)
+-                    HStack(spacing: 6) {
+-                        Text(client.supportLevel.displayName)
+-                            .font(.caption2)
+-                            .padding(.horizontal, 6)
+-                            .padding(.vertical, 2)
+-                            .background(
+-                                (client.supportLevel == .verified ? Color.green : Color.orange).opacity(0.15),
+-                                in: Capsule()
+-                            )
+-                            .foregroundStyle(client.supportLevel == .verified ? Color.green : Color.orange)
+-
+-                        Text(client.isInstalled
+-                             ? AppLocalization.string("已安装")
+-                             : AppLocalization.string("未安装"))
+-                            .font(.caption2)
+-                            .foregroundStyle(.secondary)
+-                    }
+-                }
+-
+-                Spacer()
+-            }
+-            .contentShape(Rectangle())
+-        }
+-        .buttonStyle(.plain)
+-    }
+-}
+diff --git a/App/SettingsDetailViews.swift b/App/SettingsDetailViews.swift
+index 56e43c7..2aa371d 100644
+--- a/App/SettingsDetailViews.swift
++++ b/App/SettingsDetailViews.swift
+@@ -7,67 +7,6 @@ import SwiftUI
+ // 代价是每个入口多一次点击，所以入口右侧都带上当前取值，
+ // 不进二级页也知道现在是什么状态。
+ 
+-// MARK: - 运行模式
+-
+-/// 运行模式选择。
+-struct RuntimeModePickerView: View {
+-
+-    @ObservedObject var runtimeMode: RuntimeModeStore
+-    /// 切换模式要顺带停代理并重置引导，动作留在 SettingsView 里统一做。
+-    let onSelect: (ProxyRuntimeMode) -> Void
+-
+-    var body: some View {
+-        List {
+-            Section {
+-                ForEach(ProxyRuntimeMode.allCases) { mode in
+-                    optionRow(mode)
+-                }
+-            } header: {
+-                SettingsSectionHeader(title: AppLocalization.string("运行模式"))
+-            } footer: {
+-                Text(AppLocalization.string("切换模式会停止当前代理并重新走一遍配置引导，已保存的收藏和证书不受影响。"))
+-            }
+-        }
+-        .listStyle(.insetGrouped)
+-        .navigationTitle(AppLocalization.string("运行模式"))
+-        .navigationBarTitleDisplayMode(.inline)
+-    }
+-
+-    private func optionRow(_ mode: ProxyRuntimeMode) -> some View {
+-        let isSelected = runtimeMode.mode == mode
+-        return Button {
+-            onSelect(mode)
+-        } label: {
+-            HStack(alignment: .top, spacing: SettingsMetrics.iconSpacing) {
+-                SettingsIconBadge(systemImage: mode.systemImage)
+-
+-                VStack(alignment: .leading, spacing: 3) {
+-                    Text(mode.displayName)
+-                        .font(SettingsMetrics.titleFont)
+-                        .foregroundStyle(.primary)
+-                    Text(mode.summary)
+-                        .font(SettingsMetrics.subtitleFont)
+-                        .foregroundStyle(.secondary)
+-                        .fixedSize(horizontal: false, vertical: true)
+-                }
+-
+-                Spacer(minLength: 8)
+-
+-                if isSelected {
+-                    Image(systemName: "checkmark")
+-                        .font(.body.weight(.semibold))
+-                        .foregroundStyle(Color.blue)
+-                        .padding(.top, 2)
+-                }
+-            }
+-            .padding(.vertical, SettingsMetrics.rowVerticalPadding)
+-            .contentShape(Rectangle())
+-        }
+-        .buttonStyle(.plain)
+-        .accessibilityAddTraits(isSelected ? AccessibilityTraits.isSelected : AccessibilityTraits())
+-    }
+-}
+-
+ // MARK: - 语言
+ 
+ /// 界面语言选择。
+@@ -180,7 +119,6 @@ struct SimulationSettingsView: View {
+     @ObservedObject var state: MapLocationState
+ 
+     @ObservedObject private var proxy = ProxyManager.shared
+-    @ObservedObject private var runtimeMode = RuntimeModeStore.shared
+ 
+     @State private var selfCheckResult: String?
+ 
+@@ -233,9 +171,7 @@ struct SimulationSettingsView: View {
+             } header: {
+                 SettingsSectionHeader(title: AppLocalization.string("定位模拟"))
+             } footer: {
+-                Text(runtimeMode.mode == .thirdParty
+-                     ? AppLocalization.string("精度与运动状态模拟都会写入客户端配置。")
+-                     : AppLocalization.string("精度直接影响系统对定位可信度的判断，通常 25 米较为自然。"))
++                Text(AppLocalization.string("精度直接影响系统对定位可信度的判断，通常 25 米较为自然。"))
+             }
+ 
+             Section {
+@@ -276,221 +212,6 @@ struct SimulationSettingsView: View {
+     }
+ }
+ 
+-// MARK: - 第三方代理
+-
+-/// 第三方客户端的模块与连通性。
+-struct ThirdPartySettingsView: View {
+-
+-    @ObservedObject var thirdParty: ThirdPartyProxyManager
+-
+-    @State private var showModuleURLSheet = false
+-    @State private var moduleURLInput = ""
+-    /// 复制本身没有界面变化，不给反馈用户会怀疑到底点上没有。
+-    @State private var didCopyModuleURL = false
+-    @State private var copyFeedbackTask: Task<Void, Never>?
+-
+-    var body: some View {
+-        List {
+-            Section {
+-                HStack(spacing: SettingsMetrics.iconSpacing) {
+-                    SettingsIconBadge(systemImage: "shield.lefthalf.filled")
+-
+-                    Text(AppLocalization.string("客户端"))
+-                        .font(SettingsMetrics.titleFont)
+-
+-                    Spacer(minLength: 8)
+-
+-                    Picker(AppLocalization.string("客户端"), selection: $thirdParty.selectedClient) {
+-                        ForEach(ThirdPartyProxyClient.allCases) { client in
+-                            Text(client.displayName).tag(client)
+-                        }
+-                    }
+-                    .pickerStyle(.menu)
+-                    .labelsHidden()
+-                }
+-                .padding(.vertical, SettingsMetrics.rowVerticalPadding)
+-
+-                SettingsStatusRow(
+-                    systemImage: "link",
+-                    title: thirdParty.selectedClient.displayName,
+-                    value: thirdParty.state.displayText,
+-                    valueColor: thirdParty.state.isUsable ? .green : .orange
+-                )
+-
+-                // 「实际拦截」回答的是一个别处答不了的问题：模块回话的到底是
+-                // 哪个客户端。用户在应用里换了选择、手机上却还开着另一个代理时，
+-                // 上一行的状态描述的是那个客户端——不写出来就会张冠李戴。
+-                SettingsStatusRow(
+-                    systemImage: "antenna.radiowaves.left.and.right",
+-                    title: AppLocalization.string("实际拦截"),
+-                    value: thirdParty.responderClient?.displayName
+-                        ?? AppLocalization.string("未检测"),
+-                    valueColor: thirdParty.responderMismatch ? .red : .secondary
+-                )
+-
+-                // 脚本每次改写都把结论写进存储，这里直接翻成人话。
+-                // 「没有记录」是最有价值的一档：说明响应改写规则一次都没跑到，
+-                // 问题在模块启用 / MITM 覆盖，而不在格式对不上。
+-                SettingsStatusRow(
+-                    systemImage: "waveform.path.ecg",
+-                    title: AppLocalization.string("模块运行情况"),
+-                    value: thirdParty.diagnosticsText,
+-                    valueColor: diagnosticsColor
+-                )
+-
+-                SettingsStatusRow(
+-                    systemImage: "clock.arrow.circlepath",
+-                    title: AppLocalization.string("最近一次"),
+-                    value: thirdParty.diagnosticsDateText
+-                )
+-
+-                // 仓库里有 5 个 wloc.* 模块文件，把当前客户端该用哪个直接写出来，
+-                // 省得用户对着文件名猜。
+-                SettingsStatusRow(
+-                    systemImage: "doc.text",
+-                    title: AppLocalization.string("模块文件"),
+-                    value: thirdParty.moduleFileName,
+-                    monospacedValue: true
+-                )
+-            } header: {
+-                SettingsSectionHeader(title: AppLocalization.string("第三方代理"))
+-            } footer: {
+-                if let responder = thirdParty.responderClient, thirdParty.responderMismatch {
+-                    Text(String(
+-                        format: AppLocalization.string("当前拦截定位请求的是 %@，与上面选择的 %@ 不一致。请确认手机上只开着一个代理客户端，并在它里面启用本模块。"),
+-                        responder.displayName,
+-                        thirdParty.selectedClient.displayName
+-                    ))
+-                } else {
+-                    Text(AppLocalization.string("模块由第三方客户端执行拦截，本应用只负责写入坐标。"))
+-                }
+-            }
+-
+-            Section {
+-                if let url = thirdParty.moduleSubscriptionURL {
+-                    Button {
+-                        UIPasteboard.general.string = url.absoluteString
+-                        RuntimeLogger.info("APP", "Settings", "模块地址已复制")
+-                        showCopyFeedback()
+-                    } label: {
+-                        SettingsLabel(
+-                            systemImage: didCopyModuleURL ? "checkmark.circle.fill" : "doc.on.doc",
+-                            title: didCopyModuleURL
+-                                ? AppLocalization.string("已复制到剪贴板")
+-                                : AppLocalization.string("复制模块订阅地址"),
+-                            tint: didCopyModuleURL ? .green : .blue
+-                        )
+-                    }
+-
+-                    Text(url.absoluteString)
+-                        .font(.caption2.monospaced())
+-                        .foregroundStyle(.secondary)
+-                        .lineLimit(3)
+-                }
+-
+-                Button {
+-                    moduleURLInput = ThirdPartyProxyManager.defaultModuleBaseURL
+-                    showModuleURLSheet = true
+-                } label: {
+-                    SettingsLabel(
+-                        systemImage: "link",
+-                        title: AppLocalization.string("自定义模块托管地址")
+-                    )
+-                }
+-
+-                Button {
+-                    thirdParty.selectedClient.open()
+-                } label: {
+-                    SettingsLabel(
+-                        systemImage: "arrow.up.forward.app",
+-                        title: AppLocalization.string("打开 %@", thirdParty.selectedClient.displayName)
+-                    )
+-                }
+-                .disabled(!thirdParty.selectedClient.isInstalled)
+-
+-                Button {
+-                    Task { await thirdParty.refresh() }
+-                } label: {
+-                    SettingsLabel(
+-                        systemImage: "arrow.clockwise",
+-                        title: AppLocalization.string("重新检测连通性")
+-                    )
+-                }
+-            } footer: {
+-                Text(AppLocalization.string("在客户端里导入模块后，本应用写入的坐标才会生效。"))
+-            }
+-
+-            Section {
+-                Button(role: .destructive) {
+-                    Task { await thirdParty.clear() }
+-                } label: {
+-                    SettingsLabel(
+-                        systemImage: "xmark.circle",
+-                        title: AppLocalization.string("清除客户端坐标"),
+-                        tint: .red
+-                    )
+-                }
+-            }
+-        }
+-        .listStyle(.insetGrouped)
+-        .navigationTitle(AppLocalization.string("第三方代理"))
+-        .navigationBarTitleDisplayMode(.inline)
+-        .sheet(isPresented: $showModuleURLSheet) { moduleURLSheet }
+-    }
+-
+-    /// 诊断行的颜色：改写成功是绿的，「没有记录」是橙的（需要用户去查模块），
+-    /// 其余失败原因一律红。
+-    private var diagnosticsColor: Color {
+-        guard let outcome = thirdParty.diagnostics?.outcome else { return .orange }
+-        switch outcome {
+-        case "rewritten": return .green
+-        case "disabled": return .orange
+-        default: return .red
+-        }
+-    }
+-
+-    private var moduleURLSheet: some View {
+-        NavigationView {
+-            List {
+-                Section {
+-                    TextField(AppLocalization.string("托管地址前缀"), text: $moduleURLInput)
+-                        .textInputAutocapitalization(.never)
+-                        .autocorrectionDisabled()
+-                        .keyboardType(.URL)
+-                } footer: {
+-                    Text(AppLocalization.string("填写模块文件所在目录的地址前缀，不带文件名。"))
+-                }
+-            }
+-            .listStyle(.insetGrouped)
+-            .navigationTitle(AppLocalization.string("模块托管地址"))
+-            .navigationBarTitleDisplayMode(.inline)
+-            .toolbar {
+-                ToolbarItem(placement: .cancellationAction) {
+-                    Button(AppLocalization.string("取消")) { showModuleURLSheet = false }
+-                }
+-                ToolbarItem(placement: .confirmationAction) {
+-                    Button(AppLocalization.string("保存")) {
+-                        AppGroup.defaults.set(moduleURLInput, forKey: "thirdPartyModuleBaseURL")
+-                        showModuleURLSheet = false
+-                    }
+-                }
+-            }
+-        }
+-    }
+-
+-    private func showCopyFeedback() {
+-        copyFeedbackTask?.cancel()
+-        withAnimation(.easeInOut(duration: 0.15)) { didCopyModuleURL = true }
+-        copyFeedbackTask = Task {
+-            try? await Task.sleep(nanoseconds: 2_000_000_000)
+-            guard !Task.isCancelled else { return }
+-            await MainActor.run {
+-                withAnimation(.easeInOut(duration: 0.15)) { didCopyModuleURL = false }
+-            }
+-        }
+-    }
+-}
+-
+ // MARK: - 证书与环境
+ 
+ /// 证书信任、Wi-Fi 代理与跳转。
+@@ -942,7 +663,6 @@ struct UserGuideView: View {
+             (AppLocalization.string("失效说明"), .disableSpoofing),
+             (AppLocalization.string("关闭 WiFi 代理"), .disableWiFiProxy),
+             (TipKind.certificateTrust.settingsLabel, .certificateTrust),
+-            (TipKind.thirdPartyMode.settingsLabel, .thirdPartyMode),
+         ]
+     }
+ }
+diff --git a/App/SettingsView.swift b/App/SettingsView.swift
+index b9a730c..f5954fb 100644
+--- a/App/SettingsView.swift
++++ b/App/SettingsView.swift
+@@ -6,7 +6,7 @@ import SwiftUI
+ /// 每行以圆形图标起头，右侧按内容性质给出四种控件——
+ /// 勾选（模式）/ 开关（可切换项）/ 只读状态文字（无箭头）/ 跳转箭头。
+ ///
+-/// 这一版刻意只留五组：账号 / 运行模式 / 连接状态 / 外观及个性化 / 关于。
++/// 这一版刻意只留四组：账号 / 连接状态 / 外观及个性化 / 关于。
+ /// 具体配置全部下沉到二级页——主页每行右边都带着当前取值，
+ /// 不进二级页也知道现在是什么状态，滚动长度却砍掉了一半以上。
+ ///
+@@ -18,8 +18,6 @@ struct SettingsView: View {
+     @ObservedObject var state: MapLocationState
+ 
+     @ObservedObject private var proxy = ProxyManager.shared
+-    @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
+-    @ObservedObject private var runtimeMode = RuntimeModeStore.shared
+     @ObservedObject private var remoteConfiguration = AppRemoteConfigurationStore.shared
+     @ObservedObject private var appearance = AppearanceStore.shared
+     @ObservedObject private var fontScale = FontScaleStore.shared
+@@ -51,7 +49,6 @@ struct SettingsView: View {
+                 #if !PURE_BUILD
+                 accountSection
+                 #endif
+-                modeSection
+                 connectionSection
+                 appearanceSection
+                 aboutSection
+@@ -197,62 +194,26 @@ struct SettingsView: View {
+     }
+     #endif
+ 
+-    // MARK: - 运行模式
+-
+-    private var modeSection: some View {
+-        Section {
+-            NavigationLink {
+-                RuntimeModePickerView(runtimeMode: runtimeMode, onSelect: switchMode)
+-            } label: {
+-                HStack(spacing: SettingsMetrics.iconSpacing) {
+-                    SettingsIconBadge(systemImage: runtimeMode.mode.systemImage)
+-                    Text(AppLocalization.string("运行模式"))
+-                        .font(SettingsMetrics.titleFont)
+-                    Spacer(minLength: 8)
+-                    Text(runtimeMode.mode.displayName)
+-                        .font(SettingsMetrics.valueFont)
+-                        .foregroundStyle(.secondary)
+-                }
+-                .padding(.vertical, SettingsMetrics.rowVerticalPadding)
+-            }
+-        } header: {
+-            SettingsSectionHeader(title: AppLocalization.string("运行模式"))
+-        } footer: {
+-            Text(runtimeMode.mode.summary)
+-        }
+-    }
+-
+     // MARK: - 连接状态
+ 
+     /// 连接状态。
+     ///
+-    /// 顺序固定为「环境 / 客户端 → 虚拟定位 → 定位模拟」，两种模式一致：
++    /// 顺序固定为「环境 → 虚拟定位 → 定位模拟」：先确认链路，再看开关状态，
++    /// 最后才调参数，读起来是一条因果链。
+     ///
+-    ///   - 原来首行是「本机代理」开关 / 第三方客户端状态，和下面的二级入口
+-    ///     说的是同一件事（一个可点、一个不可点），删掉首行只留入口。
+-    ///     本机代理的开关挪进了「证书与环境」——它本来就属于那边的内容。
+-    ///   - 第三方代理入口上移到「虚拟定位」之前：先确认链路，再看开关状态，
+-    ///     最后才调参数，读起来是一条因果链。
++    /// 首行原来是一个「本机代理」开关 / 第三方客户端状态的行，和下面的二级
++    /// 入口说的是同一件事（一个可点、一个不可点），删掉只留入口即可；
++    /// 代理的开关挪进了「证书与环境」——它本来就属于那边的内容。
+     private var connectionSection: some View {
+         Section {
+-            if runtimeMode.mode == .localProxy {
+-                detailLink(
+-                    systemImage: "checkmark.shield.fill",
+-                    title: AppLocalization.string("证书与环境"),
+-                    value: proxy.certificateTrustState.isTrusted
+-                        ? proxy.certificateTrustState.displayText
+-                        : proxy.wiFiProxyState.displayText
+-                ) {
+-                    CertificateEnvironmentView(state: state)
+-                }
+-            } else {
+-                detailLink(
+-                    systemImage: "shield.lefthalf.filled",
+-                    title: AppLocalization.string("第三方代理"),
+-                    value: thirdParty.state.displayText
+-                ) {
+-                    ThirdPartySettingsView(thirdParty: thirdParty)
+-                }
++            detailLink(
++                systemImage: "checkmark.shield.fill",
++                title: AppLocalization.string("证书与环境"),
++                value: proxy.certificateTrustState.isTrusted
++                    ? proxy.certificateTrustState.displayText
++                    : proxy.wiFiProxyState.displayText
++            ) {
++                CertificateEnvironmentView(state: state)
+             }
+ 
+             SettingsStatusRow(
+@@ -404,16 +365,4 @@ struct SettingsView: View {
+             ))
+         }
+     }
+-
+-    // MARK: - 操作
+-
+-    /// 切换运行模式。两套链路不能同时开着，所以先停掉当前代理再切。
+-    private func switchMode(to mode: ProxyRuntimeMode) {
+-        guard mode != runtimeMode.mode else { return }
+-        if proxy.status.isRunning { proxy.stop() }
+-        BackgroundKeepAlive.shared.stop()
+-        runtimeMode.select(mode)
+-        setup.reset()
+-        dismiss()
+-    }
+ }
+diff --git a/App/SetupCoordinator.swift b/App/SetupCoordinator.swift
+index ad4e930..23d05bd 100644
+--- a/App/SetupCoordinator.swift
++++ b/App/SetupCoordinator.swift
+@@ -2,10 +2,12 @@ import Foundation
+ 
+ /// 首次配置的引导流程协调器。
+ ///
+-/// 负责回答三个问题：
+-///   1. 用户选的是哪种运行模式？
+-///   2. 该模式下的配置是否已经走完？
+-///   3. 现在应该展示引导页还是主界面？
++/// 负责回答两个问题：
++///   1. 该设备的代理环境配置是否已经走完？
++///   2. 现在应该展示引导页还是主界面？
++///
++/// 引导三步：授权限 → 配代理 → 做检测。
++/// （1.0.8 之前第一步是「选择运行模式」，只剩应用内代理之后这一步没有意义了。）
+ @MainActor
+ final class SetupCoordinator: ObservableObject {
+ 
+@@ -19,8 +21,8 @@ final class SetupCoordinator: ObservableObject {
+     /// 重新塞一遍介绍页面。
+     @Published private(set) var hasSeenWelcome: Bool
+ 
+-    /// 引导流程的当前步骤。切换模式时会重置。
+-    @Published var currentStep: Step = .modeSelection
++    /// 引导流程的当前步骤。
++    @Published var currentStep: Step = .permissionRequest
+ 
+     private enum Key {
+         static let welcomeSeen = "welcomeOnboardingSeen"
+@@ -29,7 +31,6 @@ final class SetupCoordinator: ObservableObject {
+     private let defaults: UserDefaults
+ 
+     enum Step: Int, CaseIterable, Comparable {
+-        case modeSelection
+         case permissionRequest
+         case proxySetup
+         case verification
+@@ -40,7 +41,6 @@ final class SetupCoordinator: ObservableObject {
+ 
+         var title: String {
+             switch self {
+-            case .modeSelection: return AppLocalization.string("选择运行模式")
+             case .permissionRequest: return AppLocalization.string("授予必要权限")
+             case .proxySetup: return AppLocalization.string("配置代理环境")
+             case .verification: return AppLocalization.string("执行环境检测")
+@@ -55,11 +55,7 @@ final class SetupCoordinator: ObservableObject {
+         self.runtimeMode = runtimeMode
+         self.defaults = defaults
+         self.hasSeenWelcome = defaults.bool(forKey: Key.welcomeSeen)
+-        self.isCompleted = runtimeMode.hasSelectedMode && runtimeMode.isInitialized(runtimeMode.mode)
+-
+-        if runtimeMode.hasSelectedMode {
+-            currentStep = .proxySetup
+-        }
++        self.isCompleted = runtimeMode.isInitialized
+     }
+ 
+     /// 记下欢迎页已看过，之后不再展示。
+@@ -69,18 +65,6 @@ final class SetupCoordinator: ObservableObject {
+         defaults.set(true, forKey: Key.welcomeSeen)
+     }
+ 
+-    /// 选定的运行模式。
+-    var selectedMode: ProxyRuntimeMode { runtimeMode.mode }
+-
+-    /// 选择运行模式并进入下一步。
+-    func select(_ mode: ProxyRuntimeMode) {
+-        runtimeMode.select(mode)
+-        currentStep = .permissionRequest
+-        RuntimeLogger.info("APP", "Setup", "已选择运行模式", details: [
+-            "mode": mode.displayName,
+-        ])
+-    }
+-
+     /// 前进到下一步。
+     func advance() {
+         guard let next = Step(rawValue: currentStep.rawValue + 1) else {
+@@ -102,20 +86,18 @@ final class SetupCoordinator: ObservableObject {
+         currentStep = step
+     }
+ 
+-    /// 标记当前模式的引导已完成，进入主界面。
++    /// 标记引导已完成，进入主界面。
+     func complete() {
+-        runtimeMode.markInitialized(runtimeMode.mode)
++        runtimeMode.markInitialized()
+         isCompleted = true
+-        RuntimeLogger.info("APP", "Setup", "引导流程完成", details: [
+-            "mode": runtimeMode.mode.displayName,
+-        ])
++        RuntimeLogger.info("APP", "Setup", "引导流程完成")
+     }
+ 
+     /// 重新走一遍引导（设置页里的「重置配置」）。
+     func reset() {
+-        runtimeMode.resetInitialization(runtimeMode.mode)
++        runtimeMode.resetInitialization()
+         isCompleted = false
+-        currentStep = .modeSelection
++        currentStep = .permissionRequest
+         RuntimeLogger.info("APP", "Setup", "引导流程已重置")
+     }
+ }
+diff --git a/App/SetupFlowView.swift b/App/SetupFlowView.swift
+index e733dd1..8e00fa9 100644
+--- a/App/SetupFlowView.swift
++++ b/App/SetupFlowView.swift
+@@ -2,13 +2,12 @@ import SwiftUI
+ 
+ /// 引导流程的容器视图。
+ ///
+-/// 四个步骤依次是：选模式 → 授权限 → 配代理 → 做检测。
++/// 三个步骤依次是：授权限 → 配代理 → 做检测。
+ /// 顶部有步骤指示器，用户可以点击回看已完成的步骤。
+ struct SetupFlowView: View {
+ 
+     @ObservedObject var setup: SetupCoordinator
+     @ObservedObject private var proxy = ProxyManager.shared
+-    @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
+ 
+     @State private var locationPermissionRequested = false
+     @State private var isVerifying = false
+@@ -28,9 +27,6 @@ struct SetupFlowView: View {
+                     header
+ 
+                     switch setup.currentStep {
+-                    case .modeSelection:
+-                        ModeSelectionStep(setup: setup)
+-
+                     case .permissionRequest:
+                         PermissionStep(
+                             setup: setup,
+@@ -120,14 +116,10 @@ struct SetupFlowView: View {
+ 
+     private var stepDescription: String {
+         switch setup.currentStep {
+-        case .modeSelection:
+-            return AppLocalization.string("先确定拦截在哪里执行。这一步之后仍可随时切换。")
+         case .permissionRequest:
+-            return AppLocalization.string("地图显示与 Wi-Fi 名称读取需要定位权限，本应用不会上传任何位置数据。")
++            return AppLocalization.string("在地图上显示真实位置需要定位权限，本应用不会上传任何位置数据。")
+         case .proxySetup:
+-            return setup.selectedMode == .localProxy
+-                ? AppLocalization.string("需要安装本机证书，并把当前 Wi-Fi 的代理指向本机。")
+-                : AppLocalization.string("需要在你的代理客户端中导入模块，并开启对应主机名的解密。")
++            return AppLocalization.string("需要安装本机证书，并把当前 Wi-Fi 的代理指向本机。")
+         case .verification:
+             return AppLocalization.string("运行完整检测，确认每个环节都通了再开始使用。")
+         }
+@@ -137,7 +129,7 @@ struct SetupFlowView: View {
+ 
+     private var bottomBar: some View {
+         HStack(spacing: 12) {
+-            if setup.currentStep != .modeSelection {
++            if setup.currentStep != .permissionRequest {
+                 Button {
+                     setup.goBack()
+                 } label: {
+@@ -162,7 +154,7 @@ struct SetupFlowView: View {
+                 .padding(.vertical, 14)
+             }
+             .buttonStyle(.borderedProminent)
+-            .disabled(isVerifying || (setup.currentStep == .modeSelection && !setup.runtimeMode.hasSelectedMode))
++            .disabled(isVerifying)
+         }
+         .padding(.horizontal, 20)
+         .padding(.vertical, 12)
+@@ -171,7 +163,6 @@ struct SetupFlowView: View {
+ 
+     private var primaryButtonTitle: String {
+         switch setup.currentStep {
+-        case .modeSelection: return AppLocalization.string("下一步")
+         case .permissionRequest: return AppLocalization.string("下一步")
+         case .proxySetup: return AppLocalization.string("开始检测")
+         case .verification: return AppLocalization.string("完成")
+@@ -208,99 +199,63 @@ struct SetupFlowView: View {
+             detail: selfCheck
+         ))
+ 
+-        switch setup.selectedMode {
+-        case .localProxy:
+-            // 证书信任：需要有证书服务在跑。
+-            if proxy.isCertificateServiceRunning {
+-                await proxy.verifyCertificateTrust()
+-                switch proxy.certificateTrustState {
+-                case .trusted:
+-                    collected.results.append(VerificationResult(
+-                        kind: .certificateTrust, outcome: .passed,
+-                        detail: AppLocalization.string("系统已信任本机根证书")
+-                    ))
+-                case .notTrusted:
+-                    collected.results.append(VerificationResult(
+-                        kind: .certificateTrust, outcome: .failed(
+-                            AppLocalization.string("证书未安装或未开启完全信任")
+-                        ),
+-                        detail: proxy.certificateDownloadURL?.absoluteString ?? ""
+-                    ))
+-                case .failed(let reason):
+-                    collected.results.append(VerificationResult(
+-                        kind: .certificateTrust, outcome: .failed(reason), detail: ""
+-                    ))
+-                case .unknown:
+-                    collected.results.append(VerificationResult(
+-                        kind: .certificateTrust, outcome: .skipped(
+-                            AppLocalization.string("证书服务未启动")
+-                        ),
+-                        detail: ""
+-                    ))
+-                }
+-            } else {
++        // 证书信任：需要有证书服务在跑。
++        if proxy.isCertificateServiceRunning {
++            await proxy.verifyCertificateTrust()
++            switch proxy.certificateTrustState {
++            case .trusted:
+                 collected.results.append(VerificationResult(
+-                    kind: .certificateTrust,
+-                    outcome: .skipped(AppLocalization.string("请先启动代理")),
+-                    detail: ""
++                    kind: .certificateTrust, outcome: .passed,
++                    detail: AppLocalization.string("系统已信任本机根证书")
+                 ))
+-            }
+-
+-            // Wi-Fi 代理链路。
+-            //
+-            // 这里必须先实测端口，不能只看 `proxy.status`：被挂起后状态不会
+-            // 变成 .stopped，直接信它就会把「代理其实已经死了」误报成
+-            // 「代理未启动 → 跳过」，让用户以为这一步没问题。
+-            if proxy.syncStatusWithReality() {
+-                await proxy.verifyWiFiProxy()
+-                let passed = proxy.wiFiProxyState == .configured
++            case .notTrusted:
+                 collected.results.append(VerificationResult(
+-                    kind: .wifiProxy,
+-                    outcome: passed ? .passed : .failed(
+-                        AppLocalization.string("请求没有经过本机代理，请检查 Wi-Fi 代理配置")
++                    kind: .certificateTrust, outcome: .failed(
++                        AppLocalization.string("证书未安装或未开启完全信任")
+                     ),
+-                    detail: "\(ProxyManager.proxyHost):\(ProxyManager.proxyPort)"
+-                ))
+-            } else {
+-                collected.results.append(VerificationResult(
+-                    kind: .wifiProxy,
+-                    outcome: .skipped(AppLocalization.string("代理未启动")),
+-                    detail: ""
+-                ))
+-            }
+-
+-        case .thirdParty:
+-            await thirdParty.refresh()
+-            switch thirdParty.state {
+-            case .connected, .connectedNoCoordinate:
+-                collected.results.append(VerificationResult(
+-                    kind: .thirdPartyModule, outcome: .passed,
+-                    detail: AppLocalization.string("客户端已响应配置接口")
+-                ))
+-            case .clientMissing:
+-                collected.results.append(VerificationResult(
+-                    kind: .thirdPartyModule, outcome: .failed(
+-                        AppLocalization.string("未检测到已安装的 %@", thirdParty.selectedClient.displayName)
+-                    ),
+-                    detail: ""
+-                ))
+-            case .moduleNotInstalled:
+-                collected.results.append(VerificationResult(
+-                    kind: .thirdPartyModule, outcome: .failed(
+-                        AppLocalization.string("模块未生效，请确认已导入并开启解密")
+-                    ),
+-                    detail: ""
++                    detail: proxy.certificateDownloadURL?.absoluteString ?? ""
+                 ))
+             case .failed(let reason):
+                 collected.results.append(VerificationResult(
+-                    kind: .thirdPartyModule, outcome: .failed(reason), detail: ""
++                    kind: .certificateTrust, outcome: .failed(reason), detail: ""
+                 ))
+-            case .unknown, .checking:
++            case .unknown:
+                 collected.results.append(VerificationResult(
+-                    kind: .thirdPartyModule, outcome: .skipped(AppLocalization.string("未完成检测")),
++                    kind: .certificateTrust, outcome: .skipped(
++                        AppLocalization.string("证书服务未启动")
++                    ),
+                     detail: ""
+                 ))
+             }
++        } else {
++            collected.results.append(VerificationResult(
++                kind: .certificateTrust,
++                outcome: .skipped(AppLocalization.string("请先启动代理")),
++                detail: ""
++            ))
++        }
++
++        // Wi-Fi 代理链路。
++        //
++        // 这里必须先实测端口，不能只看 `proxy.status`：被挂起后状态不会
++        // 变成 .stopped，直接信它就会把「代理其实已经死了」误报成
++        // 「代理未启动 → 跳过」，让用户以为这一步没问题。
++        if proxy.syncStatusWithReality() {
++            await proxy.verifyWiFiProxy()
++            let passed = proxy.wiFiProxyState == .configured
++            collected.results.append(VerificationResult(
++                kind: .wifiProxy,
++                outcome: passed ? .passed : .failed(
++                    AppLocalization.string("请求没有经过本机代理，请检查 Wi-Fi 代理配置")
++                ),
++                detail: "\(ProxyManager.proxyHost):\(ProxyManager.proxyPort)"
++            ))
++        } else {
++            collected.results.append(VerificationResult(
++                kind: .wifiProxy,
++                outcome: .skipped(AppLocalization.string("代理未启动")),
++                detail: ""
++            ))
+         }
+ 
+         report = collected
+diff --git a/App/TipViews.swift b/App/TipViews.swift
+index 83e3f0c..6fcb170 100644
+--- a/App/TipViews.swift
++++ b/App/TipViews.swift
+@@ -13,7 +13,6 @@ enum TipKind {
+     case enableSpoofing
+     case disableSpoofing
+     case disableWiFiProxy
+-    case thirdPartyMode
+     case certificateTrust
+ 
+     var title: String {
+@@ -21,7 +20,6 @@ enum TipKind {
+         case .enableSpoofing: return AppLocalization.string("开启前请确认")
+         case .disableSpoofing: return AppLocalization.string("如何彻底恢复真实位置")
+         case .disableWiFiProxy: return AppLocalization.string("关闭 WiFi 代理")
+-        case .thirdPartyMode: return AppLocalization.string("第三方模式说明")
+         case .certificateTrust: return AppLocalization.string("关于证书信任")
+         }
+     }
+@@ -34,8 +32,6 @@ enum TipKind {
+             return AppLocalization.string("停止虚拟定位后，还需要关闭 Wi-Fi 的手动代理配置。如果系统仍显示旧位置，等待缓存刷新，必要时重启设备。")
+         case .disableWiFiProxy:
+             return AppLocalization.string("停止虚拟定位后，请到「设置 → 无线局域网 → 当前网络 → 配置代理」中改回「关闭」，否则流量仍会指向已停止的本机代理。")
+-        case .thirdPartyMode:
+-            return AppLocalization.string("本应用只负责把坐标写给你的代理客户端，拦截与规则由客户端执行。应用关闭后客户端里的配置可能继续生效。")
+         case .certificateTrust:
+             return AppLocalization.string("安装描述文件后，还需要在「设置 → 通用 → 关于本机 → 证书信任设置」中手动开启完全信任，否则拦截不会生效。")
+         }
+@@ -46,7 +42,6 @@ enum TipKind {
+         case .enableSpoofing: return "info.circle"
+         case .disableSpoofing: return "arrow.uturn.backward.circle"
+         case .disableWiFiProxy: return "wifi.slash"
+-        case .thirdPartyMode: return "shield.lefthalf.filled"
+         case .certificateTrust: return "lock.shield"
+         }
+     }
+@@ -61,7 +56,7 @@ enum TipKind {
+         case .enableSpoofing: return AppLocalization.string("生效说明")
+         case .disableSpoofing: return AppLocalization.string("失效说明")
+         case .disableWiFiProxy: return AppLocalization.string("关闭 WiFi 代理")
+-        case .thirdPartyMode, .certificateTrust: return title
++        case .certificateTrust: return title
+         }
+     }
+ }
+diff --git a/Resources/en.lproj/Localizable.strings b/Resources/en.lproj/Localizable.strings
+index 749ad42..e677b67 100644
+--- a/Resources/en.lproj/Localizable.strings
++++ b/Resources/en.lproj/Localizable.strings
+@@ -24,16 +24,11 @@
+ "未知" = "Unknown";
+ "国际标准 (WGS-84)" = "International (WGS-84)";
+ "国内标准 (GCJ-02)" = "China (GCJ-02)";
+-"在设备内运行拦截代理，只覆盖当前 Wi-Fi，需要安装并信任证书。" = "Runs the intercepting proxy on-device. Covers the current Wi-Fi only, and requires installing a trusted certificate.";
+-"由你自己的代理客户端执行拦截，可覆盖蜂窝网络，无需安装本应用证书。" = "Your own proxy client performs the interception. Can cover cellular networks, and needs no certificate from this app.";
+-"选择运行模式" = "Choose runtime mode";
+ "授予必要权限" = "Grant permissions";
+ "配置代理环境" = "Set up proxy";
+ "执行环境检测" = "Run environment checks";
+-"先确定拦截在哪里执行。这一步之后仍可随时切换。" = "Decide where interception happens. You can switch later at any time.";
+-"地图显示与 Wi-Fi 名称读取需要定位权限，本应用不会上传任何位置数据。" = "Showing the map and reading the Wi-Fi name require location permission. This app never uploads location data.";
++"在地图上显示真实位置需要定位权限，本应用不会上传任何位置数据。" = "Showing your real position on the map needs location permission. This app never uploads location data.";
+ "需要安装本机证书，并把当前 Wi-Fi 的代理指向本机。" = "Install the on-device certificate and point the current Wi-Fi proxy to this device.";
+-"需要在你的代理客户端中导入模块，并开启对应主机名的解密。" = "Import the module into your proxy client and enable HTTPS decryption for the relevant hosts.";
+ "运行完整检测，确认每个环节都通了再开始使用。" = "Run the full check to confirm every step works before you begin.";
+ "上一步" = "Back";
+ "下一步" = "Next";
+@@ -62,19 +57,14 @@
+ "本应用不包含遥测，不上传位置数据。运行日志只保存在设备本地，自动保留最近 3 天，在提交问题报告时会自动对经纬度、令牌等信息做脱敏处理。" = "This app contains no telemetry and uploads no location data. Logs stay on the device, are kept for three days, and are redacted (coordinates, tokens) before you submit a report.";
+ "证书信任" = "Certificate trust";
+ "Wi-Fi 代理链路" = "Wi-Fi proxy path";
+-"第三方模块连通" = "Third-party module link";
+ "改写引擎自检" = "Rewrite engine self-check";
+ "代理服务" = "Proxy service";
+-"模块连接" = "Module connection";
+ "系统已信任本机根证书" = "The system trusts the on-device root certificate";
+ "证书未安装或未开启完全信任" = "Certificate not installed, or full trust not enabled";
+ "证书服务未启动" = "Certificate service not started";
+ "请先启动代理" = "Start the proxy first";
+ "请求没有经过本机代理，请检查 Wi-Fi 代理配置" = "Requests are not going through the on-device proxy. Check your Wi-Fi proxy settings.";
+ "代理未启动" = "Proxy not started";
+-"客户端已响应配置接口" = "The client responded to the configuration endpoint";
+-"模块未生效，请确认已导入并开启解密" = "Module is inactive. Make sure it is imported and decryption is enabled.";
+-"未完成检测" = "Check not completed";
+ "配置步骤" = "Steps";
+ "下载证书" = "Download certificate";
+ "信任设置" = "Trust settings";
+@@ -87,25 +77,7 @@
+ "当前 Wi-Fi「%@」" = "current Wi-Fi “%@”";
+ "在「设置 → 无线局域网 → %@ → 配置代理」中选择「手动」，服务器填 %@，端口填 %d。" = "Under Settings → Wi-Fi → %@ → Configure Proxy, choose Manual, set the server to %@ and the port to %d.";
+ "回到本应用执行环境检测，两项都通过后即可开启虚拟定位。" = "Return to this app and run the environment check. Once both items pass, you can enable spoofing.";
+-"不要同时开启应用内代理和第三方代理，两条链路会互相干扰。" = "Do not enable the in-app proxy and a third-party proxy at the same time — the two paths interfere with each other.";
+-"选择你使用的客户端" = "Choose your client";
+-"已真机验证" = "Verified on device";
+-"待验证" = "Unverified";
+-"已安装" = "Installed";
+-"未安装" = "Not installed";
+-"复制模块订阅地址" = "Copy module URL";
+-"打开客户端" = "Open client";
+ "打开 %@" = "Open %@";
+-"复制下方的模块订阅地址。" = "Copy the module URL below.";
+-"在 %@ 中导入该地址对应的模块。" = "Import the module from that URL in %@.";
+-"确认模块已启用，并为定位相关主机名开启 HTTPS 解密。" = "Make sure the module is enabled and HTTPS decryption is on for the location hosts.";
+-"回到本应用点击「重新检测」，状态变为「已连接」即可。" = "Come back and tap Recheck. When the status shows Connected, you are done.";
+-"注意：该客户端在当前版本下可能无法覆盖蜂窝网络。" = "Note: this client may not cover cellular networks in the current version.";
+-"未安装客户端" = "Client not installed";
+-"模块未生效" = "Module inactive";
+-"已连接，未开启" = "Connected, not enabled";
+-"已连接" = "Connected";
+-"配置失败" = "Configuration failed";
+ "搜索地点或地址" = "Search a place or address";
+ "没有找到匹配的地点" = "No matching place found";
+ "搜索失败：%@" = "Search failed: %@";
+@@ -121,23 +93,11 @@
+ "请先在地图上选择位置" = "Pick a location on the map first";
+ "证书尚未被信任，定位不会生效" = "The certificate is not trusted yet, so spoofing will not work";
+ "Wi-Fi 代理未生效，请检查代理配置" = "The Wi-Fi proxy is not active. Check your proxy settings.";
+-"坐标已写入客户端" = "Coordinates written to the client";
+-"写入失败，请检查客户端模块是否生效" = "Write failed. Check that the client module is active.";
+ "已停止虚拟定位，请同时关闭 Wi-Fi 代理" = "Spoofing stopped. Remember to turn off the Wi-Fi proxy as well.";
+-"已清除客户端坐标" = "Client coordinates cleared";
+ "当前系统版本（%@）可能已禁用对定位服务的拦截，功能可能不生效。" = "The current system version (%@) may have blocked interception of location services, so this feature may not work.";
+ "设置" = "Settings";
+ "应用内代理" = "In-app proxy";
+-"第三方代理" = "Third-party proxy";
+-"客户端" = "Client";
+ "连接状态" = "Connection";
+-"自定义模块托管地址" = "Custom module host";
+-"重新检测连通性" = "Recheck connection";
+-"清除客户端坐标" = "Clear client coordinates";
+-"模块由第三方客户端执行拦截，本应用只负责写入坐标。" = "The third-party client performs the interception; this app only writes coordinates.";
+-"托管地址前缀" = "Host URL prefix";
+-"填写模块文件所在目录的地址前缀，不带文件名。" = "Enter the URL prefix of the directory holding the modules, without the file name.";
+-"模块托管地址" = "Module host";
+ "代理状态" = "Proxy status";
+ "当前网络" = "Current network";
+ "重新检测环境" = "Recheck environment";
+@@ -147,7 +107,6 @@
+ "重置证书后需要重新下载并在系统设置中再次信任。" = "After resetting, you must download the certificate again and re-trust it in system settings.";
+ "模拟精度" = "Simulated accuracy";
+ "运行改写引擎自检" = "Run rewrite engine self-check";
+-"精度与运动状态模拟都会写入客户端配置。" = "Accuracy and motion drift are both written to the client configuration.";
+ "精度直接影响系统对定位可信度的判断，通常 25 米较为自然。" = "Accuracy affects how the system judges location reliability. 25 m usually looks natural.";
+ "收藏位置" = "Favorites";
+ "已收藏" = "Saved to favorites";
+@@ -209,23 +168,16 @@
+ "代理" = "proxy";
+ "开启前请确认" = "Before you enable";
+ "如何彻底恢复真实位置" = "How to fully restore your real location";
+-"第三方模式说明" = "About third-party mode";
+ "关于证书信任" = "About certificate trust";
+ "开启后定位响应会被改写。部分应用有独立的定位缓存或校验策略，可能需要等待缓存刷新或重启目标应用。" = "Once enabled, location responses are rewritten. Some apps keep their own cache or validation, so you may need to wait for a refresh or restart the target app.";
+ "停止虚拟定位后，还需要关闭 Wi-Fi 的手动代理配置。如果系统仍显示旧位置，等待缓存刷新，必要时重启设备。" = "After stopping, also turn off the manual Wi-Fi proxy. If the old location still shows, wait for the cache to refresh or restart the device.";
+-"本应用只负责把坐标写给你的代理客户端，拦截与规则由客户端执行。应用关闭后客户端里的配置可能继续生效。" = "This app only writes coordinates to your proxy client; the client performs interception. Its configuration may keep working after this app is closed.";
+ "安装描述文件后，还需要在「设置 → 通用 → 关于本机 → 证书信任设置」中手动开启完全信任，否则拦截不会生效。" = "After installing the profile, you must also enable full trust under Settings → General → About → Certificate Trust Settings, or interception will not work.";
+ "无法生成本机证书" = "Could not generate the on-device certificate";
+ "无法启动本机证书服务" = "Could not start the on-device certificate service";
+ "无法启动本机代理服务" = "Could not start the on-device proxy service";
+ "证书内容编码失败" = "Failed to encode the certificate";
+ "写入钥匙串失败（状态码 %d）" = "Failed to write to the keychain (status %d)";
+-"无法构造查询地址" = "Could not build the query URL";
+-"无法构造保存地址" = "Could not build the save URL";
+-"客户端拒绝保存" = "The client rejected the save";
+ "位置 %d" = "Location %d";
+-"未检测到已安装的 %@" = "No installed %@ detected";
+-"运行模式" = "Runtime mode";
+ "欢迎使用 Floc" = "Welcome to Floc";
+ "在一张简洁的地图上，选择你的 iPhone 应出现的位置。" = "On a clean map, choose where your iPhone should appear to be.";
+ "选择任意地点" = "Choose any location";
+@@ -252,7 +204,6 @@
+ "标准" = "Standard";
+ "卫星" = "Satellite";
+ "混合" = "Hybrid";
+-"模块文件" = "Module file";
+ "实时位置" = "Current location";
+ "长按回到已选点" = "Long press to return to the selected point";
+ "已回到选点" = "Back to the selected point";
+@@ -352,9 +303,7 @@
+ "卡密按设备绑定，一台设备一张卡，换手机可在本页自助解绑 1 次。" = "Card keys are bound to a device — one per device. You can unbind once from this page when you switch phones.";
+ "好友连续使用 3 天，你就能获得天数奖励。" = "When a friend uses the app 3 days in a row, you earn bonus days.";
+ "购买与续费" = "Buy or renew";
+-"切换模式会停止当前代理并重新走一遍配置引导，已保存的收藏和证书不受影响。" = "Switching modes stops the current proxy and re-runs the setup guide. Saved favorites and certificates are kept.";
+ "自检只在本地跑一遍坐标转换与改写逻辑，不会改动当前生效的配置。" = "The self-check only runs coordinate conversion and rewriting locally; it does not touch the active configuration.";
+-"在客户端里导入模块后，本应用写入的坐标才会生效。" = "Coordinates written by this app only take effect after you import the module into your client.";
+ "调整后立即生效，只影响本应用，不会改动系统的显示设置。" = "Takes effect immediately and only affects this app; it does not change system display settings.";
+ "精度 %@ 米" = "%@ m accuracy";
+ "版本信息" = "Version info";
+@@ -401,18 +350,5 @@
+ "%ld 天" = "%ld d";
+ "%ld 小时" = "%ld h";
+ "公众号" = "Official account";
+-"实际拦截" = "Intercepting client";
+-"模块运行情况" = "Module status";
+-"最近一次" = "Last run";
+-"没有记录，响应改写规则一次都没跑到" = "No record — the response rewrite rule never ran";
+-"已改写 %d 个位置点" = "Rewrote %d location entries";
+-"已改写 %d 个位置点（原响应为 gzip，已解压）" = "Rewrote %d location entries (response was gzip, decompressed)";
+-"模块在运行，但还没有写入过坐标" = "Module is running but no coordinate has been written yet";
+-"模块收到的坐标无效" = "The module received an invalid coordinate";
+-"脚本拿不到响应体，请确认模块处于开启状态" = "The script got no response body; make sure the module is enabled";
+-"响应是 gzip 压缩，当前客户端没有提供解压能力" = "The response is gzip-compressed and the client offers no decompression";
+-"响应里没有找到定位数据，系统可能换了新的响应格式" = "No location data found in the response; iOS may use a new format now";
+-"改写过程出错：%@" = "Rewrite failed: %@";
+-"当前拦截定位请求的是 %@，与上面选择的 %@ 不一致。请确认手机上只开着一个代理客户端，并在它里面启用本模块。" = "Location requests are intercepted by %@, not the selected %@. Keep only one proxy client running and enable this module in it.";
+ "最后两下要自己点：设置 → 无线局域网 → 当前网络右侧 ⓘ → 配置代理 → 手动，服务器填 127.0.0.1、端口 8888。" = "Two taps are left to you: Settings → Wi-Fi → ⓘ next to the current network → Configure Proxy → Manual, server 127.0.0.1, port 8888.";
+ "这里会显示作者的邮箱与公众号。发布前请在 Shared/AppContact.swift 里补上，否则用户想购买时找不到入口。" = "The author's email and official account show here. Fill them in Shared/AppContact.swift before release, or buyers cannot reach you.";
+diff --git a/Resources/remote-config.json b/Resources/remote-config.json
+index 458a1e9..7d8cfb0 100644
+--- a/Resources/remote-config.json
++++ b/Resources/remote-config.json
+@@ -1,4 +1,6 @@
+ {
+-  "scriptVersion": "1.0.0",
+-  "moduleBaseURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules"
++  "blockedFromSystemVersion": null,
++  "announcement": null,
++  "announcementExpiresAt": null,
++  "_note": "应用启动时拉取本文件，用于「不发版也能改行为」。blockedFromSystemVersion 写 \"27.0\" 这样的版本号，命中时界面会给兼容性警示；announcement 挂一条公告，announcementExpiresAt 到期后自动不再展示。三项都可以留空。1.0.8 起只剩应用内代理，原来的 moduleBaseURL 与 scriptVersion 已随第三方模式一起删除。"
+ }
+diff --git a/Resources/zh-Hans.lproj/Localizable.strings b/Resources/zh-Hans.lproj/Localizable.strings
+index bc8f6f3..10b6cb8 100644
+--- a/Resources/zh-Hans.lproj/Localizable.strings
++++ b/Resources/zh-Hans.lproj/Localizable.strings
+@@ -24,16 +24,11 @@
+ "未知" = "未知";
+ "国际标准 (WGS-84)" = "国际标准 (WGS-84)";
+ "国内标准 (GCJ-02)" = "国内标准 (GCJ-02)";
+-"在设备内运行拦截代理，只覆盖当前 Wi-Fi，需要安装并信任证书。" = "在设备内运行拦截代理，只覆盖当前 Wi-Fi，需要安装并信任证书。";
+-"由你自己的代理客户端执行拦截，可覆盖蜂窝网络，无需安装本应用证书。" = "由你自己的代理客户端执行拦截，可覆盖蜂窝网络，无需安装本应用证书。";
+-"选择运行模式" = "选择运行模式";
+ "授予必要权限" = "授予必要权限";
+ "配置代理环境" = "配置代理环境";
+ "执行环境检测" = "执行环境检测";
+-"先确定拦截在哪里执行。这一步之后仍可随时切换。" = "先确定拦截在哪里执行。这一步之后仍可随时切换。";
+-"地图显示与 Wi-Fi 名称读取需要定位权限，本应用不会上传任何位置数据。" = "地图显示与 Wi-Fi 名称读取需要定位权限，本应用不会上传任何位置数据。";
++"在地图上显示真实位置需要定位权限，本应用不会上传任何位置数据。" = "在地图上显示真实位置需要定位权限，本应用不会上传任何位置数据。";
+ "需要安装本机证书，并把当前 Wi-Fi 的代理指向本机。" = "需要安装本机证书，并把当前 Wi-Fi 的代理指向本机。";
+-"需要在你的代理客户端中导入模块，并开启对应主机名的解密。" = "需要在你的代理客户端中导入模块，并开启对应主机名的解密。";
+ "运行完整检测，确认每个环节都通了再开始使用。" = "运行完整检测，确认每个环节都通了再开始使用。";
+ "上一步" = "上一步";
+ "下一步" = "下一步";
+@@ -62,19 +57,14 @@
+ "本应用不包含遥测，不上传位置数据。运行日志只保存在设备本地，自动保留最近 3 天，在提交问题报告时会自动对经纬度、令牌等信息做脱敏处理。" = "本应用不包含遥测，不上传位置数据。运行日志只保存在设备本地，自动保留最近 3 天，在提交问题报告时会自动对经纬度、令牌等信息做脱敏处理。";
+ "证书信任" = "证书信任";
+ "Wi-Fi 代理链路" = "Wi-Fi 代理链路";
+-"第三方模块连通" = "第三方模块连通";
+ "改写引擎自检" = "改写引擎自检";
+ "代理服务" = "代理服务";
+-"模块连接" = "模块连接";
+ "系统已信任本机根证书" = "系统已信任本机根证书";
+ "证书未安装或未开启完全信任" = "证书未安装或未开启完全信任";
+ "证书服务未启动" = "证书服务未启动";
+ "请先启动代理" = "请先启动代理";
+ "请求没有经过本机代理，请检查 Wi-Fi 代理配置" = "请求没有经过本机代理，请检查 Wi-Fi 代理配置";
+ "代理未启动" = "代理未启动";
+-"客户端已响应配置接口" = "客户端已响应配置接口";
+-"模块未生效，请确认已导入并开启解密" = "模块未生效，请确认已导入并开启解密";
+-"未完成检测" = "未完成检测";
+ "配置步骤" = "配置步骤";
+ "下载证书" = "下载证书";
+ "信任设置" = "信任设置";
+@@ -87,25 +77,7 @@
+ "当前 Wi-Fi「%@」" = "当前 Wi-Fi「%@」";
+ "在「设置 → 无线局域网 → %@ → 配置代理」中选择「手动」，服务器填 %@，端口填 %d。" = "在「设置 → 无线局域网 → %@ → 配置代理」中选择「手动」，服务器填 %@，端口填 %d。";
+ "回到本应用执行环境检测，两项都通过后即可开启虚拟定位。" = "回到本应用执行环境检测，两项都通过后即可开启虚拟定位。";
+-"不要同时开启应用内代理和第三方代理，两条链路会互相干扰。" = "不要同时开启应用内代理和第三方代理，两条链路会互相干扰。";
+-"选择你使用的客户端" = "选择你使用的客户端";
+-"已真机验证" = "已真机验证";
+-"待验证" = "待验证";
+-"已安装" = "已安装";
+-"未安装" = "未安装";
+-"复制模块订阅地址" = "复制模块订阅地址";
+-"打开客户端" = "打开客户端";
+ "打开 %@" = "打开 %@";
+-"复制下方的模块订阅地址。" = "复制下方的模块订阅地址。";
+-"在 %@ 中导入该地址对应的模块。" = "在 %@ 中导入该地址对应的模块。";
+-"确认模块已启用，并为定位相关主机名开启 HTTPS 解密。" = "确认模块已启用，并为定位相关主机名开启 HTTPS 解密。";
+-"回到本应用点击「重新检测」，状态变为「已连接」即可。" = "回到本应用点击「重新检测」，状态变为「已连接」即可。";
+-"注意：该客户端在当前版本下可能无法覆盖蜂窝网络。" = "注意：该客户端在当前版本下可能无法覆盖蜂窝网络。";
+-"未安装客户端" = "未安装客户端";
+-"模块未生效" = "模块未生效";
+-"已连接，未开启" = "已连接，未开启";
+-"已连接" = "已连接";
+-"配置失败" = "配置失败";
+ "搜索地点或地址" = "搜索地点或地址";
+ "没有找到匹配的地点" = "没有找到匹配的地点";
+ "搜索失败：%@" = "搜索失败：%@";
+@@ -121,23 +93,11 @@
+ "请先在地图上选择位置" = "请先在地图上选择位置";
+ "证书尚未被信任，定位不会生效" = "证书尚未被信任，定位不会生效";
+ "Wi-Fi 代理未生效，请检查代理配置" = "Wi-Fi 代理未生效，请检查代理配置";
+-"坐标已写入客户端" = "坐标已写入客户端";
+-"写入失败，请检查客户端模块是否生效" = "写入失败，请检查客户端模块是否生效";
+ "已停止虚拟定位，请同时关闭 Wi-Fi 代理" = "已停止虚拟定位，请同时关闭 Wi-Fi 代理";
+-"已清除客户端坐标" = "已清除客户端坐标";
+ "当前系统版本（%@）可能已禁用对定位服务的拦截，功能可能不生效。" = "当前系统版本（%@）可能已禁用对定位服务的拦截，功能可能不生效。";
+ "设置" = "设置";
+ "应用内代理" = "应用内代理";
+-"第三方代理" = "第三方代理";
+-"客户端" = "客户端";
+ "连接状态" = "连接状态";
+-"自定义模块托管地址" = "自定义模块托管地址";
+-"重新检测连通性" = "重新检测连通性";
+-"清除客户端坐标" = "清除客户端坐标";
+-"模块由第三方客户端执行拦截，本应用只负责写入坐标。" = "模块由第三方客户端执行拦截，本应用只负责写入坐标。";
+-"托管地址前缀" = "托管地址前缀";
+-"填写模块文件所在目录的地址前缀，不带文件名。" = "填写模块文件所在目录的地址前缀，不带文件名。";
+-"模块托管地址" = "模块托管地址";
+ "代理状态" = "代理状态";
+ "当前网络" = "当前网络";
+ "重新检测环境" = "重新检测环境";
+@@ -147,7 +107,6 @@
+ "重置证书后需要重新下载并在系统设置中再次信任。" = "重置证书后需要重新下载并在系统设置中再次信任。";
+ "模拟精度" = "模拟精度";
+ "运行改写引擎自检" = "运行改写引擎自检";
+-"精度与运动状态模拟都会写入客户端配置。" = "精度与运动状态模拟都会写入客户端配置。";
+ "精度直接影响系统对定位可信度的判断，通常 25 米较为自然。" = "精度直接影响系统对定位可信度的判断，通常 25 米较为自然。";
+ "收藏位置" = "收藏位置";
+ "已收藏" = "已收藏";
+@@ -209,23 +168,16 @@
+ "代理" = "代理";
+ "开启前请确认" = "开启前请确认";
+ "如何彻底恢复真实位置" = "如何彻底恢复真实位置";
+-"第三方模式说明" = "第三方模式说明";
+ "关于证书信任" = "关于证书信任";
+ "开启后定位响应会被改写。部分应用有独立的定位缓存或校验策略，可能需要等待缓存刷新或重启目标应用。" = "开启后定位响应会被改写。部分应用有独立的定位缓存或校验策略，可能需要等待缓存刷新或重启目标应用。";
+ "停止虚拟定位后，还需要关闭 Wi-Fi 的手动代理配置。如果系统仍显示旧位置，等待缓存刷新，必要时重启设备。" = "停止虚拟定位后，还需要关闭 Wi-Fi 的手动代理配置。如果系统仍显示旧位置，等待缓存刷新，必要时重启设备。";
+-"本应用只负责把坐标写给你的代理客户端，拦截与规则由客户端执行。应用关闭后客户端里的配置可能继续生效。" = "本应用只负责把坐标写给你的代理客户端，拦截与规则由客户端执行。应用关闭后客户端里的配置可能继续生效。";
+ "安装描述文件后，还需要在「设置 → 通用 → 关于本机 → 证书信任设置」中手动开启完全信任，否则拦截不会生效。" = "安装描述文件后，还需要在「设置 → 通用 → 关于本机 → 证书信任设置」中手动开启完全信任，否则拦截不会生效。";
+ "无法生成本机证书" = "无法生成本机证书";
+ "无法启动本机证书服务" = "无法启动本机证书服务";
+ "无法启动本机代理服务" = "无法启动本机代理服务";
+ "证书内容编码失败" = "证书内容编码失败";
+ "写入钥匙串失败（状态码 %d）" = "写入钥匙串失败（状态码 %d）";
+-"无法构造查询地址" = "无法构造查询地址";
+-"无法构造保存地址" = "无法构造保存地址";
+-"客户端拒绝保存" = "客户端拒绝保存";
+ "位置 %d" = "位置 %d";
+-"未检测到已安装的 %@" = "未检测到已安装的 %@";
+-"运行模式" = "运行模式";
+ "欢迎使用 Floc" = "欢迎使用 Floc";
+ "在一张简洁的地图上，选择你的 iPhone 应出现的位置。" = "在一张简洁的地图上，选择你的 iPhone 应出现的位置。";
+ "选择任意地点" = "选择任意地点";
+@@ -252,7 +204,6 @@
+ "标准" = "标准";
+ "卫星" = "卫星";
+ "混合" = "混合";
+-"模块文件" = "模块文件";
+ "实时位置" = "实时位置";
+ "长按回到已选点" = "长按回到已选点";
+ "已回到选点" = "已回到选点";
+@@ -352,9 +303,7 @@
+ "卡密按设备绑定，一台设备一张卡，换手机可在本页自助解绑 1 次。" = "卡密按设备绑定，一台设备一张卡，换手机可在本页自助解绑 1 次。";
+ "好友连续使用 3 天，你就能获得天数奖励。" = "好友连续使用 3 天，你就能获得天数奖励。";
+ "购买与续费" = "购买与续费";
+-"切换模式会停止当前代理并重新走一遍配置引导，已保存的收藏和证书不受影响。" = "切换模式会停止当前代理并重新走一遍配置引导，已保存的收藏和证书不受影响。";
+ "自检只在本地跑一遍坐标转换与改写逻辑，不会改动当前生效的配置。" = "自检只在本地跑一遍坐标转换与改写逻辑，不会改动当前生效的配置。";
+-"在客户端里导入模块后，本应用写入的坐标才会生效。" = "在客户端里导入模块后，本应用写入的坐标才会生效。";
+ "调整后立即生效，只影响本应用，不会改动系统的显示设置。" = "调整后立即生效，只影响本应用，不会改动系统的显示设置。";
+ "精度 %@ 米" = "精度 %@ 米";
+ "版本信息" = "版本信息";
+@@ -401,18 +350,5 @@
+ "%ld 天" = "%ld 天";
+ "%ld 小时" = "%ld 小时";
+ "公众号" = "公众号";
+-"实际拦截" = "实际拦截";
+-"模块运行情况" = "模块运行情况";
+-"最近一次" = "最近一次";
+-"没有记录，响应改写规则一次都没跑到" = "没有记录，响应改写规则一次都没跑到";
+-"已改写 %d 个位置点" = "已改写 %d 个位置点";
+-"已改写 %d 个位置点（原响应为 gzip，已解压）" = "已改写 %d 个位置点（原响应为 gzip，已解压）";
+-"模块在运行，但还没有写入过坐标" = "模块在运行，但还没有写入过坐标";
+-"模块收到的坐标无效" = "模块收到的坐标无效";
+-"脚本拿不到响应体，请确认模块处于开启状态" = "脚本拿不到响应体，请确认模块处于开启状态";
+-"响应是 gzip 压缩，当前客户端没有提供解压能力" = "响应是 gzip 压缩，当前客户端没有提供解压能力";
+-"响应里没有找到定位数据，系统可能换了新的响应格式" = "响应里没有找到定位数据，系统可能换了新的响应格式";
+-"改写过程出错：%@" = "改写过程出错：%@";
+-"当前拦截定位请求的是 %@，与上面选择的 %@ 不一致。请确认手机上只开着一个代理客户端，并在它里面启用本模块。" = "当前拦截定位请求的是 %@，与上面选择的 %@ 不一致。请确认手机上只开着一个代理客户端，并在它里面启用本模块。";
+ "最后两下要自己点：设置 → 无线局域网 → 当前网络右侧 ⓘ → 配置代理 → 手动，服务器填 127.0.0.1、端口 8888。" = "最后两下要自己点：设置 → 无线局域网 → 当前网络右侧 ⓘ → 配置代理 → 手动，服务器填 127.0.0.1、端口 8888。";
+ "这里会显示作者的邮箱与公众号。发布前请在 Shared/AppContact.swift 里补上，否则用户想购买时找不到入口。" = "这里会显示作者的邮箱与公众号。发布前请在 Shared/AppContact.swift 里补上，否则用户想购买时找不到入口。";
+diff --git a/Resources/zh-Hant.lproj/Localizable.strings b/Resources/zh-Hant.lproj/Localizable.strings
+index 9a139b6..58de7d7 100644
+--- a/Resources/zh-Hant.lproj/Localizable.strings
++++ b/Resources/zh-Hant.lproj/Localizable.strings
+@@ -24,16 +24,11 @@
+ "未知" = "未知";
+ "国际标准 (WGS-84)" = "国际標准 (WGS-84)";
+ "国内标准 (GCJ-02)" = "国內標准 (GCJ-02)";
+-"在设备内运行拦截代理，只覆盖当前 Wi-Fi，需要安装并信任证书。" = "在設備內運行攔截代理，只覆蓋當前 Wi-Fi，需要安裝並信任證書。";
+-"由你自己的代理客户端执行拦截，可覆盖蜂窝网络，无需安装本应用证书。" = "由你自己的代理客戶端執行攔截，可覆蓋蜂窩網絡，無需安裝本應用證書。";
+-"选择运行模式" = "選擇運行模式";
+ "授予必要权限" = "授予必要權限";
+ "配置代理环境" = "配置代理環境";
+ "执行环境检测" = "執行環境檢測";
+-"先确定拦截在哪里执行。这一步之后仍可随时切换。" = "先確定攔截在哪裡執行。這一步之後仍可隨時切換。";
+-"地图显示与 Wi-Fi 名称读取需要定位权限，本应用不会上传任何位置数据。" = "地圖顯示與 Wi-Fi 名稱讀取需要定位權限，本應用不會上傳任何位置數據。";
++"在地图上显示真实位置需要定位权限，本应用不会上传任何位置数据。" = "在地圖上顯示真實位置需要定位權限，本應用不會上傳任何位置資料。";
+ "需要安装本机证书，并把当前 Wi-Fi 的代理指向本机。" = "需要安裝本機證書，並把當前 Wi-Fi 的代理指向本機。";
+-"需要在你的代理客户端中导入模块，并开启对应主机名的解密。" = "需要在你的代理客戶端中導入模塊，並開啟對應主機名的解密。";
+ "运行完整检测，确认每个环节都通了再开始使用。" = "運行完整檢測，確認每個環節都通了再開始使用。";
+ "上一步" = "上一步";
+ "下一步" = "下一步";
+@@ -62,19 +57,14 @@
+ "本应用不包含遥测，不上传位置数据。运行日志只保存在设备本地，自动保留最近 3 天，在提交问题报告时会自动对经纬度、令牌等信息做脱敏处理。" = "本應用不包含遥測，不上傳位置數據。運行日誌只保存在設備本地，自動保留最近 3 天，在提交問題報告時會自動對經纬度、令牌等信息做脫敏處理。";
+ "证书信任" = "證書信任";
+ "Wi-Fi 代理链路" = "Wi-Fi 代理鏈路";
+-"第三方模块连通" = "第三方模塊連通";
+ "改写引擎自检" = "改寫導擎自檢";
+ "代理服务" = "代理服務";
+-"模块连接" = "模塊連接";
+ "系统已信任本机根证书" = "係統已信任本機根證書";
+ "证书未安装或未开启完全信任" = "證書未安裝或未開啟完全信任";
+ "证书服务未启动" = "證書服務未啟動";
+ "请先启动代理" = "請先啟動代理";
+ "请求没有经过本机代理，请检查 Wi-Fi 代理配置" = "請求沒有經過本機代理，請檢查 Wi-Fi 代理配置";
+ "代理未启动" = "代理未啟動";
+-"客户端已响应配置接口" = "客戶端已響應配置接口";
+-"模块未生效，请确认已导入并开启解密" = "模塊未生效，請確認已導入並開啟解密";
+-"未完成检测" = "未完成檢測";
+ "配置步骤" = "配置步骤";
+ "下载证书" = "下载證書";
+ "信任设置" = "信任設置";
+@@ -87,25 +77,7 @@
+ "当前 Wi-Fi「%@」" = "當前 Wi-Fi「%@」";
+ "在「设置 → 无线局域网 → %@ → 配置代理」中选择「手动」，服务器填 %@，端口填 %d。" = "在「設置 → 無线局域網 → %@ → 配置代理」中選擇「手動」，服務器填 %@，端口填 %d。";
+ "回到本应用执行环境检测，两项都通过后即可开启虚拟定位。" = "回到本應用執行環境檢測，兩項都通過後即可開啟虛擬定位。";
+-"不要同时开启应用内代理和第三方代理，两条链路会互相干扰。" = "不要同時開啟應用內代理和第三方代理，兩條鏈路會互相干扰。";
+-"选择你使用的客户端" = "選擇你使用的客戶端";
+-"已真机验证" = "已真機驗證";
+-"待验证" = "待驗證";
+-"已安装" = "已安裝";
+-"未安装" = "未安裝";
+-"复制模块订阅地址" = "復製模塊订阅地址";
+-"打开客户端" = "打開客戶端";
+ "打开 %@" = "打開 %@";
+-"复制下方的模块订阅地址。" = "復製下方的模塊订阅地址。";
+-"在 %@ 中导入该地址对应的模块。" = "在 %@ 中導入該地址對應的模塊。";
+-"确认模块已启用，并为定位相关主机名开启 HTTPS 解密。" = "確認模塊已啟用，並为定位相關主機名開啟 HTTPS 解密。";
+-"回到本应用点击「重新检测」，状态变为「已连接」即可。" = "回到本應用點擊「重新檢測」，狀態变为「已連接」即可。";
+-"注意：该客户端在当前版本下可能无法覆盖蜂窝网络。" = "注意：該客戶端在當前版本下可能無法覆蓋蜂窩網絡。";
+-"未安装客户端" = "未安裝客戶端";
+-"模块未生效" = "模塊未生效";
+-"已连接，未开启" = "已連接，未開啟";
+-"已连接" = "已連接";
+-"配置失败" = "配置失敗";
+ "搜索地点或地址" = "搜索地點或地址";
+ "没有找到匹配的地点" = "沒有找到匹配的地點";
+ "搜索失败：%@" = "搜索失敗：%@";
+@@ -121,23 +93,11 @@
+ "请先在地图上选择位置" = "請先在地圖上選擇位置";
+ "证书尚未被信任，定位不会生效" = "證書尚未被信任，定位不會生效";
+ "Wi-Fi 代理未生效，请检查代理配置" = "Wi-Fi 代理未生效，請檢查代理配置";
+-"坐标已写入客户端" = "坐標已寫入客戶端";
+-"写入失败，请检查客户端模块是否生效" = "寫入失敗，請檢查客戶端模塊是否生效";
+ "已停止虚拟定位，请同时关闭 Wi-Fi 代理" = "已停止虛擬定位，請同時關閉 Wi-Fi 代理";
+-"已清除客户端坐标" = "已清除客戶端坐標";
+ "当前系统版本（%@）可能已禁用对定位服务的拦截，功能可能不生效。" = "當前係統版本（%@）可能已禁用對定位服務的攔截，功能可能不生效。";
+ "设置" = "設置";
+ "应用内代理" = "應用內代理";
+-"第三方代理" = "第三方代理";
+-"客户端" = "客戶端";
+ "连接状态" = "連接狀態";
+-"自定义模块托管地址" = "自定义模塊託管地址";
+-"重新检测连通性" = "重新檢測連通性";
+-"清除客户端坐标" = "清除客戶端坐標";
+-"模块由第三方客户端执行拦截，本应用只负责写入坐标。" = "模塊由第三方客戶端執行攔截，本應用只負責寫入坐標。";
+-"托管地址前缀" = "託管地址前缀";
+-"填写模块文件所在目录的地址前缀，不带文件名。" = "填寫模塊文件所在目录的地址前缀，不帶文件名。";
+-"模块托管地址" = "模塊託管地址";
+ "代理状态" = "代理狀態";
+ "当前网络" = "當前網絡";
+ "重新检测环境" = "重新檢測環境";
+@@ -147,7 +107,6 @@
+ "重置证书后需要重新下载并在系统设置中再次信任。" = "重置證書後需要重新下载並在係統設置中再次信任。";
+ "模拟精度" = "模擬精度";
+ "运行改写引擎自检" = "運行改寫導擎自檢";
+-"精度与运动状态模拟都会写入客户端配置。" = "精度與運動狀態模擬都會寫入客戶端配置。";
+ "精度直接影响系统对定位可信度的判断，通常 25 米较为自然。" = "精度直接影響係統對定位可信度的判斷，通常 25 米較为自然。";
+ "收藏位置" = "收藏位置";
+ "已收藏" = "已收藏";
+@@ -209,23 +168,16 @@
+ "代理" = "代理";
+ "开启前请确认" = "開啟前請確認";
+ "如何彻底恢复真实位置" = "如何徹底恢復真實位置";
+-"第三方模式说明" = "第三方模式說明";
+ "关于证书信任" = "關於證書信任";
+ "开启后定位响应会被改写。部分应用有独立的定位缓存或校验策略，可能需要等待缓存刷新或重启目标应用。" = "開啟後定位響應會被改寫。部分應用有獨立的定位緩存或校驗策略，可能需要等待緩存刷新或重啟目標應用。";
+ "停止虚拟定位后，还需要关闭 Wi-Fi 的手动代理配置。如果系统仍显示旧位置，等待缓存刷新，必要时重启设备。" = "停止虛擬定位後，還需要關閉 Wi-Fi 的手動代理配置。如果係統仍顯示舊位置，等待緩存刷新，必要時重啟設備。";
+-"本应用只负责把坐标写给你的代理客户端，拦截与规则由客户端执行。应用关闭后客户端里的配置可能继续生效。" = "本應用只負責把坐標寫给你的代理客戶端，攔截與規則由客戶端執行。應用關閉後客戶端裡的配置可能繼續生效。";
+ "安装描述文件后，还需要在「设置 → 通用 → 关于本机 → 证书信任设置」中手动开启完全信任，否则拦截不会生效。" = "安裝描述文件後，還需要在「設置 → 通用 → 關於本機 → 證書信任設置」中手動開啟完全信任，否則攔截不會生效。";
+ "无法生成本机证书" = "無法生成本機證書";
+ "无法启动本机证书服务" = "無法啟動本機證書服務";
+ "无法启动本机代理服务" = "無法啟動本機代理服務";
+ "证书内容编码失败" = "證書內容編碼失敗";
+ "写入钥匙串失败（状态码 %d）" = "寫入鑰匙串失敗（狀態碼 %d）";
+-"无法构造查询地址" = "無法構造查詢地址";
+-"无法构造保存地址" = "無法構造保存地址";
+-"客户端拒绝保存" = "客戶端拒絕保存";
+ "位置 %d" = "位置 %d";
+-"未检测到已安装的 %@" = "未檢測到已安裝的 %@";
+-"运行模式" = "運行模式";
+ "欢迎使用 Floc" = "歡迎使用 Floc";
+ "在一张简洁的地图上，选择你的 iPhone 应出现的位置。" = "在一張簡潔的地圖上，選擇你的 iPhone 應出現的位置。";
+ "选择任意地点" = "選擇任意地點";
+@@ -252,7 +204,6 @@
+ "标准" = "標準";
+ "卫星" = "衛星";
+ "混合" = "混合";
+-"模块文件" = "模組檔案";
+ "实时位置" = "實時位置";
+ "长按回到已选点" = "長按回到已選點";
+ "已回到选点" = "已回到選點";
+@@ -349,9 +300,7 @@
+ "卡密按设备绑定，一台设备一张卡，换手机可在本页自助解绑 1 次。" = "卡密按裝置綁定，一台裝置一張卡，換手機可在本頁自助解綁 1 次。";
+ "好友连续使用 3 天，你就能获得天数奖励。" = "好友連續使用 3 天，你就能獲得天數獎勵。";
+ "购买与续费" = "購買與續約";
+-"切换模式会停止当前代理并重新走一遍配置引导，已保存的收藏和证书不受影响。" = "切換模式會停止目前代理並重新走一遍設定引導，已儲存的收藏和憑證不受影響。";
+ "自检只在本地跑一遍坐标转换与改写逻辑，不会改动当前生效的配置。" = "自檢只在本機跑一遍座標轉換與改寫邏輯，不會改動目前生效的設定。";
+-"在客户端里导入模块后，本应用写入的坐标才会生效。" = "在客戶端裡匯入模組後，本應用寫入的座標才會生效。";
+ "调整后立即生效，只影响本应用，不会改动系统的显示设置。" = "調整後立即生效，只影響本應用，不會改動系統的顯示設定。";
+ "精度 %@ 米" = "精度 %@ 公尺";
+ "版本信息" = "版本資訊";
+@@ -401,18 +350,5 @@
+ "%ld 天" = "%ld 天";
+ "%ld 小时" = "%ld 小時";
+ "公众号" = "公眾號";
+-"实际拦截" = "實際攔截";
+-"模块运行情况" = "模組運行情況";
+-"最近一次" = "最近一次";
+-"没有记录，响应改写规则一次都没跑到" = "沒有記錄，回應改寫規則一次都沒跑到";
+-"已改写 %d 个位置点" = "已改寫 %d 個位置點";
+-"已改写 %d 个位置点（原响应为 gzip，已解压）" = "已改寫 %d 個位置點（原回應為 gzip，已解壓）";
+-"模块在运行，但还没有写入过坐标" = "模組在運行，但還沒有寫入過座標";
+-"模块收到的坐标无效" = "模組收到的座標無效";
+-"脚本拿不到响应体，请确认模块处于开启状态" = "腳本拿不到回應主體，請確認模組處於開啟狀態";
+-"响应是 gzip 压缩，当前客户端没有提供解压能力" = "回應是 gzip 壓縮，目前用戶端沒有提供解壓能力";
+-"响应里没有找到定位数据，系统可能换了新的响应格式" = "回應裡沒有找到定位資料，系統可能換了新的回應格式";
+-"改写过程出错：%@" = "改寫過程出錯：%@";
+-"当前拦截定位请求的是 %@，与上面选择的 %@ 不一致。请确认手机上只开着一个代理客户端，并在它里面启用本模块。" = "目前攔截定位請求的是 %@，與上面選擇的 %@ 不一致。請確認手機上只開著一個代理用戶端，並在它裡面啟用本模組。";
+ "最后两下要自己点：设置 → 无线局域网 → 当前网络右侧 ⓘ → 配置代理 → 手动，服务器填 127.0.0.1、端口 8888。" = "最後兩下要自己點：設定 → 無線區域網路 → 目前網路右側 ⓘ → 設定代理 → 手動，伺服器填 127.0.0.1、連接埠 8888。";
+ "这里会显示作者的邮箱与公众号。发布前请在 Shared/AppContact.swift 里补上，否则用户想购买时找不到入口。" = "這裡會顯示作者的電子郵件與公眾號。發布前請在 Shared/AppContact.swift 裡補上，否則使用者想購買時找不到入口。";
+diff --git a/Shared/AppRemoteConfiguration.swift b/Shared/AppRemoteConfiguration.swift
+index d5bf61b..bda859b 100644
+--- a/Shared/AppRemoteConfiguration.swift
++++ b/Shared/AppRemoteConfiguration.swift
+@@ -12,16 +12,12 @@ final class AppRemoteConfigurationStore: ObservableObject {
+     static let shared = AppRemoteConfigurationStore()
+ 
+     struct Configuration: Codable {
+-        /// 脚本应该使用的版本号，用于让客户端刷新缓存。
+-        var scriptVersion: String?
+         /// 当前已知失效的最低系统版本，例如 "27.0"。命中时界面给出警示。
+         var blockedFromSystemVersion: String?
+         /// 给用户看的公告文本。
+         var announcement: String?
+         /// 公告的有效期，过期后不再展示。
+         var announcementExpiresAt: Date?
+-        /// 建议的脚本托管地址前缀。
+-        var moduleBaseURL: String?
+ 
+         var isAnnouncementVisible: Bool {
+             guard let text = announcement, !text.isEmpty else { return false }
+diff --git a/Shared/ProxyRuntimeMode.swift b/Shared/ProxyRuntimeMode.swift
+index c4c645f..951234d 100644
+--- a/Shared/ProxyRuntimeMode.swift
++++ b/Shared/ProxyRuntimeMode.swift
+@@ -2,45 +2,35 @@ import Foundation
+ 
+ /// 运行模式。
+ ///
+-/// 两种模式的差别是本质性的，不是「高级 / 简单」的关系：
+-///   - localProxy：拦截工作在设备内的 Go 代理里完成，覆盖范围限于当前 Wi-Fi，
+-///     App 关闭后即失效。需要装 CA。
+-///   - thirdParty：拦截工作交给用户自己的代理客户端（Shadowrocket 等），
+-///     覆盖范围取决于客户端（可以走蜂窝网络），App 只负责把坐标写过去。
+-enum ProxyRuntimeMode: String, CaseIterable, Codable, Identifiable {
++/// 拦截工作在设备内的 Go 代理里完成，覆盖范围限于当前 Wi-Fi，
++/// App 关闭后即失效；需要把 CA 装进系统并开启完全信任。
++///
++/// **1.0.8 起只剩这一档。** 原来还有 `thirdParty`：把坐标写进
++/// Shadowrocket / Surge 等客户端，由客户端执行拦截。它被移除是因为那套
++/// 链路有两个绕不过去的毛病：
++///
++///   1. **拉不到就是静默失效。** 模块文件与两个 `.js` 都由手机上的客户端
++///      运行时去远端拉，拉不到时模块开关看着还是开的、也不会报错，
++///      表现只是「过一会自己恢复真实位置」，排查成本极高。
++///   2. **同一套改写逻辑维护两份。** 一份 Go（`Core/wloc.go`）一份 JS
++///      （`ThirdParty/ProxyScripts/wloc.js`），改一边忘一边就是
++///      「某个客户端能用、某个不能」。现在只有 Go 那一份。
++///
++/// 枚举本身保留而不是删干净，是为了让老用户的偏好数据有个去处：
++/// 本机存着 `proxyRuntimeMode = thirdParty` 的机器升级上来，
++/// 迁移逻辑会把这一档收敛到 `.localProxy`，不必清数据。
++///
++/// 只剩一个取值之后，原来那套给模式选择界面用的 `displayName` / `summary` /
++/// `systemImage` 已经没有调用方，一并删掉——界面上「应用内代理」这个词在
++/// 引导页与设置页各自有自己的常量，不从这里取。
++enum ProxyRuntimeMode: String {
+     case localProxy
+-    case thirdParty
+-
+-    var id: String { rawValue }
+-
+-    var displayName: String {
+-        switch self {
+-        case .localProxy: return AppLocalization.string("应用内代理")
+-        case .thirdParty: return AppLocalization.string("第三方代理")
+-        }
+-    }
+-
+-    var summary: String {
+-        switch self {
+-        case .localProxy:
+-            return AppLocalization.string("在设备内运行拦截代理，只覆盖当前 Wi-Fi，需要安装并信任证书。")
+-        case .thirdParty:
+-            return AppLocalization.string("由你自己的代理客户端执行拦截，可覆盖蜂窝网络，无需安装本应用证书。")
+-        }
+-    }
+-
+-    var systemImage: String {
+-        switch self {
+-        case .localProxy: return "wifi.router"
+-        case .thirdParty: return "shield.lefthalf.filled"
+-        }
+-    }
+ }
+ 
+-/// 运行模式的选择与初始化状态。
++/// 运行模式的初始化状态。
+ ///
+-/// 「初始化状态」是按模式分别记录的：用户可能先用了应用内代理完成配置，
+-/// 后来换成第三方代理，此时两种模式的引导进度应当各自保留。
++/// 只回答一个问题：**这台设备上的代理环境配好了没有**。
++/// 答案决定应用是停在引导流程里，还是直接进主界面。
+ @MainActor
+ final class RuntimeModeStore: ObservableObject {
+ 
+@@ -48,17 +38,19 @@ final class RuntimeModeStore: ObservableObject {
+ 
+     private enum Key {
+         static let mode = "proxyRuntimeMode"
++        /// 老版本（有两档模式时）记录「是否已经选过模式」。
++        /// 现在没有可选的模式了，不再读写；这里只留下一处说明，
++        /// 免得后来人看到偏好里这个键以为它还有用。
+         static let hasSelected = "hasSelectedRuntimeMode"
+         static let localProxyInitialized = "localProxyInitialized"
+-        static let thirdPartyInitialized = "thirdPartyInitialized"
+         static let legacyMigrationDone = "runtimeModeMigrationCompleted"
+         static let legacySetupCompleted = "setupCompleted"
+     }
+ 
+-    @Published private(set) var mode: ProxyRuntimeMode
+-    @Published private(set) var hasSelectedMode: Bool
+-    @Published private(set) var localProxyInitialized: Bool
+-    @Published private(set) var thirdPartyInitialized: Bool
++    /// 唯一的运行模式，不再是可变状态。
++    let mode: ProxyRuntimeMode = .localProxy
++
++    @Published private(set) var isInitialized: Bool
+ 
+     private let defaults: UserDefaults
+     private let legacyDefaults: UserDefaults
+@@ -69,65 +61,47 @@ final class RuntimeModeStore: ObservableObject {
+     ) {
+         self.defaults = defaults
+         self.legacyDefaults = legacyDefaults
+-        self.mode = defaults.string(forKey: Key.mode)
+-            .flatMap(ProxyRuntimeMode.init(rawValue:)) ?? .localProxy
+-        self.hasSelectedMode = defaults.bool(forKey: Key.hasSelected)
+-        self.localProxyInitialized = defaults.bool(forKey: Key.localProxyInitialized)
+-        self.thirdPartyInitialized = defaults.bool(forKey: Key.thirdPartyInitialized)
+-        migrateLegacyStateIfNeeded()
++        self.isInitialized = defaults.bool(forKey: Key.localProxyInitialized)
++        normalizeStoredMode()
+     }
+ 
+-    func select(_ mode: ProxyRuntimeMode) {
+-        let changed = self.mode != mode
+-        self.mode = mode
+-        hasSelectedMode = true
+-        defaults.set(mode.rawValue, forKey: Key.mode)
+-        defaults.set(true, forKey: Key.hasSelected)
+-        migrateLegacyStateIfNeeded()
+-
+-        if changed {
+-            RuntimeLogger.info("APP", "Mode", "运行模式已切换", details: [
+-                "mode": mode.displayName,
+-            ])
++    /// 把偏好里存的模式字符串归一到唯一档位。
++    ///
++    /// 老机器上这里存着 `thirdParty`。它已经不是一个合法的取值了，
++    /// 留在里面只会让「读不出来」这件事在下次改动时再咬人一口。
++    ///
++    /// **刻意不动 `localProxyInitialized`**：从第三方模式切过来的用户，
++    /// 本机的证书和 Wi-Fi 代理从来没配过，直接当他「已经配好」会让应用
++    /// 一路绿灯而定位纹丝不动。让他重走一遍引导（也就三步）才是对的；
++    /// 而本来就用过应用内代理的用户，这个标记本来就是 true，不会被重复引导。
++    private func normalizeStoredMode() {
++        let stored = defaults.string(forKey: Key.mode)
++        if stored != ProxyRuntimeMode.localProxy.rawValue {
++            defaults.set(ProxyRuntimeMode.localProxy.rawValue, forKey: Key.mode)
+         }
++        migrateLegacyStateIfNeeded()
+     }
+ 
+-    func isInitialized(_ mode: ProxyRuntimeMode) -> Bool {
+-        switch mode {
+-        case .localProxy: return localProxyInitialized
+-        case .thirdParty: return thirdPartyInitialized
++    /// 更早的版本只用一个 `setupCompleted` 布尔值记录引导状态，
++    /// 且那时只有应用内代理这一种链路。这里把它迁移过来，
++    /// 避免老用户升级后被重新引导一遍。
++    private func migrateLegacyStateIfNeeded() {
++        guard !defaults.bool(forKey: Key.legacyMigrationDone) else { return }
++        if legacyDefaults.bool(forKey: Key.legacySetupCompleted) {
++            isInitialized = true
++            defaults.set(true, forKey: Key.localProxyInitialized)
++            RuntimeLogger.info("APP", "Mode", "已迁移旧版引导状态")
+         }
++        defaults.set(true, forKey: Key.legacyMigrationDone)
+     }
+ 
+-    func markInitialized(_ mode: ProxyRuntimeMode) {
+-        setInitialized(true, for: mode)
+-    }
+-
+-    func resetInitialization(_ mode: ProxyRuntimeMode) {
+-        setInitialized(false, for: mode)
+-    }
+-
+-    private func setInitialized(_ value: Bool, for mode: ProxyRuntimeMode) {
+-        switch mode {
+-        case .localProxy:
+-            localProxyInitialized = value
+-            defaults.set(value, forKey: Key.localProxyInitialized)
+-        case .thirdParty:
+-            thirdPartyInitialized = value
+-            defaults.set(value, forKey: Key.thirdPartyInitialized)
+-        }
++    func markInitialized() {
++        isInitialized = true
++        defaults.set(true, forKey: Key.localProxyInitialized)
+     }
+ 
+-    /// 老版本只用一个 `setupCompleted` 布尔值记录引导状态。
+-    /// 这里把它迁移到当前所选模式上，避免老用户升级后被重新引导一遍。
+-    private func migrateLegacyStateIfNeeded() {
+-        guard hasSelectedMode, !defaults.bool(forKey: Key.legacyMigrationDone) else { return }
+-        if legacyDefaults.bool(forKey: Key.legacySetupCompleted) {
+-            setInitialized(true, for: mode)
+-            RuntimeLogger.info("APP", "Mode", "已迁移旧版引导状态", details: [
+-                "mode": mode.displayName,
+-            ])
+-        }
+-        defaults.set(true, forKey: Key.legacyMigrationDone)
++    func resetInitialization() {
++        isInitialized = false
++        defaults.set(false, forKey: Key.localProxyInitialized)
+     }
+ }
+diff --git a/Shared/ThirdPartyProxyClient.swift b/Shared/ThirdPartyProxyClient.swift
+deleted file mode 100644
+index 2cb51db..0000000
+--- a/Shared/ThirdPartyProxyClient.swift
++++ /dev/null
+@@ -1,221 +0,0 @@
+-import UIKit
+-import Foundation
+-
+-/// 支持的第三方代理客户端。
+-///
+-/// 每种客户端需要不同的模块文件扩展名与订阅 URL 后缀，能力也有差异
+-/// （主要在于是不是支持蜂窝网络、是否长期保持配置）。
+-enum ThirdPartyProxyClient: String, CaseIterable, Codable, Identifiable {
+-    case shadowrocket
+-    case surge
+-    case quantumultX
+-    case loon
+-    case stash
+-    case egern
+-
+-    var id: String { rawValue }
+-
+-    var displayName: String {
+-        switch self {
+-        case .shadowrocket: return "Shadowrocket"
+-        case .surge: return "Surge"
+-        case .quantumultX: return "Quantumult X"
+-        case .loon: return "Loon"
+-        case .stash: return "Stash"
+-        case .egern: return "Egern"
+-        }
+-    }
+-
+-    /// 模块文件的扩展名。
+-    var moduleFileExtension: String {
+-        switch self {
+-        case .shadowrocket: return "module"
+-        case .surge, .egern: return "sgmodule"
+-        case .quantumultX: return "conf"
+-        case .loon: return "lpx"
+-        case .stash: return "stoverride"
+-        }
+-    }
+-
+-    /// 唤起客户端的 URL scheme。
+-    var urlScheme: String {
+-        switch self {
+-        case .shadowrocket: return "shadowrocket"
+-        case .surge: return "surge"
+-        case .quantumultX: return "quantumult-x"
+-        case .loon: return "loon"
+-        case .stash: return "stash"
+-        case .egern: return "egern"
+-        }
+-    }
+-
+-    /// 是否支持蜂窝网络下的拦截。
+-    var supportsCellular: Bool {
+-        // Shadowrocket / Surge / Quantumult X / Loon / Stash 均可基于 VPN 接管全部流量。
+-        // 这里保守地按「客户端自身能力」区分，实际仍以用户配置为准。
+-        switch self {
+-        case .shadowrocket, .surge, .quantumultX, .loon, .stash, .egern: return true
+-        }
+-    }
+-
+-    /// 当前支持的稳定程度。
+-    enum SupportLevel: String {
+-        case verified
+-        case experimental
+-
+-        var displayName: String {
+-            switch self {
+-            case .verified: return AppLocalization.string("已真机验证")
+-            case .experimental: return AppLocalization.string("待验证")
+-            }
+-        }
+-    }
+-
+-    var supportLevel: SupportLevel {
+-        switch self {
+-        case .shadowrocket: return .verified
+-        case .surge, .quantumultX, .loon, .stash, .egern: return .experimental
+-        }
+-    }
+-
+-    /// 该客户端是否安装在本机。
+-    var isInstalled: Bool {
+-        guard let url = URL(string: "\(urlScheme)://") else { return false }
+-        return UIApplication.shared.canOpenURL(url)
+-    }
+-
+-    /// 尝试唤起客户端。
+-    @discardableResult
+-    func open() -> Bool {
+-        guard let url = URL(string: "\(urlScheme)://") else { return false }
+-        guard UIApplication.shared.canOpenURL(url) else { return false }
+-        UIApplication.shared.open(url)
+-        return true
+-    }
+-}
+-
+-// MARK: - 配置接口协议
+-
+-/// 本应用与第三方代理客户端之间的配置接口。
+-///
+-/// 这是整个第三方模式的契约：App 只负责发请求，客户端负责拦截并落盘坐标。
+-/// 双方约定的路径与参数如下（客户端必须在设备本地拦截，请求不会真的出网）。
+-enum ThirdPartyProxyProtocol {
+-
+-    /// 配置接口地址。
+-    static let settingsPath = "/wloc-settings/save"
+-
+-    /// 需要被客户端拦截的主机。
+-    ///
+-    /// 前两台是 Apple 的全球 / 国内定位入口；中间一批 `gsp*` / `gspe*` 是
+-    /// 新版本系统把定位查询分散过去的备用入口，只拦前两台的话在 iOS 26+
+-    /// 上会出现「模块装了却没反应」；最后两台是 Apple 地图在国内使用的
+-    /// 蓝点定位（高德）端点。
+-    ///
+-    /// 与 `Core/proxy.go` 的 `locationHosts` 必须保持一致——两边对不上，
+-    /// 用户切换运行模式后拦截范围就会静默变窄。
+-    static let interceptedHosts = [
+-        "gs-loc.apple.com",
+-        "gs-loc-cn.apple.com",
+-        "gsp-ssl.ls.apple.com",
+-        "gsp10-ssl.ls.apple.com",
+-        "gsp10-ssl.apple.com",
+-        "gsp64-ssl.ls.apple.com",
+-        "gspe1-ssl.ls.apple.com",
+-        "gspe19-ssl.ls.apple.com",
+-        "gspe19-2-ssl.ls.apple.com",
+-        "gspe35-ssl.ls.apple.com",
+-        "gspe79-ssl.ls.apple.com",
+-        "gspe85-ssl.ls.apple.com",
+-        "bluedot.is.autonavi.com",
+-        "bluedot.is.autonavi.com.gds.alibabadns.com",
+-    ]
+-
+-    /// 查询动作：检查客户端是否已装好模块，并读回当前保存的坐标。
+-    enum Action: String {
+-        case query
+-        case clear
+-    }
+-
+-    /// 构造配置接口 URL。坐标一律使用 WGS-84。
+-    ///
+-    /// `drift` 是运动状态模拟的原地抖动半径（米），0 或 nil 表示关闭。
+-    static func url(
+-        action: Action? = nil,
+-        wgs84Latitude: Double? = nil,
+-        wgs84Longitude: Double? = nil,
+-        accuracy: Int? = nil,
+-        driftRadius: Int? = nil
+-    ) -> URL? {
+-        var components = URLComponents()
+-        components.scheme = "https"
+-        components.host = "gs-loc.apple.com"
+-        components.path = settingsPath
+-
+-        var items: [URLQueryItem] = []
+-        if let action {
+-            items.append(URLQueryItem(name: "action", value: action.rawValue))
+-        }
+-        if let wgs84Longitude {
+-            items.append(URLQueryItem(name: "lon", value: String(format: "%.6f", wgs84Longitude)))
+-        }
+-        if let wgs84Latitude {
+-            items.append(URLQueryItem(name: "lat", value: String(format: "%.6f", wgs84Latitude)))
+-        }
+-        if let accuracy {
+-            items.append(URLQueryItem(name: "acc", value: String(accuracy)))
+-        }
+-        if let driftRadius {
+-            items.append(URLQueryItem(name: "drift", value: String(driftRadius)))
+-        }
+-        components.queryItems = items.isEmpty ? nil : items
+-
+-        return components.url
+-    }
+-
+-    /// 客户端应当返回的 JSON 结构。
+-    struct Response: Codable {
+-        let success: Bool
+-        let longitude: Double?
+-        let latitude: Double?
+-        let accuracy: Int?
+-        let driftRadius: Int?
+-        let error: String?
+-        /// 拦截这次请求的客户端标识（`shadowrocket` / `surge` / `quantumultx`…）。
+-        ///
+-        /// 由脚本自己探测运行环境得出。它回答的是一个别的方式答不了的问题：
+-        /// 「现在这套模块，到底是哪个客户端在跑」。用户在应用里换了客户端选择、
+-        /// 但手机上其实还开着另一个代理时，状态就不会张冠李戴。
+-        let env: String?
+-        /// 响应改写脚本最后一次运行的结果。见 `ModuleDiagnostics`。
+-        let diag: ModuleDiagnostics?
+-    }
+-
+-    /// 响应改写脚本（`wloc.js`）最后一次运行的结果。
+-    ///
+-    /// 第三方模式最大的麻烦是「看不见」：规则装没装上、脚本跑到哪一步，
+-    /// 全在客户端自己的日志里，用户够不着。脚本每次运行都把结论写进存储，
+-    /// 配置接口查询时一并带回，应用就能把原因直接翻成一句话。
+-    struct ModuleDiagnostics: Codable, Equatable {
+-
+-        /// 结论码。取值见 `wloc.js` 的 `recordDiag`。
+-        let outcome: String?
+-        /// 记录时间（Unix 毫秒）。
+-        let ts: Double?
+-        /// 改写到的位置条目数。
+-        let locations: Int?
+-        /// 命中的信封格式：arpc / marker / length-prefix / raw。
+-        let envelope: String?
+-        /// 该次响应原本是否为 gzip，脚本是否解压过。
+-        let gzip: Bool?
+-        /// 脚本运行所在的客户端（与 `Response.env` 同源）。
+-        let env: String?
+-        /// 出错时的原因。
+-        let reason: String?
+-
+-        var date: Date? {
+-            guard let ts, ts > 0 else { return nil }
+-            return Date(timeIntervalSince1970: ts / 1000)
+-        }
+-    }
+-}
+diff --git a/Shared/ThirdPartyProxyManager.swift b/Shared/ThirdPartyProxyManager.swift
+deleted file mode 100644
+index 2b85480..0000000
+--- a/Shared/ThirdPartyProxyManager.swift
++++ /dev/null
+@@ -1,376 +0,0 @@
+-import Foundation
+-import UIKit
+-
+-/// 第三方代理模式的管理器。
+-///
+-/// 与应用内代理的关键差别：坐标不是推给本机 Go 代理，而是通过一个约定的
+-/// HTTP 接口写进第三方客户端。该请求在正常情况下会被客户端在本地拦下，
+-/// 不会真的发到 Apple 服务器。
+-@MainActor
+-final class ThirdPartyProxyManager: ObservableObject {
+-
+-    static let shared = ThirdPartyProxyManager()
+-
+-    /// 连接状态。
+-    enum ConnectionState: Equatable {
+-        /// 还没检查过。
+-        case unknown
+-        /// 正在检查。
+-        case checking
+-        /// 客户端未安装。
+-        case clientMissing
+-        /// 客户端已装，但模块没生效（请求没被拦下）。
+-        case moduleNotInstalled
+-        /// 模块已连通，但当前没有保存坐标。
+-        case connectedNoCoordinate
+-        /// 模块连通且已保存坐标。
+-        case connected(latitude: Double, longitude: Double)
+-        /// 配置写入失败。
+-        case failed(String)
+-
+-        var displayText: String {
+-            switch self {
+-            case .unknown: return AppLocalization.string("未检测")
+-            case .checking: return AppLocalization.string("检测中")
+-            case .clientMissing: return AppLocalization.string("未安装客户端")
+-            case .moduleNotInstalled: return AppLocalization.string("模块未生效")
+-            case .connectedNoCoordinate: return AppLocalization.string("已连接，未开启")
+-            case .connected: return AppLocalization.string("已连接")
+-            case .failed: return AppLocalization.string("配置失败")
+-            }
+-        }
+-
+-        var isUsable: Bool {
+-            switch self {
+-            case .connected, .connectedNoCoordinate: return true
+-            default: return false
+-            }
+-        }
+-    }
+-
+-    @Published private(set) var state: ConnectionState = .unknown
+-    @Published private(set) var lastSavedPair: CoordinateConverter.CoordinatePair?
+-
+-    /// 拦截这次请求的客户端。
+-    ///
+-    /// 来自模块回报的 `env`，与「用户在应用里选的客户端」是两回事：
+-    /// 真正执行拦截的是手机上开着的那个代理软件。不区分这两者，
+-    /// 「已连接，未开启」就会被当成所选客户端的状态，张冠李戴。
+-    @Published private(set) var responderClient: ThirdPartyProxyClient?
+-
+-    /// 响应改写脚本最后一次运行的结果。见 `ModuleDiagnostics`。
+-    @Published private(set) var diagnostics: ThirdPartyProxyProtocol.ModuleDiagnostics?
+-
+-    /// 回报的客户端与所选客户端不一致。
+-    ///
+-    /// 含义很明确：手机上是另一个代理软件在跑。用户往往是在应用里换了选择、
+-    /// 却没在客户端那边同步切换，这时候所有状态都指向那个实际在跑的客户端。
+-    var responderMismatch: Bool {
+-        guard let responderClient else { return false }
+-        return responderClient != selectedClient
+-    }
+-
+-    /// 把脚本回报的结论翻成一句人话。
+-    ///
+-    /// 第三方模式最大的麻烦是「看不见」：规则装没装上、脚本跑到哪一步都在
+-    /// 客户端自己的日志里。「没有记录」这一档尤其重要——它说明响应改写规则
+-    /// 一次都没跑到，问题出在模块启用 / MITM 覆盖，而不是「格式对不上」。
+-    var diagnosticsText: String {
+-        guard let diagnostics else {
+-            return AppLocalization.string("没有记录，响应改写规则一次都没跑到")
+-        }
+-
+-        switch diagnostics.outcome {
+-        case "rewritten":
+-            let count = diagnostics.locations ?? 0
+-            if diagnostics.gzip == true {
+-                return String(
+-                    format: AppLocalization.string("已改写 %d 个位置点（原响应为 gzip，已解压）"),
+-                    count
+-                )
+-            }
+-            return String(format: AppLocalization.string("已改写 %d 个位置点"), count)
+-
+-        case "disabled":
+-            return AppLocalization.string("模块在运行，但还没有写入过坐标")
+-
+-        case "bad-target":
+-            return AppLocalization.string("模块收到的坐标无效")
+-
+-        case "empty-body":
+-            return AppLocalization.string("脚本拿不到响应体，请确认模块处于开启状态")
+-
+-        case "gzip":
+-            return AppLocalization.string("响应是 gzip 压缩，当前客户端没有提供解压能力")
+-
+-        case "no-match":
+-            return AppLocalization.string("响应里没有找到定位数据，系统可能换了新的响应格式")
+-
+-        case "error":
+-            return String(
+-                format: AppLocalization.string("改写过程出错：%@"),
+-                diagnostics.reason ?? ""
+-            )
+-
+-        default:
+-            return AppLocalization.string("没有记录，响应改写规则一次都没跑到")
+-        }
+-    }
+-
+-    /// 诊断时间文案。没有记录时给一个占位符，不用再占一条本地化条目。
+-    var diagnosticsDateText: String {
+-        guard let date = diagnostics?.date else { return "—" }
+-        let formatter = DateFormatter()
+-        formatter.dateFormat = "MM-dd HH:mm:ss"
+-        return formatter.string(from: date)
+-    }
+-
+-    /// 当前选择的客户端。
+-    @Published var selectedClient: ThirdPartyProxyClient {
+-        didSet {
+-            guard selectedClient != oldValue else { return }
+-            defaults.set(selectedClient.rawValue, forKey: Key.client)
+-            RuntimeLogger.info("APP", "ThirdParty", "切换客户端", details: [
+-                "client": selectedClient.displayName,
+-            ])
+-            // 上一个客户端的连通性、诊断都属于它自己，不能留给新选的这个，
+-            // 否则会出现「还没换代理软件，应用里却显示已连接」。
+-            state = .unknown
+-            responderClient = nil
+-            diagnostics = nil
+-        }
+-    }
+-
+-    private let defaults: UserDefaults
+-    private let session: URLSession
+-
+-    private enum Key {
+-        static let client = "thirdPartyClient"
+-        static let savedCoordinate = "thirdPartySavedCoordinate"
+-    }
+-
+-    private init(defaults: UserDefaults = AppGroup.defaults) {
+-        self.defaults = defaults
+-        self.selectedClient = defaults.string(forKey: Key.client)
+-            .flatMap(ThirdPartyProxyClient.init(rawValue:)) ?? .shadowrocket
+-
+-        let configuration = URLSessionConfiguration.ephemeral
+-        configuration.timeoutIntervalForRequest = 6
+-        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+-        // 这个请求依赖「被第三方客户端在本地拦下」，因此不能走系统代理配置之外
+-        // 的额外路径，保持默认即可。
+-        self.session = URLSession(configuration: configuration)
+-
+-        if let data = defaults.data(forKey: Key.savedCoordinate) {
+-            lastSavedPair = try? JSONDecoder().decode(CoordinateConverter.CoordinatePair.self, from: data)
+-        }
+-    }
+-
+-    // MARK: - 查询
+-
+-    /// 查询客户端是否连通，以及当前保存的坐标。
+-    func refresh() async {
+-        guard selectedClient.isInstalled else {
+-            state = .clientMissing
+-            RuntimeLogger.info("APP", "ThirdParty", "客户端未安装", details: [
+-                "client": selectedClient.displayName,
+-            ])
+-            return
+-        }
+-
+-        state = .checking
+-        guard let url = ThirdPartyProxyProtocol.url(action: .query) else {
+-            state = .failed(AppLocalization.string("无法构造查询地址"))
+-            return
+-        }
+-
+-        var request = URLRequest(url: url)
+-        request.httpMethod = "GET"
+-
+-        do {
+-            let (data, _) = try await session.data(for: request)
+-            guard let response = try? JSONDecoder().decode(ThirdPartyProxyProtocol.Response.self, from: data) else {
+-                // 返回了内容但不是约定 JSON，通常是客户端没装模块，
+-                // 请求真的发到了 Apple 服务器。
+-                state = .moduleNotInstalled
+-                responderClient = nil
+-                diagnostics = nil
+-                RuntimeLogger.info("APP", "ThirdParty", "查询响应不符合约定格式")
+-                return
+-            }
+-
+-            applyResponder(response)
+-
+-            if response.success, let lat = response.latitude, let lon = response.longitude {
+-                state = .connected(latitude: lat, longitude: lon)
+-                let pair = CoordinateConverter.CoordinatePair(wgs84Latitude: lat, wgs84Longitude: lon)
+-                lastSavedPair = pair
+-                persistSavedPair(pair)
+-                RuntimeLogger.info("APP", "ThirdParty", "已连接，客户端坐标有效")
+-            } else {
+-                // success=false 且没有坐标：模块在，但用户还没开启虚拟定位。
+-                state = .connectedNoCoordinate
+-                RuntimeLogger.info("APP", "ThirdParty", "模块已连通，尚未保存坐标", details: [
+-                    "reason": response.error ?? "",
+-                ])
+-            }
+-        } catch {
+-            state = .failed((error as NSError).localizedDescription)
+-            responderClient = nil
+-            diagnostics = nil
+-            RuntimeLogger.warn("APP", "ThirdParty", "查询失败", details: [
+-                "error": (error as NSError).localizedDescription,
+-            ])
+-        }
+-    }
+-
+-    /// 记下「这次是谁回的话」以及它带回的运行诊断。
+-    private func applyResponder(_ response: ThirdPartyProxyProtocol.Response) {
+-        responderClient = response.env.flatMap(ThirdPartyProxyClient.init(rawValue:))
+-        diagnostics = response.diag
+-    }
+-
+-    // MARK: - 写入与清除
+-
+-    /// 把坐标写入客户端。
+-    @discardableResult
+-    func save(
+-        pair: CoordinateConverter.CoordinatePair,
+-        accuracy: Int,
+-        motionRadius: Int = 0
+-    ) async -> Bool {
+-        guard let url = ThirdPartyProxyProtocol.url(
+-            wgs84Latitude: pair.wgs84.latitude,
+-            wgs84Longitude: pair.wgs84.longitude,
+-            accuracy: accuracy,
+-            driftRadius: motionRadius
+-        ) else {
+-            state = .failed(AppLocalization.string("无法构造保存地址"))
+-            return false
+-        }
+-
+-        var request = URLRequest(url: url)
+-        request.httpMethod = "GET"
+-
+-        do {
+-            let (data, _) = try await session.data(for: request)
+-            let decoded = try? JSONDecoder().decode(ThirdPartyProxyProtocol.Response.self, from: data)
+-
+-            if let decoded, decoded.success {
+-                applyResponder(decoded)
+-                // 契约要求：保存成功时响应里的坐标必须与请求一致，否则说明客户端实现有偏差。
+-                if let lat = decoded.latitude, let lon = decoded.longitude {
+-                    let echoed = CoordinateConverter.CoordinatePair(
+-                        wgs84Latitude: lat, wgs84Longitude: lon
+-                    )
+-                    if !pair.matchesWGS84(latitude: lat, longitude: lon, tolerance: 0.001) {
+-                        RuntimeLogger.warn("APP", "ThirdParty", "客户端回读坐标与请求不一致", details: [
+-                            "echoed": "\(echoed.wgs84.latitude),\(echoed.wgs84.longitude)",
+-                        ])
+-                    }
+-                }
+-                state = .connected(latitude: pair.wgs84.latitude, longitude: pair.wgs84.longitude)
+-                lastSavedPair = pair
+-                persistSavedPair(pair)
+-                RuntimeLogger.info("APP", "ThirdParty", "坐标已写入客户端")
+-                return true
+-            }
+-
+-            let message = decoded?.error
+-            state = .failed(message ?? AppLocalization.string("客户端拒绝保存"))
+-            RuntimeLogger.warn("APP", "ThirdParty", "客户端拒绝保存", details: [
+-                "reason": message ?? "",
+-            ])
+-            return false
+-        } catch {
+-            state = .failed((error as NSError).localizedDescription)
+-            responderClient = nil
+-            RuntimeLogger.warn("APP", "ThirdParty", "保存请求失败", details: [
+-                "error": (error as NSError).localizedDescription,
+-            ])
+-            return false
+-        }
+-    }
+-
+-    /// 清除客户端里保存的坐标。
+-    @discardableResult
+-    func clear() async -> Bool {
+-        guard let url = ThirdPartyProxyProtocol.url(action: .clear) else { return false }
+-
+-        var request = URLRequest(url: url)
+-        request.httpMethod = "GET"
+-
+-        do {
+-            let (data, _) = try await session.data(for: request)
+-            guard let decoded = try? JSONDecoder().decode(ThirdPartyProxyProtocol.Response.self, from: data),
+-                  decoded.success else {
+-                return false
+-            }
+-            applyResponder(decoded)
+-            lastSavedPair = nil
+-            defaults.removeObject(forKey: Key.savedCoordinate)
+-            state = .connectedNoCoordinate
+-            RuntimeLogger.info("APP", "ThirdParty", "已清除客户端坐标")
+-            return true
+-        } catch {
+-            RuntimeLogger.warn("APP", "ThirdParty", "清除请求失败", details: [
+-                "error": (error as NSError).localizedDescription,
+-            ])
+-            return false
+-        }
+-    }
+-
+-    // MARK: - 模块订阅地址
+-
+-    /// 模块订阅地址。默认指向本仓库托管的脚本；用户也可以在设置里改成自建地址。
+-    var moduleSubscriptionURL: URL? {
+-        let base = defaults.string(forKey: "thirdPartyModuleBaseURL")
+-            ?? Self.defaultModuleBaseURL
+-        let trimmed = base.hasSuffix("/") ? String(base.dropLast()) : base
+-        guard let url = URL(string: "\(trimmed)/\(moduleFileName)") else { return nil }
+-        return url
+-    }
+-
+-    /// 当前客户端需要导入的模块文件名，例如 `wloc.sgmodule`。
+-    ///
+-    /// 仓库 `ThirdParty/ProxyScripts/modules/` 下躺着 5 个 `wloc.*` 文件，
+-    /// 光看目录根本分不清哪个配哪个客户端。设置页把这行显示出来，
+-    /// 用户复制地址时就能对上号。
+-    var moduleFileName: String {
+-        "wloc.\(selectedClient.moduleFileExtension)"
+-    }
+-
+-    /// 默认脚本托管地址。换成自己的仓库时改这里。
+-    ///
+-    /// **为什么是 jsDelivr 而不是 `raw.githubusercontent.com`**：
+-    /// 模块文件本身、以及模块里引用的两个 `.js`，都要由手机上的代理客户端
+-    /// 主动去拉。`raw.githubusercontent.com` 在国内基本不可用（DNS 污染 + 无
+-    /// CDN），客户端拉不到脚本时的表现是**静默失效**——模块显示已启用，
+-    /// 定位却纹丝不动，或者过一阵子自己恢复真实位置。
+-    ///
+-    /// jsDelivr 是 GitHub 的 CDN 镜像，国内大多能直连。代价是它有缓存：
+-    /// 分支（`@main`）的缓存最长 12 小时，所以**推完脚本后手机上最多要等
+-    /// 12 小时才会生效**。急着验证时把基地址换成 raw 地址即可（设置页可改）。
+-    static let defaultModuleBaseURL =
+-        "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules"
+-
+-    /// 同一份文件的 raw 地址前缀，供「换了基地址也能找到对应文件」的提示用。
+-    static let rawScriptPrefix =
+-        "https://raw.githubusercontent.com/Lululu-0715/Floc/main/ThirdParty/ProxyScripts"
+-
+-    /// 把模块地址复制到剪贴板，方便用户手动导入。
+-    func copyModuleURLToPasteboard() -> Bool {
+-        guard let url = moduleSubscriptionURL else { return false }
+-        UIPasteboard.general.string = url.absoluteString
+-        RuntimeLogger.info("APP", "ThirdParty", "模块地址已复制")
+-        return true
+-    }
+-
+-    // MARK: - 持久化
+-
+-    private func persistSavedPair(_ pair: CoordinateConverter.CoordinatePair) {
+-        if let data = try? JSONEncoder().encode(pair) {
+-            defaults.set(data, forKey: Key.savedCoordinate)
+-        }
+-    }
+-}
+diff --git a/Shared/VerificationResult.swift b/Shared/VerificationResult.swift
+index 1c5fd41..bc00860 100644
+--- a/Shared/VerificationResult.swift
++++ b/Shared/VerificationResult.swift
+@@ -5,7 +5,6 @@ struct VerificationResult: Equatable {
+     enum Kind: Equatable {
+         case certificateTrust
+         case wifiProxy
+-        case thirdPartyModule
+         case rewriteEngine
+     }
+ 
+@@ -33,7 +32,6 @@ struct VerificationResult: Equatable {
+         switch kind {
+         case .certificateTrust: return AppLocalization.string("证书信任")
+         case .wifiProxy: return AppLocalization.string("Wi-Fi 代理链路")
+-        case .thirdPartyModule: return AppLocalization.string("第三方模块连通")
+         case .rewriteEngine: return AppLocalization.string("改写引擎自检")
+         }
+     }
+diff --git a/Tests/FlocTests/ThirdPartyProxyClientTests.swift b/Tests/FlocTests/ThirdPartyProxyClientTests.swift
+deleted file mode 100644
+index 503c5e5..0000000
+--- a/Tests/FlocTests/ThirdPartyProxyClientTests.swift
++++ /dev/null
+@@ -1,248 +0,0 @@
+-import XCTest
+-@testable import Floc
+-
+-/// 第三方代理客户端与协议契约测试。
+-///
+-/// 这些断言锁定了「App ↔ 客户端脚本」之间的接口约定。任何一侧改动导致
+-/// 契约不一致，这里都应立刻失败——因为线上表现会是「模块装了但定位不变」，
+-/// 极难排查。
+-final class ThirdPartyProxyClientTests: XCTestCase {
+-
+-    // MARK: - 客户端元数据
+-
+-    func testAllClientsHaveUniqueIdentifiers() {
+-        let rawValues = ThirdPartyProxyClient.allCases.map(\.rawValue)
+-        XCTAssertEqual(
+-            Set(rawValues).count,
+-            rawValues.count,
+-            "客户端标识不应重复"
+-        )
+-    }
+-
+-    func testAllClientsHaveDisplayNameAndScheme() {
+-        for client in ThirdPartyProxyClient.allCases {
+-            XCTAssertFalse(client.displayName.isEmpty, "\(client) 缺少显示名")
+-            XCTAssertFalse(client.urlScheme.isEmpty, "\(client) 缺少 URL Scheme")
+-            XCTAssertFalse(
+-                client.moduleFileExtension.isEmpty,
+-                "\(client) 缺少模块扩展名"
+-            )
+-        }
+-    }
+-
+-    func testModuleExtensionsMatchClientConvention() {
+-        // 这些扩展名必须与客户端实际接受的格式一致，否则导入会失败
+-        XCTAssertEqual(ThirdPartyProxyClient.shadowrocket.moduleFileExtension, "module")
+-        XCTAssertEqual(ThirdPartyProxyClient.surge.moduleFileExtension, "sgmodule")
+-        XCTAssertEqual(ThirdPartyProxyClient.quantumultX.moduleFileExtension, "conf")
+-        XCTAssertEqual(ThirdPartyProxyClient.loon.moduleFileExtension, "lpx")
+-        XCTAssertEqual(ThirdPartyProxyClient.stash.moduleFileExtension, "stoverride")
+-        XCTAssertEqual(ThirdPartyProxyClient.egern.moduleFileExtension, "sgmodule")
+-    }
+-
+-    func testURLSchemesMatchClientConvention() {
+-        XCTAssertEqual(ThirdPartyProxyClient.shadowrocket.urlScheme, "shadowrocket")
+-        XCTAssertEqual(ThirdPartyProxyClient.surge.urlScheme, "surge")
+-        // Quantumult X 的 scheme 带连字符，容易写错
+-        XCTAssertEqual(ThirdPartyProxyClient.quantumultX.urlScheme, "quantumult-x")
+-        XCTAssertEqual(ThirdPartyProxyClient.loon.urlScheme, "loon")
+-        XCTAssertEqual(ThirdPartyProxyClient.stash.urlScheme, "stash")
+-        XCTAssertEqual(ThirdPartyProxyClient.egern.urlScheme, "egern")
+-    }
+-
+-    func testClientIsCodable() throws {
+-        for client in ThirdPartyProxyClient.allCases {
+-            let data = try JSONEncoder().encode(client)
+-            let decoded = try JSONDecoder().decode(ThirdPartyProxyClient.self, from: data)
+-            XCTAssertEqual(decoded, client)
+-        }
+-    }
+-
+-    // MARK: - 协议契约
+-
+-    func testSettingsPathIsStable() {
+-        // 这个路径被写进了 6 个客户端模块文件，改动会破坏所有已发布模块
+-        XCTAssertEqual(ThirdPartyProxyProtocol.settingsPath, "/wloc-settings/save")
+-    }
+-
+-    func testInterceptedHostsCoverAppleLocationEndpoints() {
+-        let hosts = ThirdPartyProxyProtocol.interceptedHosts
+-
+-        XCTAssertTrue(hosts.contains("gs-loc.apple.com"), "必须拦截主定位端点")
+-        XCTAssertTrue(hosts.contains("gs-loc-cn.apple.com"), "必须拦截国内定位端点")
+-        XCTAssertTrue(hosts.contains("gsp-ssl.ls.apple.com"), "必须拦截备用定位端点")
+-        XCTAssertTrue(
+-            hosts.contains("bluedot.is.autonavi.com"),
+-            "必须拦截国内蓝点定位端点"
+-        )
+-        XCTAssertFalse(hosts.isEmpty)
+-    }
+-
+-    func testInterceptedHostsCoverNewSystemEndpoints() {
+-        // iOS 26 之后定位查询会分散到 gsp* / gspe* 这一批主机上。
+-        // 少拦一台的表现是「模块装了、MITM 也开了，定位就是不变」，
+-        // 排查成本极高，所以逐个锁死。
+-        let required = [
+-            "gsp10-ssl.ls.apple.com",
+-            "gsp10-ssl.apple.com",
+-            "gsp64-ssl.ls.apple.com",
+-            "gspe1-ssl.ls.apple.com",
+-            "gspe19-ssl.ls.apple.com",
+-            "gspe19-2-ssl.ls.apple.com",
+-            "gspe35-ssl.ls.apple.com",
+-            "gspe79-ssl.ls.apple.com",
+-            "gspe85-ssl.ls.apple.com",
+-            "bluedot.is.autonavi.com.gds.alibabadns.com",
+-        ]
+-
+-        let hosts = ThirdPartyProxyProtocol.interceptedHosts
+-        for host in required {
+-            XCTAssertTrue(hosts.contains(host), "缺少端点 \(host)")
+-        }
+-    }
+-
+-    func testInterceptedHostsDoNotUseWildcards() {
+-        // 通配会把大量无关的 Apple 流量也拉进中间人，既没必要也不安全。
+-        for host in ThirdPartyProxyProtocol.interceptedHosts {
+-            XCTAssertFalse(host.contains("*"), "不应使用通配主机：\(host)")
+-        }
+-    }
+-
+-    // MARK: - URL 构造
+-
+-    func testQueryActionURL() {
+-        let url = ThirdPartyProxyProtocol.url(action: .query)
+-
+-        XCTAssertNotNil(url)
+-        XCTAssertEqual(url?.host, "gs-loc.apple.com")
+-        XCTAssertEqual(url?.path, "/wloc-settings/save")
+-        XCTAssertTrue(url?.query?.contains("action=query") ?? false)
+-    }
+-
+-    func testClearActionURL() {
+-        let url = ThirdPartyProxyProtocol.url(action: .clear)
+-
+-        XCTAssertTrue(url?.query?.contains("action=clear") ?? false)
+-    }
+-
+-    func testSaveURLContainsAllParameters() {
+-        let url = ThirdPartyProxyProtocol.url(
+-            wgs84Latitude: 39.908722,
+-            wgs84Longitude: 116.397499,
+-            accuracy: 25
+-        )
+-
+-        let query = url?.query ?? ""
+-        XCTAssertTrue(query.contains("lat=39.908722"), "纬度应保留 6 位小数：\(query)")
+-        XCTAssertTrue(query.contains("lon=116.397499"), "经度应保留 6 位小数：\(query)")
+-        XCTAssertTrue(query.contains("acc=25"), "精度应包含：\(query)")
+-    }
+-
+-    func testSaveURLCarriesDriftRadius() {
+-        let url = ThirdPartyProxyProtocol.url(
+-            wgs84Latitude: 39.908722,
+-            wgs84Longitude: 116.397499,
+-            accuracy: 25,
+-            driftRadius: 10
+-        )
+-
+-        let query = url?.query ?? ""
+-        XCTAssertTrue(query.contains("drift=10"), "抖动半径应包含：\(query)")
+-    }
+-
+-    func testSaveURLWithoutDriftKeepsContractBackwardsCompatible() {
+-        // 不传抖动半径时必须完全等同于旧版请求，否则老模块会解析出错。
+-        let url = ThirdPartyProxyProtocol.url(
+-            wgs84Latitude: 39.908722,
+-            wgs84Longitude: 116.397499,
+-            accuracy: 25
+-        )
+-
+-        XCTAssertFalse(url?.query?.contains("drift=") ?? true, "不应凭空带上 drift 参数")
+-    }
+-
+-    func testSaveURLUsesWGS84NotGCJ02() {
+-        // 契约规定查询参数一律用 WGS-84。这里验证传入什么就发什么——
+-        // 若调用方误传 GCJ-02，偏差会达到数百米。
+-        let gcjPair = CoordinateConverter.CoordinatePair(
+-            wgs84Latitude: 39.908722,
+-            wgs84Longitude: 116.397499
+-        )
+-        let url = ThirdPartyProxyProtocol.url(
+-            wgs84Latitude: gcjPair.wgs84.latitude,
+-            wgs84Longitude: gcjPair.wgs84.longitude,
+-            accuracy: 25
+-        )
+-
+-        let query = url?.query ?? ""
+-        XCTAssertTrue(query.contains("lat=39.908722"))
+-        // 不能出现 GCJ-02 的值
+-        XCTAssertFalse(
+-            query.contains(String(format: "%.6f", gcjPair.gcj02.latitude)),
+-            "不应把 GCJ-02 坐标发出去"
+-        )
+-    }
+-
+-    func testSaveURLWithNegativeCoordinates() {
+-        let url = ThirdPartyProxyProtocol.url(
+-            wgs84Latitude: -33.868820,
+-            wgs84Longitude: 151.209290,
+-            accuracy: 50
+-        )
+-
+-        let query = url?.query ?? ""
+-        XCTAssertTrue(query.contains("lat=-33.868820"), "南纬应带负号：\(query)")
+-        XCTAssertTrue(query.contains("lon=151.209290"))
+-    }
+-
+-    func testEmptyURLHasNoQueryString() {
+-        let url = ThirdPartyProxyProtocol.url()
+-
+-        XCTAssertNil(url?.query, "无参数时不应有多余的 ?")
+-    }
+-
+-    // MARK: - 响应解析
+-
+-    func testParsesSuccessResponse() throws {
+-        let json = """
+-        {"success":true,"longitude":116.397499,"latitude":39.908722,"accuracy":25}
+-        """
+-        let response = try JSONDecoder().decode(
+-            ThirdPartyProxyProtocol.Response.self,
+-            from: Data(json.utf8)
+-        )
+-
+-        XCTAssertTrue(response.success)
+-        XCTAssertEqual(response.latitude ?? 0, 39.908722, accuracy: 1e-6)
+-        XCTAssertEqual(response.longitude ?? 0, 116.397499, accuracy: 1e-6)
+-        XCTAssertEqual(response.accuracy, 25)
+-        XCTAssertNil(response.error)
+-    }
+-
+-    func testParsesFailureResponse() throws {
+-        // 脚本在「模块已装但未开启」时返回 success=false，
+-        // App 据此区分「模块没生效」和「模块在但没开」。
+-        let json = #"{"success":false,"error":"无已保存的坐标"}"#
+-        let response = try JSONDecoder().decode(
+-            ThirdPartyProxyProtocol.Response.self,
+-            from: Data(json.utf8)
+-        )
+-
+-        XCTAssertFalse(response.success)
+-        XCTAssertEqual(response.error, "无已保存的坐标")
+-        XCTAssertNil(response.latitude)
+-    }
+-
+-    func testParsesResponseWithoutOptionalFields() throws {
+-        let json = #"{"success":true}"#
+-        let response = try JSONDecoder().decode(
+-            ThirdPartyProxyProtocol.Response.self,
+-            from: Data(json.utf8)
+-        )
+-
+-        XCTAssertTrue(response.success)
+-        XCTAssertNil(response.latitude)
+-        XCTAssertNil(response.longitude)
+-        XCTAssertNil(response.error)
+-    }
+-}

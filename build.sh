@@ -186,35 +186,58 @@ trap restore_version_on_failure EXIT
 
 VERSION="$VERSION" "$ROOT/Scripts/build-unsigned-ipa.sh"
 
-# 纯净版文件名的后缀。默认值与 Scripts/build-unsigned-ipa.sh 里的 PURE_SUFFIX
-# 保持一致——两边都只是这一个字面量，改名时记得一起动。
+# 各口味文件名的后缀。默认值与 Scripts/build-unsigned-ipa.sh 里的一致——
+# 两边都只是字面量，改名时记得一起动。
 PURE_SUFFIX="${PURE_SUFFIX:-纯净}"
+LOCAL_ONLY_SUFFIX="${LOCAL_ONLY_SUFFIX:-仅内置}"
 
 STANDARD_IPA="$ROOT/dist/$APP_NAME-$VERSION-unsigned.ipa"
 STANDARD_STABLE_IPA="$ROOT/dist/$APP_NAME-unsigned.ipa"
-PURE_IPA="$ROOT/dist/$APP_NAME-$VERSION-$PURE_SUFFIX-unsigned.ipa"
-PURE_STABLE_IPA="$ROOT/dist/$APP_NAME-$PURE_SUFFIX-unsigned.ipa"
+LOCAL_ONLY_IPA="$ROOT/dist/$APP_NAME-$VERSION-$LOCAL_ONLY_SUFFIX-unsigned.ipa"
+LOCAL_ONLY_STABLE_IPA="$ROOT/dist/$APP_NAME-$LOCAL_ONLY_SUFFIX-unsigned.ipa"
 
 test -s "$STANDARD_IPA"
 test -s "$STANDARD_STABLE_IPA"
-test -s "$PURE_IPA"
-test -s "$PURE_STABLE_IPA"
+test -s "$LOCAL_ONLY_IPA"
+test -s "$LOCAL_ONLY_STABLE_IPA"
 
 # 静态检查看源码，看不出打包结果对不对——图标没进包、显示名带版本号
 # 这类问题只有拆开 IPA 才看得见。见 Scripts/verify-ipa.py。
 echo
 python3 "$ROOT/Scripts/verify-ipa.py" --version "$VERSION" \
-  "$STANDARD_IPA" "$PURE_IPA"
+  "$STANDARD_IPA" "$LOCAL_ONLY_IPA"
+
+# 出包之后往桌面放一份。用户要求每版都留档，并按版本类型分文件夹，
+# 免得 dist/ 里几个包反复互相覆盖、事后分不清哪个是哪个。
+# 路径可用 FLOC_ARCHIVE_DIR 覆盖（比如换个盘）。
+ARCHIVE_ROOT="${FLOC_ARCHIVE_DIR:-$HOME/Desktop/Floc 发布包}"
+
+archive_ipa() {
+  local src="$1"
+  local folder="$2"
+
+  [ -f "$src" ] || return 0
+  mkdir -p "$ARCHIVE_ROOT/$folder"
+  cp -f "$src" "$ARCHIVE_ROOT/$folder/"
+  echo "    $ARCHIVE_ROOT/$folder/$(basename "$src")"
+}
 
 BUILD_SUCCEEDED=1
 
 echo "未签名 IPA 已生成:"
-echo "  标准版"
+echo "  全功能版（第三方代理 + 应用内代理 + 卡密）"
 echo "    $STANDARD_IPA"
 echo "    $STANDARD_STABLE_IPA"
-echo "  纯净版（不带卡密）"
-echo "    $PURE_IPA"
-echo "    $PURE_STABLE_IPA"
+echo "  仅内置代理版（只有应用内代理）"
+echo "    $LOCAL_ONLY_IPA"
+echo "    $LOCAL_ONLY_STABLE_IPA"
+
+echo
+echo "已归档到桌面:"
+archive_ipa "$STANDARD_IPA" "全功能版"
+archive_ipa "$LOCAL_ONLY_IPA" "仅内置代理版"
+# 纯净版默认不出；真要出时（FLAVORS 里带上 pure）也一并归档。
+archive_ipa "$ROOT/dist/$APP_NAME-$VERSION-$PURE_SUFFIX-unsigned.ipa" "纯净版"
 
 if [ "$run_tests" -eq 1 ]; then
   run_simulator_tests

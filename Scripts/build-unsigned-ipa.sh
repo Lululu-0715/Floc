@@ -2,14 +2,27 @@
 #
 # 生成未签名 IPA。
 #
-# 一次出**两个**包，同一个 target、同一份源码，只差一个编译条件：
+# 默认出**两个**包（口味列表见 `FLAVORS`，默认 `standard localOnly`）：
 #
-#   Floc-<版本>-unsigned.ipa        标准版（带卡密 / 授权 / 推荐）
-#   Floc-<版本>-纯净-unsigned.ipa   纯净版（PURE_BUILD，没有卡密那套）
+#   Floc-<版本>-unsigned.ipa          标准版：全功能（第三方代理 + 应用内代理 + 卡密）
+#   Floc-<版本>-仅内置-unsigned.ipa   仅内置代理版：只有应用内代理
+#
+# 另外两种口味默认不出，需要时用 `FLAVORS="standard pure"` 之类显式开启：
+#
+#   standard   全功能版
+#   localOnly  仅内置代理版
+#   pure       纯净版（PURE_BUILD，没有卡密那套）
+#
+# 「仅内置」不是编译条件，而是**在源码上临时应用一个补丁**
+# （`Scripts/patches/local-proxy-only.patch`）：把第三方代理那条链路的代码
+# 从工作区里摘掉，构建完再原样撤回。这样做的好处是主源码永远是全功能那一份，
+# 不必在十几个文件里铺满 `#if`，以后改动也只有一处要维护。
+#
+# 补丁撤回失败会**直接报错终止**，不会留下一个半删状态的源码树。
 #
 # 纯净版裁掉什么、怎么裁，见 `Shared/BuildFlavor.swift`。
 #
-# 流程：编译 Go 静态库 → XcodeGen 生成工程 → 分别构建两个口味 → 打包 Payload
+# 流程：编译 Go 静态库 → XcodeGen 生成工程 → 逐口味构建 → 打包 Payload
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,8 +30,15 @@ cd "$ROOT"
 
 APP_NAME="Floc"
 
-# 纯净版文件名的后缀。build.sh 校验产物时也要用，所以走环境变量，默认值一致。
+# 各口味文件名的后缀。build.sh 校验产物时也要用，所以走环境变量，默认值一致。
 PURE_SUFFIX="${PURE_SUFFIX:-纯净}"
+LOCAL_ONLY_SUFFIX="${LOCAL_ONLY_SUFFIX:-仅内置}"
+
+# 要出哪些口味，空格分隔。
+FLAVORS="${FLAVORS:-standard localOnly}"
+
+# 「仅内置代理」补丁：把第三方代理那条链路的代码从工作区里摘掉。
+LOCAL_ONLY_PATCH="$ROOT/Scripts/patches/local-proxy-only.patch"
 
 "$ROOT/Scripts/build-core.sh"
 
@@ -89,12 +109,67 @@ pack_ipa() {
   echo "固定名副本: $stable"
 }
 
-# 标准版：不追加任何编译条件，和改造前完全一致。
-build_flavor "标准版"
-pack_ipa ""
+# 「仅内置代理」补丁的应用 / 撤回。
+#
+# 撤回必须成功：失败要立刻报错，否则工作区会停在「第三方代码已摘掉」的
+# 半截状态，下一次出包就会出错，而且很难看出原因。
+PATCH_APPLIED=0
+revert_local_only_patch() {
+  if [ "$PATCH_APPLIED" -eq 1 ]; then
+    echo "==> 撤回「仅内置代理」补丁"
+    if git -C "$ROOT" apply -R "$LOCAL_ONLY_PATCH"; then
+      PATCH_APPLIED=0
+    else
+      echo "补丁撤回失败！源码可能停在「仅内置」状态。" >&2
+      echo "请手动执行: git -C \"$ROOT\" checkout -- App Shared Resources Tests" >&2
+      exit 1
+    fi
+  fi
+}
+trap revert_local_only_patch EXIT
 
-# 纯净版：只多一个 PURE_BUILD。工程本身没设过 SWIFT_ACTIVE_COMPILATION_CONDITIONS，
-# 所以 "$(inherited)" 展开成空，实际生效的就是 PURE_BUILD。
-# 第二次构建时 Swift 会因为编译条件变化而整体重编，这是对的，别去"优化"掉。
-build_flavor "纯净版" SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) PURE_BUILD'
-pack_ipa "-$PURE_SUFFIX"
+for flavor in $FLAVORS; do
+  case "$flavor" in
+    standard)
+      # 全功能版：不追加任何编译条件，和改造前完全一致。
+      build_flavor "标准版"
+      pack_ipa ""
+      ;;
+
+    pure)
+      # 纯净版：只多一个 PURE_BUILD。工程本身没设过
+      # SWIFT_ACTIVE_COMPILATION_CONDITIONS，所以 "$(inherited)" 展开成空，
+      # 实际生效的就是 PURE_BUILD。第二次构建时 Swift 会因为编译条件变化而
+      # 整体重编，这是对的，别去"优化"掉。
+      build_flavor "纯净版" SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) PURE_BUILD'
+      pack_ipa "-$PURE_SUFFIX"
+      ;;
+
+    localOnly)
+      # 应用补丁前必须确认工作区干净：补丁是按全功能源码的上下文生成的，
+      # 有未提交改动时要么 apply 失败，要么把别人的改动一起卷进去。
+      if ! git -C "$ROOT" diff --quiet -- App Shared Resources Tests; then
+        echo "App / Shared / Resources / Tests 下有未提交改动，" >&2
+        echo "无法安全应用「仅内置代理」补丁。请先提交或暂存后再出包。" >&2
+        exit 1
+      fi
+      echo "==> 应用「仅内置代理」补丁"
+      git -C "$ROOT" apply "$LOCAL_ONLY_PATCH"
+      PATCH_APPLIED=1
+      # 补丁删掉了 ModeSelectionStep.swift，工程文件必须跟着重生成。
+      xcodegen generate
+      build_flavor "仅内置代理版"
+      pack_ipa "-$LOCAL_ONLY_SUFFIX"
+      revert_local_only_patch
+      # 源码回来了，工程文件也要跟着回来。
+      xcodegen generate
+      ;;
+
+    *)
+      echo "未知口味: ${flavor}（可用: standard / pure / localOnly）" >&2
+      exit 2
+      ;;
+  esac
+done
+
+trap - EXIT
