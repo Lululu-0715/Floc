@@ -6,7 +6,7 @@ import SwiftUI
 /// 每行以圆形图标起头，右侧按内容性质给出四种控件——
 /// 勾选（模式）/ 开关（可切换项）/ 只读状态文字（无箭头）/ 跳转箭头。
 ///
-/// 这一版刻意只留五组：账号 / 运行模式 / 连接状态 / 外观及个性化 / 关于。
+/// 这一版刻意只留四组：账号 / 连接状态 / 外观及个性化 / 关于。
 /// 具体配置全部下沉到二级页——主页每行右边都带着当前取值，
 /// 不进二级页也知道现在是什么状态，滚动长度却砍掉了一半以上。
 ///
@@ -18,8 +18,6 @@ struct SettingsView: View {
     @ObservedObject var state: MapLocationState
 
     @ObservedObject private var proxy = ProxyManager.shared
-    @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
-    @ObservedObject private var runtimeMode = RuntimeModeStore.shared
     @ObservedObject private var remoteConfiguration = AppRemoteConfigurationStore.shared
     @ObservedObject private var appearance = AppearanceStore.shared
     @ObservedObject private var fontScale = FontScaleStore.shared
@@ -51,7 +49,6 @@ struct SettingsView: View {
                 #if !PURE_BUILD
                 accountSection
                 #endif
-                modeSection
                 connectionSection
                 appearanceSection
                 aboutSection
@@ -197,62 +194,26 @@ struct SettingsView: View {
     }
     #endif
 
-    // MARK: - 运行模式
-
-    private var modeSection: some View {
-        Section {
-            NavigationLink {
-                RuntimeModePickerView(runtimeMode: runtimeMode, onSelect: switchMode)
-            } label: {
-                HStack(spacing: SettingsMetrics.iconSpacing) {
-                    SettingsIconBadge(systemImage: runtimeMode.mode.systemImage)
-                    Text(AppLocalization.string("运行模式"))
-                        .font(SettingsMetrics.titleFont)
-                    Spacer(minLength: 8)
-                    Text(runtimeMode.mode.displayName)
-                        .font(SettingsMetrics.valueFont)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.vertical, SettingsMetrics.rowVerticalPadding)
-            }
-        } header: {
-            SettingsSectionHeader(title: AppLocalization.string("运行模式"))
-        } footer: {
-            Text(runtimeMode.mode.summary)
-        }
-    }
-
     // MARK: - 连接状态
 
     /// 连接状态。
     ///
-    /// 顺序固定为「环境 / 客户端 → 虚拟定位 → 定位模拟」，两种模式一致：
+    /// 顺序固定为「环境 → 虚拟定位 → 定位模拟」：先确认链路，再看开关状态，
+    /// 最后才调参数，读起来是一条因果链。
     ///
-    ///   - 原来首行是「本机代理」开关 / 第三方客户端状态，和下面的二级入口
-    ///     说的是同一件事（一个可点、一个不可点），删掉首行只留入口。
-    ///     本机代理的开关挪进了「证书与环境」——它本来就属于那边的内容。
-    ///   - 第三方代理入口上移到「虚拟定位」之前：先确认链路，再看开关状态，
-    ///     最后才调参数，读起来是一条因果链。
+    /// 首行原来是一个「本机代理」开关 / 第三方客户端状态的行，和下面的二级
+    /// 入口说的是同一件事（一个可点、一个不可点），删掉只留入口即可；
+    /// 代理的开关挪进了「证书与环境」——它本来就属于那边的内容。
     private var connectionSection: some View {
         Section {
-            if runtimeMode.mode == .localProxy {
-                detailLink(
-                    systemImage: "checkmark.shield.fill",
-                    title: AppLocalization.string("证书与环境"),
-                    value: proxy.certificateTrustState.isTrusted
-                        ? proxy.certificateTrustState.displayText
-                        : proxy.wiFiProxyState.displayText
-                ) {
-                    CertificateEnvironmentView(state: state)
-                }
-            } else {
-                detailLink(
-                    systemImage: "shield.lefthalf.filled",
-                    title: AppLocalization.string("第三方代理"),
-                    value: thirdParty.state.displayText
-                ) {
-                    ThirdPartySettingsView(thirdParty: thirdParty)
-                }
+            detailLink(
+                systemImage: "checkmark.shield.fill",
+                title: AppLocalization.string("证书与环境"),
+                value: proxy.certificateTrustState.isTrusted
+                    ? proxy.certificateTrustState.displayText
+                    : proxy.wiFiProxyState.displayText
+            ) {
+                CertificateEnvironmentView(state: state)
             }
 
             SettingsStatusRow(
@@ -403,17 +364,5 @@ struct SettingsView: View {
                 "本应用用于定位服务的开发测试与研究，请仅在你拥有或获得授权的设备与网络环境中使用。"
             ))
         }
-    }
-
-    // MARK: - 操作
-
-    /// 切换运行模式。两套链路不能同时开着，所以先停掉当前代理再切。
-    private func switchMode(to mode: ProxyRuntimeMode) {
-        guard mode != runtimeMode.mode else { return }
-        if proxy.status.isRunning { proxy.stop() }
-        BackgroundKeepAlive.shared.stop()
-        runtimeMode.select(mode)
-        setup.reset()
-        dismiss()
     }
 }

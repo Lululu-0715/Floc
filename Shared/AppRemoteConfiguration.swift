@@ -12,16 +12,12 @@ final class AppRemoteConfigurationStore: ObservableObject {
     static let shared = AppRemoteConfigurationStore()
 
     struct Configuration: Codable {
-        /// 脚本应该使用的版本号，用于让客户端刷新缓存。
-        var scriptVersion: String?
         /// 当前已知失效的最低系统版本，例如 "27.0"。命中时界面给出警示。
         var blockedFromSystemVersion: String?
         /// 给用户看的公告文本。
         var announcement: String?
         /// 公告的有效期，过期后不再展示。
         var announcementExpiresAt: Date?
-        /// 建议的脚本托管地址前缀。
-        var moduleBaseURL: String?
 
         var isAnnouncementVisible: Bool {
             guard let text = announcement, !text.isEmpty else { return false }

@@ -15,8 +15,6 @@ struct MapHomeView: View {
 
     @ObservedObject var setup: SetupCoordinator
     @ObservedObject private var proxy = ProxyManager.shared
-    @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
-    @ObservedObject private var runtimeMode = RuntimeModeStore.shared
     @ObservedObject private var remoteConfiguration = AppRemoteConfigurationStore.shared
     #if !PURE_BUILD
     @ObservedObject private var license = LicenseManager.shared
@@ -487,29 +485,15 @@ struct MapHomeView: View {
     private var statusRow: some View {
         HStack(spacing: 8) {
             StatusPill(
-                icon: runtimeMode.mode == .localProxy ? "wifi.router" : "shield.lefthalf.filled",
-                text: runtimeMode.mode.displayName,
-                color: .blue
+                icon: proxy.certificateTrustState.isTrusted ? "checkmark.shield.fill" : "shield.slash",
+                text: proxy.certificateTrustState.displayText,
+                color: proxy.certificateTrustState.isTrusted ? .green : .orange
             )
-
-            if runtimeMode.mode == .localProxy {
-                StatusPill(
-                    icon: proxy.certificateTrustState.isTrusted ? "checkmark.shield.fill" : "shield.slash",
-                    text: proxy.certificateTrustState.displayText,
-                    color: proxy.certificateTrustState.isTrusted ? .green : .orange
-                )
-                StatusPill(
-                    icon: proxy.wiFiProxyState == .configured ? "link" : "link.badge.plus",
-                    text: proxy.wiFiProxyState.displayText,
-                    color: proxy.wiFiProxyState == .configured ? .green : .orange
-                )
-            } else {
-                StatusPill(
-                    icon: thirdParty.state.isUsable ? "link" : "link.badge.plus",
-                    text: thirdParty.state.displayText,
-                    color: thirdParty.state.isUsable ? .green : .orange
-                )
-            }
+            StatusPill(
+                icon: proxy.wiFiProxyState == .configured ? "link" : "link.badge.plus",
+                text: proxy.wiFiProxyState.displayText,
+                color: proxy.wiFiProxyState == .configured ? .green : .orange
+            )
 
             Spacer(minLength: 0)
 
@@ -733,9 +717,7 @@ struct MapHomeView: View {
 
         // 进入主界面就刷新一次环境状态，让用户立刻看到还差什么。
         Task {
-            if runtimeMode.mode == .thirdParty {
-                await thirdParty.refresh()
-            } else if proxy.syncStatusWithReality() {
+            if proxy.syncStatusWithReality() {
                 await proxy.verifyCertificateTrust()
                 await proxy.verifyWiFiProxy()
             }
@@ -771,32 +753,23 @@ struct MapHomeView: View {
     /// 注意 MapLocationState 初始化时会把 isEnabled 置为 false，
     /// 这里处理的是「同一次运行中从设置页返回」这种情况。
     private func restoreActiveState(pair: CoordinateConverter.CoordinatePair) async {
-        switch runtimeMode.mode {
-        case .localProxy:
-            // 保活和代理是一对：少了它，代理能起来但活不过一次切后台。
-            // 这里放在启动之前，`start()` 是幂等的，已经在跑时只做一次检查。
-            BackgroundKeepAlive.shared.start()
+        // 保活和代理是一对：少了它，代理能起来但活不过一次切后台。
+        // 这里放在启动之前，`start()` 是幂等的，已经在跑时只做一次检查。
+        BackgroundKeepAlive.shared.start()
 
-            if !proxy.status.isRunning {
-                do {
-                    try await proxy.start(
-                        latitude: pair.wgs84.latitude,
-                        longitude: pair.wgs84.longitude,
-                        enabled: true,
-                        accuracy: state.accuracy,
-                        motionRadius: state.motionDriftRadius
-                    )
-                } catch {
-                    state.disable()
-                    showBanner(error.localizedDescription, style: .error)
-                }
+        if !proxy.status.isRunning {
+            do {
+                try await proxy.start(
+                    latitude: pair.wgs84.latitude,
+                    longitude: pair.wgs84.longitude,
+                    enabled: true,
+                    accuracy: state.accuracy,
+                    motionRadius: state.motionDriftRadius
+                )
+            } catch {
+                state.disable()
+                showBanner(error.localizedDescription, style: .error)
             }
-        case .thirdParty:
-            await thirdParty.save(
-                pair: pair,
-                accuracy: state.accuracy,
-                motionRadius: state.motionDriftRadius
-            )
         }
     }
 
@@ -816,7 +789,7 @@ struct MapHomeView: View {
             // 进后台前的最后一次自救。音频一旦被别的应用抢走，播放停掉，
             // 进程随后就被系统挂起——那一刻之后我们再也跑不了任何代码，
             // 所以「检查播放是否还活着」只能放在这里。
-            guard state.isEnabled, runtimeMode.mode == .localProxy else { return }
+            guard state.isEnabled else { return }
             BackgroundKeepAlive.shared.resumeIfNeeded()
 
         case .active:
@@ -837,7 +810,7 @@ struct MapHomeView: View {
     /// 变成 `.stopped`，所以这里必须实际探一次代理是否还活着，不能只看状态。
     /// 保活同理——`isAlive` 问的是播放器，而不是我们记的布尔标志。
     private func recoverAfterForeground() {
-        guard state.isEnabled, runtimeMode.mode == .localProxy else { return }
+        guard state.isEnabled else { return }
 
         if !BackgroundKeepAlive.shared.isAlive {
             RuntimeLogger.warn("APP", "KeepAlive", "回前台时保活已失效，重新拉起")
@@ -852,7 +825,7 @@ struct MapHomeView: View {
             proxy.stop()
 
             // 停掉之后 `status` 变成 `.stopped`，`restoreActiveState` 会把它重新拉起来。
-            guard runtimeMode.mode == .localProxy, let pair = state.selection else { return }
+            guard let pair = state.selection else { return }
             await restoreActiveState(pair: pair)
 
             await proxy.verifyWiFiProxy()
@@ -943,48 +916,31 @@ struct MapHomeView: View {
     #endif
 
     private func startSpoofing(pair: CoordinateConverter.CoordinatePair) async {
-        switch runtimeMode.mode {
-        case .localProxy:
-            do {
-                try await proxy.start(
-                    latitude: pair.wgs84.latitude,
-                    longitude: pair.wgs84.longitude,
-                    enabled: true,
-                    accuracy: state.accuracy,
-                    motionRadius: state.motionDriftRadius
-                )
-                BackgroundKeepAlive.shared.start()
-                state.enable()
-
-                // 启动后立刻验证链路，问题早发现比定位不生效再排查省事。
-                await proxy.verifyCertificateTrust()
-                await proxy.verifyWiFiProxy()
-
-                if proxy.certificateTrustState == .notTrusted {
-                    showBanner(AppLocalization.string("证书尚未被信任，定位不会生效"), style: .error)
-                } else if proxy.wiFiProxyState != .configured {
-                    showBanner(AppLocalization.string("Wi-Fi 代理未生效，请检查代理配置"), style: .error)
-                } else {
-                    showBanner(AppLocalization.string("虚拟定位已开启"), style: .info)
-                    presentLocationRefreshPromptIfNeeded()
-                }
-            } catch {
-                showBanner(error.localizedDescription, style: .error)
-            }
-
-        case .thirdParty:
-            let success = await thirdParty.save(
-                pair: pair,
+        do {
+            try await proxy.start(
+                latitude: pair.wgs84.latitude,
+                longitude: pair.wgs84.longitude,
+                enabled: true,
                 accuracy: state.accuracy,
                 motionRadius: state.motionDriftRadius
             )
-            if success {
-                state.enable()
-                showBanner(AppLocalization.string("坐标已写入客户端"), style: .info)
-                presentLocationRefreshPromptIfNeeded()
+            BackgroundKeepAlive.shared.start()
+            state.enable()
+
+            // 启动后立刻验证链路，问题早发现比定位不生效再排查省事。
+            await proxy.verifyCertificateTrust()
+            await proxy.verifyWiFiProxy()
+
+            if proxy.certificateTrustState == .notTrusted {
+                showBanner(AppLocalization.string("证书尚未被信任，定位不会生效"), style: .error)
+            } else if proxy.wiFiProxyState != .configured {
+                showBanner(AppLocalization.string("Wi-Fi 代理未生效，请检查代理配置"), style: .error)
             } else {
-                showBanner(AppLocalization.string("写入失败，请检查客户端模块是否生效"), style: .error)
+                showBanner(AppLocalization.string("虚拟定位已开启"), style: .info)
+                presentLocationRefreshPromptIfNeeded()
             }
+        } catch {
+            showBanner(error.localizedDescription, style: .error)
         }
     }
 
@@ -1000,29 +956,21 @@ struct MapHomeView: View {
     }
 
     private func stopSpoofing() async {
-        switch runtimeMode.mode {
-        case .localProxy:
-            // 先关开关再停代理，避免关闭过程中的请求仍被改写。
-            proxy.updateCoordinates(
-                latitude: 0, longitude: 0,
-                enabled: false,
-                accuracy: state.accuracy,
-                motionRadius: 0
-            )
-            proxy.stop()
-            BackgroundKeepAlive.shared.stop()
-            state.disable()
-            showBanner(AppLocalization.string("已停止虚拟定位，请同时关闭 Wi-Fi 代理"), style: .warning)
-
-        case .thirdParty:
-            await thirdParty.clear()
-            state.disable()
-            showBanner(AppLocalization.string("已清除客户端坐标"), style: .info)
-        }
+        // 先关开关再停代理，避免关闭过程中的请求仍被改写。
+        proxy.updateCoordinates(
+            latitude: 0, longitude: 0,
+            enabled: false,
+            accuracy: state.accuracy,
+            motionRadius: 0
+        )
+        proxy.stop()
+        BackgroundKeepAlive.shared.stop()
+        state.disable()
+        showBanner(AppLocalization.string("已停止虚拟定位，请同时关闭 Wi-Fi 代理"), style: .warning)
     }
 
     private func pushConfigurationToBackend() {
-        guard runtimeMode.mode == .localProxy, proxy.status.isRunning else { return }
+        guard proxy.status.isRunning else { return }
         let pair = state.selection
         proxy.updateCoordinates(
             latitude: pair?.wgs84.latitude ?? 0,

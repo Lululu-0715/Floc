@@ -18,7 +18,7 @@
 | Xcode Command Line Tools | 随 Xcode | `xcode-select --install` | `xcodebuild` / `xcrun` |
 | Go | 1.23 | `brew install go` | 编译定位改写核心 |
 | XcodeGen | 2.38 | `brew install xcodegen` | 从 `project.yml` 生成工程 |
-| Node.js | 22（可选） | `brew install node` | 跑第三方代理脚本与授权服务端测试 |
+| Node.js | 22（可选） | `brew install node` | 跑授权服务端（Worker + D1）测试 |
 
 安装完 Xcode 后，务必把命令行工具指向它：
 
@@ -255,7 +255,7 @@ ls Core/build/iphoneos/libwloccore.a     # 确认存在
 2. **删掉 App Group 依赖**：把 `Resources/Floc.entitlements` 里的
    `com.apple.security.application-groups` 整段删除，同时把
    `Shared/AppGroup.swift` 的 `AppGroup.defaults` 改成 `UserDefaults.standard`。
-   代价是主 App 与第三方代理模块不再共享配置目录。
+   代价是配置与收藏只在 App 进程内可见，不再跨进程共享。
 3. **换 TrollStore** 安装，绕过签名限制
 
 ### `Signing for "Floc" requires a development team`
@@ -312,8 +312,6 @@ xcodebuild ... DEVELOPMENT_TEAM=你的TeamID
 | `Core/bridge.go` | `bundlePrefix` |
 | `Core/proxy.go` | `caCommonName`、`caOrganization`、`leafCommonName` |
 | `Resources/*.lproj/InfoPlist.strings` | 三个语言的显示名 |
-| `ThirdParty/ProxyScripts/modules/wloc.*` | 模块名、`#!author`、脚本 URL |
-| `Shared/ThirdPartyProxyManager.swift` | `defaultModuleBaseURL` |
 | `Shared/AppRemoteConfiguration.swift` | 远端配置 URL |
 
 改完跑一遍 `./build.sh --check`，再 `xcodegen generate` 构建。
@@ -322,41 +320,39 @@ xcodebuild ... DEVELOPMENT_TEAM=你的TeamID
 > 并且根证书也要**重新生成并重新信任**（证书 CN 跟着变了，
 > iOS 里会变成两张证书，旧的记得删掉）。
 
-### 关于脚本托管地址
+### 关于远端配置地址
 
-第三方模块与远端配置都指向 **jsDelivr**（GitHub 的 CDN 镜像）：
+1.0.8 起只剩应用内代理，仓库里不再有需要在运行时被外部拉取的脚本或模块文件。
+只剩下**一个**远端地址——`Resources/remote-config.json`，指向本仓库在
+**jsDelivr**（GitHub 的 CDN 镜像）上的副本：
 
 ```
-https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules
 https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/Resources/remote-config.json
 ```
 
+它承担「不发版也能改行为」：Apple 改了 WLOC 协议导致拦截失效、或要挂一条公告时，
+改这个 JSON 就够。拉不到不会崩（有本地缓存 + 默认值 + 静默降级）。
+
 > **不要改回 `raw.githubusercontent.com`。** 它在国内基本不可用（DNS 污染、
-> 无 CDN），而模块和远端配置拉不到时的表现都是**静默失效**：模块开关看着是开的、
-> 日志里只有一行 debug、远端配置永远停在缓存值。踩过的具体表现是
-> 「切出去一分钟左右自己恢复真实位置」——脚本到期后客户端重新拉取失败。
+> 无 CDN），而配置拉不到时的表现是**静默降级**：公告不弹、兼容性警示不显示，
+> 日志里只有一行 debug。踩过一次同源的坑：模块脚本指向 raw，用户看到的是
+> 「切出去一分钟左右自己恢复真实位置」——客户端到期后重新拉取失败。
 >
-> 代价是 jsDelivr 对分支（`@main`）的缓存最长 12 小时，**改完脚本要等一阵子
+> 代价是 jsDelivr 对分支（`@main`）的缓存最长 12 小时，**改完要等一阵子
 > 手机上才会生效**（这也是让用户「改完马上验证」时容易误判的地方）。
 >
-> `Tests/check_branding.py` 已经把这条锁死了：模块文件、`defaultModuleBaseURL`、
-> `defaultConfigurationURL`、`remote-config.json` 的 `moduleBaseURL`
-> 四处只要出现 raw 地址就直接失败。
+> `Tests/check_branding.py` 把这条锁死了：`defaultConfigurationURL` 出现 raw
+> 地址直接失败，`remote-config.json` 里出现已删除的 `moduleBaseURL` 字段也失败。
 
-如果仓库迁移到其他账号，改上面表格里的
-`Shared/ThirdPartyProxyManager.swift` 与 `Shared/AppRemoteConfiguration.swift`
-两处常量，以及 `ThirdParty/ProxyScripts/modules/` 下 5 个模块文件里的脚本 URL
-（共 10 处）与 `Resources/remote-config.json`。
-
-改完用这两个命令确认全部对齐：
+如果仓库迁移到其他账号，改 `Shared/AppRemoteConfiguration.swift` 里的
+`defaultConfigurationURL` 一处即可，然后：
 
 ```bash
 python3 Tests/check_branding.py       # 托管地址与仓库归属
-python3 Tests/check_proxy_modules.py  # 模块格式与脚本路径
 ```
 
-> **前提**：仓库必须是**公开**的。第三方代理客户端无法访问私有仓库的 raw 地址，
-> 脚本下载会 404，表现为「模块装了但定位不变」。
+> **前提**：仓库必须是**公开**的。jsDelivr 与 raw 对私有仓库都不提供服务，
+> 指到私有仓库等于让远端配置永远停在缓存值（且不报错）。
 
 ---
 
@@ -378,25 +374,22 @@ rm -rf ~/Library/Developer/Xcode/DerivedData/Floc-*
 ./build.sh --check
 ```
 
-不需要 Xcode，依次跑 Go 测试、代理脚本测试、授权服务端测试、本地化校验、
-Swift 源码一致性、代理模块一致性、品牌命名一致性、模块联通性八项。
-改完代码先跑这个，能拦住大部分低级问题：
+不需要 Xcode，依次跑 Go 测试、授权服务端测试、本地化校验、Swift 源码一致性、
+品牌命名一致性五项。改完代码先跑这个，能拦住大部分低级问题：
 
 ```
 ==> 静态检查
     Go 核心测试通过
-    代理脚本测试通过
     授权服务端测试通过
     本地化校验通过
     Swift 源码一致性通过
-    代理模块一致性通过
     品牌命名一致性通过
-    模块联通性检查通过
 
 静态检查全部通过。
 ```
 
-> 模块联通性那一项要联网；离线时用 `SKIP_MODULE_REACHABILITY=1 ./build.sh --check` 跳过。
+> 五项都不需要联网。1.0.8 起只剩应用内代理，原来那三项围绕第三方模块的
+> 检查（代理脚本测试 / 代理模块一致性 / 模块联通性）连同被检查的对象一起删除了。
 
 `./build.sh` 和 `./build.sh --test` 在构建前也会自动跑一遍这些检查，
 所以不必刻意先跑 `--check`。
@@ -409,15 +402,6 @@ cd Core && go test ./... -v
 
 覆盖：protobuf 编解码、坐标定点编码、位置条目改写、Wi-Fi 设备识别、
 marker 帧长度回填、gzip 处理、CA 生成与解析、loopback 证书签发、自检。
-
-### 第三方代理脚本测试
-
-```bash
-cd ThirdParty/ProxyScripts && node --test
-```
-
-覆盖：放行路径、坐标改写、长度前缀一致性、无效坐标拒绝、
-配置接口的查询 / 保存 / 清除 / 越界拒绝。
 
 ### 授权服务端测试
 
@@ -474,23 +458,6 @@ python3 Tests/check_swift_sources.py
 - `project.yml` 引用的源目录存在
 - 资源文件与三语言目录齐全
 
-### 第三方代理模块一致性检查
-
-```bash
-python3 Tests/check_proxy_modules.py
-```
-
-模块文件里写死了脚本 URL、配置接口路径、拦截主机名，这些一旦和代码不一致，
-用户看到的现象是「模块装了但定位不变」，极难排查。这个脚本把这些约定固化：
-
-- 每个模块都引用了两个脚本
-- 配置接口路径与 `ThirdPartyProxyClient.settingsPath` 一致
-- 拦截主机覆盖 `interceptedHosts` 的全部条目
-- **没有给被拦截主机加 `DIRECT` 规则**
-  （加了会让流量绕过代理，改写规则永远不触发）
-- 按客户端的 `moduleFileExtension` 逐个核实模块文件存在
-- 两个脚本用同一个存储键
-
 ### 品牌命名一致性检查
 
 ```bash
@@ -507,6 +474,7 @@ python3 Tests/check_branding.py
 - `build.sh` 与构建脚本的 `APP_NAME` 与工程名一致
 - `@testable import` 指向正确的模块名
 - 三语言显示名统一
-- 第三方模块的脚本 URL 与远端配置 URL 指向同一个仓库
+- 远端配置 URL 不是 `raw.githubusercontent.com`，且 `remote-config.json`
+  里没有指向已删除模块的 `moduleBaseURL` 字段
 - 证书主题包含品牌名
 - 代码里没有旧名称残留

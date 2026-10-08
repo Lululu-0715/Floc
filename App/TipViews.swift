@@ -13,7 +13,6 @@ enum TipKind {
     case enableSpoofing
     case disableSpoofing
     case disableWiFiProxy
-    case thirdPartyMode
     case certificateTrust
 
     var title: String {
@@ -21,7 +20,6 @@ enum TipKind {
         case .enableSpoofing: return AppLocalization.string("开启前请确认")
         case .disableSpoofing: return AppLocalization.string("如何彻底恢复真实位置")
         case .disableWiFiProxy: return AppLocalization.string("关闭 WiFi 代理")
-        case .thirdPartyMode: return AppLocalization.string("第三方模式说明")
         case .certificateTrust: return AppLocalization.string("关于证书信任")
         }
     }
@@ -34,8 +32,6 @@ enum TipKind {
             return AppLocalization.string("停止虚拟定位后，还需要关闭 Wi-Fi 的手动代理配置。如果系统仍显示旧位置，等待缓存刷新，必要时重启设备。")
         case .disableWiFiProxy:
             return AppLocalization.string("停止虚拟定位后，请到「设置 → 无线局域网 → 当前网络 → 配置代理」中改回「关闭」，否则流量仍会指向已停止的本机代理。")
-        case .thirdPartyMode:
-            return AppLocalization.string("本应用只负责把坐标写给你的代理客户端，拦截与规则由客户端执行。应用关闭后客户端里的配置可能继续生效。")
         case .certificateTrust:
             return AppLocalization.string("安装描述文件后，还需要在「设置 → 通用 → 关于本机 → 证书信任设置」中手动开启完全信任，否则拦截不会生效。")
         }
@@ -46,7 +42,6 @@ enum TipKind {
         case .enableSpoofing: return "info.circle"
         case .disableSpoofing: return "arrow.uturn.backward.circle"
         case .disableWiFiProxy: return "wifi.slash"
-        case .thirdPartyMode: return "shield.lefthalf.filled"
         case .certificateTrust: return "lock.shield"
         }
     }
@@ -61,7 +56,7 @@ enum TipKind {
         case .enableSpoofing: return AppLocalization.string("生效说明")
         case .disableSpoofing: return AppLocalization.string("失效说明")
         case .disableWiFiProxy: return AppLocalization.string("关闭 WiFi 代理")
-        case .thirdPartyMode, .certificateTrust: return title
+        case .certificateTrust: return title
         }
     }
 }

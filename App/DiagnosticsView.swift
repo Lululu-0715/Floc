@@ -6,8 +6,6 @@ struct DiagnosticsView: View {
     @ObservedObject var state: MapLocationState
 
     @ObservedObject private var proxy = ProxyManager.shared
-    @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
-    @ObservedObject private var runtimeMode = RuntimeModeStore.shared
 
     @Environment(\.dismiss) private var dismiss
 
@@ -138,7 +136,6 @@ struct DiagnosticsView: View {
 
     private var configurationSection: some View {
         Section {
-            KeyValueRow(AppLocalization.string("运行模式"), value: runtimeMode.mode.displayName)
             KeyValueRow(AppLocalization.string("代理状态"), value: proxy.status.displayText)
             KeyValueRow(
                 AppLocalization.string("虚拟定位"),
@@ -248,34 +245,23 @@ struct DiagnosticsView: View {
             detail: selfCheck
         ))
 
-        switch runtimeMode.mode {
-        case .localProxy:
-            await proxy.verifyCertificateTrust()
-            results.append(VerificationResult(
-                kind: .certificateTrust,
-                outcome: proxy.certificateTrustState.isTrusted
-                    ? .passed
-                    : .failed(proxy.certificateTrustState.displayText),
-                detail: proxy.certificateDownloadURL?.absoluteString ?? ""
-            ))
+        await proxy.verifyCertificateTrust()
+        results.append(VerificationResult(
+            kind: .certificateTrust,
+            outcome: proxy.certificateTrustState.isTrusted
+                ? .passed
+                : .failed(proxy.certificateTrustState.displayText),
+            detail: proxy.certificateDownloadURL?.absoluteString ?? ""
+        ))
 
-            await proxy.verifyWiFiProxy()
-            results.append(VerificationResult(
-                kind: .wifiProxy,
-                outcome: proxy.wiFiProxyState == .configured
-                    ? .passed
-                    : .failed(proxy.wiFiProxyState.displayText),
-                detail: "\(ProxyManager.proxyHost):\(ProxyManager.proxyPort)"
-            ))
-
-        case .thirdParty:
-            await thirdParty.refresh()
-            results.append(VerificationResult(
-                kind: .thirdPartyModule,
-                outcome: thirdParty.state.isUsable ? .passed : .failed(thirdParty.state.displayText),
-                detail: thirdParty.selectedClient.displayName
-            ))
-        }
+        await proxy.verifyWiFiProxy()
+        results.append(VerificationResult(
+            kind: .wifiProxy,
+            outcome: proxy.wiFiProxyState == .configured
+                ? .passed
+                : .failed(proxy.wiFiProxyState.displayText),
+            detail: "\(ProxyManager.proxyHost):\(ProxyManager.proxyPort)"
+        ))
 
         environmentChecks = results
         reload()

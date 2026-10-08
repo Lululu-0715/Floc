@@ -5,7 +5,6 @@ struct VerificationResult: Equatable {
     enum Kind: Equatable {
         case certificateTrust
         case wifiProxy
-        case thirdPartyModule
         case rewriteEngine
     }
 
@@ -33,7 +32,6 @@ struct VerificationResult: Equatable {
         switch kind {
         case .certificateTrust: return AppLocalization.string("证书信任")
         case .wifiProxy: return AppLocalization.string("Wi-Fi 代理链路")
-        case .thirdPartyModule: return AppLocalization.string("第三方模块连通")
         case .rewriteEngine: return AppLocalization.string("改写引擎自检")
         }
     }

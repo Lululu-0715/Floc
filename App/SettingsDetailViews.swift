@@ -7,67 +7,6 @@ import SwiftUI
 // 代价是每个入口多一次点击，所以入口右侧都带上当前取值，
 // 不进二级页也知道现在是什么状态。
 
-// MARK: - 运行模式
-
-/// 运行模式选择。
-struct RuntimeModePickerView: View {
-
-    @ObservedObject var runtimeMode: RuntimeModeStore
-    /// 切换模式要顺带停代理并重置引导，动作留在 SettingsView 里统一做。
-    let onSelect: (ProxyRuntimeMode) -> Void
-
-    var body: some View {
-        List {
-            Section {
-                ForEach(ProxyRuntimeMode.allCases) { mode in
-                    optionRow(mode)
-                }
-            } header: {
-                SettingsSectionHeader(title: AppLocalization.string("运行模式"))
-            } footer: {
-                Text(AppLocalization.string("切换模式会停止当前代理并重新走一遍配置引导，已保存的收藏和证书不受影响。"))
-            }
-        }
-        .listStyle(.insetGrouped)
-        .navigationTitle(AppLocalization.string("运行模式"))
-        .navigationBarTitleDisplayMode(.inline)
-    }
-
-    private func optionRow(_ mode: ProxyRuntimeMode) -> some View {
-        let isSelected = runtimeMode.mode == mode
-        return Button {
-            onSelect(mode)
-        } label: {
-            HStack(alignment: .top, spacing: SettingsMetrics.iconSpacing) {
-                SettingsIconBadge(systemImage: mode.systemImage)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(mode.displayName)
-                        .font(SettingsMetrics.titleFont)
-                        .foregroundStyle(.primary)
-                    Text(mode.summary)
-                        .font(SettingsMetrics.subtitleFont)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 8)
-
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(Color.blue)
-                        .padding(.top, 2)
-                }
-            }
-            .padding(.vertical, SettingsMetrics.rowVerticalPadding)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(isSelected ? AccessibilityTraits.isSelected : AccessibilityTraits())
-    }
-}
-
 // MARK: - 语言
 
 /// 界面语言选择。
@@ -180,7 +119,6 @@ struct SimulationSettingsView: View {
     @ObservedObject var state: MapLocationState
 
     @ObservedObject private var proxy = ProxyManager.shared
-    @ObservedObject private var runtimeMode = RuntimeModeStore.shared
 
     @State private var selfCheckResult: String?
 
@@ -233,9 +171,7 @@ struct SimulationSettingsView: View {
             } header: {
                 SettingsSectionHeader(title: AppLocalization.string("定位模拟"))
             } footer: {
-                Text(runtimeMode.mode == .thirdParty
-                     ? AppLocalization.string("精度与运动状态模拟都会写入客户端配置。")
-                     : AppLocalization.string("精度直接影响系统对定位可信度的判断，通常 25 米较为自然。"))
+                Text(AppLocalization.string("精度直接影响系统对定位可信度的判断，通常 25 米较为自然。"))
             }
 
             Section {
@@ -273,221 +209,6 @@ struct SimulationSettingsView: View {
             get: { state.motionDriftRadius },
             set: { state.motionDriftRadius = MotionDriftOption.normalized($0).rawValue }
         )
-    }
-}
-
-// MARK: - 第三方代理
-
-/// 第三方客户端的模块与连通性。
-struct ThirdPartySettingsView: View {
-
-    @ObservedObject var thirdParty: ThirdPartyProxyManager
-
-    @State private var showModuleURLSheet = false
-    @State private var moduleURLInput = ""
-    /// 复制本身没有界面变化，不给反馈用户会怀疑到底点上没有。
-    @State private var didCopyModuleURL = false
-    @State private var copyFeedbackTask: Task<Void, Never>?
-
-    var body: some View {
-        List {
-            Section {
-                HStack(spacing: SettingsMetrics.iconSpacing) {
-                    SettingsIconBadge(systemImage: "shield.lefthalf.filled")
-
-                    Text(AppLocalization.string("客户端"))
-                        .font(SettingsMetrics.titleFont)
-
-                    Spacer(minLength: 8)
-
-                    Picker(AppLocalization.string("客户端"), selection: $thirdParty.selectedClient) {
-                        ForEach(ThirdPartyProxyClient.allCases) { client in
-                            Text(client.displayName).tag(client)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                }
-                .padding(.vertical, SettingsMetrics.rowVerticalPadding)
-
-                SettingsStatusRow(
-                    systemImage: "link",
-                    title: thirdParty.selectedClient.displayName,
-                    value: thirdParty.state.displayText,
-                    valueColor: thirdParty.state.isUsable ? .green : .orange
-                )
-
-                // 「实际拦截」回答的是一个别处答不了的问题：模块回话的到底是
-                // 哪个客户端。用户在应用里换了选择、手机上却还开着另一个代理时，
-                // 上一行的状态描述的是那个客户端——不写出来就会张冠李戴。
-                SettingsStatusRow(
-                    systemImage: "antenna.radiowaves.left.and.right",
-                    title: AppLocalization.string("实际拦截"),
-                    value: thirdParty.responderClient?.displayName
-                        ?? AppLocalization.string("未检测"),
-                    valueColor: thirdParty.responderMismatch ? .red : .secondary
-                )
-
-                // 脚本每次改写都把结论写进存储，这里直接翻成人话。
-                // 「没有记录」是最有价值的一档：说明响应改写规则一次都没跑到，
-                // 问题在模块启用 / MITM 覆盖，而不在格式对不上。
-                SettingsStatusRow(
-                    systemImage: "waveform.path.ecg",
-                    title: AppLocalization.string("模块运行情况"),
-                    value: thirdParty.diagnosticsText,
-                    valueColor: diagnosticsColor
-                )
-
-                SettingsStatusRow(
-                    systemImage: "clock.arrow.circlepath",
-                    title: AppLocalization.string("最近一次"),
-                    value: thirdParty.diagnosticsDateText
-                )
-
-                // 仓库里有 5 个 wloc.* 模块文件，把当前客户端该用哪个直接写出来，
-                // 省得用户对着文件名猜。
-                SettingsStatusRow(
-                    systemImage: "doc.text",
-                    title: AppLocalization.string("模块文件"),
-                    value: thirdParty.moduleFileName,
-                    monospacedValue: true
-                )
-            } header: {
-                SettingsSectionHeader(title: AppLocalization.string("第三方代理"))
-            } footer: {
-                if let responder = thirdParty.responderClient, thirdParty.responderMismatch {
-                    Text(String(
-                        format: AppLocalization.string("当前拦截定位请求的是 %@，与上面选择的 %@ 不一致。请确认手机上只开着一个代理客户端，并在它里面启用本模块。"),
-                        responder.displayName,
-                        thirdParty.selectedClient.displayName
-                    ))
-                } else {
-                    Text(AppLocalization.string("模块由第三方客户端执行拦截，本应用只负责写入坐标。"))
-                }
-            }
-
-            Section {
-                if let url = thirdParty.moduleSubscriptionURL {
-                    Button {
-                        UIPasteboard.general.string = url.absoluteString
-                        RuntimeLogger.info("APP", "Settings", "模块地址已复制")
-                        showCopyFeedback()
-                    } label: {
-                        SettingsLabel(
-                            systemImage: didCopyModuleURL ? "checkmark.circle.fill" : "doc.on.doc",
-                            title: didCopyModuleURL
-                                ? AppLocalization.string("已复制到剪贴板")
-                                : AppLocalization.string("复制模块订阅地址"),
-                            tint: didCopyModuleURL ? .green : .blue
-                        )
-                    }
-
-                    Text(url.absoluteString)
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                }
-
-                Button {
-                    moduleURLInput = ThirdPartyProxyManager.defaultModuleBaseURL
-                    showModuleURLSheet = true
-                } label: {
-                    SettingsLabel(
-                        systemImage: "link",
-                        title: AppLocalization.string("自定义模块托管地址")
-                    )
-                }
-
-                Button {
-                    thirdParty.selectedClient.open()
-                } label: {
-                    SettingsLabel(
-                        systemImage: "arrow.up.forward.app",
-                        title: AppLocalization.string("打开 %@", thirdParty.selectedClient.displayName)
-                    )
-                }
-                .disabled(!thirdParty.selectedClient.isInstalled)
-
-                Button {
-                    Task { await thirdParty.refresh() }
-                } label: {
-                    SettingsLabel(
-                        systemImage: "arrow.clockwise",
-                        title: AppLocalization.string("重新检测连通性")
-                    )
-                }
-            } footer: {
-                Text(AppLocalization.string("在客户端里导入模块后，本应用写入的坐标才会生效。"))
-            }
-
-            Section {
-                Button(role: .destructive) {
-                    Task { await thirdParty.clear() }
-                } label: {
-                    SettingsLabel(
-                        systemImage: "xmark.circle",
-                        title: AppLocalization.string("清除客户端坐标"),
-                        tint: .red
-                    )
-                }
-            }
-        }
-        .listStyle(.insetGrouped)
-        .navigationTitle(AppLocalization.string("第三方代理"))
-        .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showModuleURLSheet) { moduleURLSheet }
-    }
-
-    /// 诊断行的颜色：改写成功是绿的，「没有记录」是橙的（需要用户去查模块），
-    /// 其余失败原因一律红。
-    private var diagnosticsColor: Color {
-        guard let outcome = thirdParty.diagnostics?.outcome else { return .orange }
-        switch outcome {
-        case "rewritten": return .green
-        case "disabled": return .orange
-        default: return .red
-        }
-    }
-
-    private var moduleURLSheet: some View {
-        NavigationView {
-            List {
-                Section {
-                    TextField(AppLocalization.string("托管地址前缀"), text: $moduleURLInput)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                } footer: {
-                    Text(AppLocalization.string("填写模块文件所在目录的地址前缀，不带文件名。"))
-                }
-            }
-            .listStyle(.insetGrouped)
-            .navigationTitle(AppLocalization.string("模块托管地址"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(AppLocalization.string("取消")) { showModuleURLSheet = false }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(AppLocalization.string("保存")) {
-                        AppGroup.defaults.set(moduleURLInput, forKey: "thirdPartyModuleBaseURL")
-                        showModuleURLSheet = false
-                    }
-                }
-            }
-        }
-    }
-
-    private func showCopyFeedback() {
-        copyFeedbackTask?.cancel()
-        withAnimation(.easeInOut(duration: 0.15)) { didCopyModuleURL = true }
-        copyFeedbackTask = Task {
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                withAnimation(.easeInOut(duration: 0.15)) { didCopyModuleURL = false }
-            }
-        }
     }
 }
 
@@ -942,7 +663,6 @@ struct UserGuideView: View {
             (AppLocalization.string("失效说明"), .disableSpoofing),
             (AppLocalization.string("关闭 WiFi 代理"), .disableWiFiProxy),
             (TipKind.certificateTrust.settingsLabel, .certificateTrust),
-            (TipKind.thirdPartyMode.settingsLabel, .thirdPartyMode),
         ]
     }
 }

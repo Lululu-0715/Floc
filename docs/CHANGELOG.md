@@ -2,6 +2,99 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.8] - 2026-10-08
+
+**只剩应用内代理。** 删掉了「第三方代理模式」整条链路，修复地图页状态栏下
+的一条白带，把 App 图标真正打进包，并补上纯净版的账号裁剪。
+
+### 移除：第三方代理模式
+
+原先把改写规则写成 5 种代理客户端（Shadowrocket / Surge / QuantumultX /
+Loon / Stash / Egern）的模块文件，由用户自己装到客户端里跑。整条链路删除：
+
+- 删 `ThirdParty/`（5 个模块文件 + `wloc.js` / `wloc-settings.js` + 各自的测试）
+- 删 `Shared/ThirdPartyProxyManager.swift`、`Shared/ThirdPartyProxyClient.swift`
+- 删 `App/ModeSelectionStep.swift`，引导从 4 步变 3 步（第一步不再是「选择运行模式」）
+- 删设置页的「运行模式」与「第三方代理」两个二级页、连接状态里的客户端分支
+- 删三项配套静态检查：代理脚本测试、`check_proxy_modules.py`、
+  `check_module_reachability.py`（`./build.sh --check` 从八项变五项，且不再需要联网）
+- `Resources/remote-config.json` 里的 `moduleBaseURL`、`scriptVersion` 一并删除
+
+删掉的理由：同一套改写逻辑在 `Core/wloc.go`（Go）与 `wloc.js`（JS）里各写了一遍，
+信封顺序 / 长度回填 / gzip 任何一处改一边忘一边，表现都是「定位纹丝不动」，
+而且两边各自的测试都全绿。此外模块与脚本由**手机上的客户端**在运行时主动拉取，
+地址拉不到时是**静默失效**（开关看着是开的）——这正是 1.0.7 用户报的
+「切出去一分钟左右自己恢复真实位置」。删完之后仓库里不再有运行时资产，
+也不再需要为模块维护第二个实现。
+
+### 修复：地图页状态栏底下的一条白带
+
+地图层原来是 `.ignoresSafeArea(edges: .bottom)`，顶上那条安全区空着，
+露出窗口底色——浅色模式下就是状态栏底下一条 59pt 的白带。改成
+`.ignoresSafeArea()` 铺满整块屏幕。覆盖层仍守安全区（ZStack 里兄弟节点互不影响），
+搜索框位置不变、底部面板仍让开 Home 指示条。已用 iPhone 16 Pro 模拟器
+**改前/改后实拍核对**。
+
+### 修复：App 图标没有打进 IPA
+
+`project.yml` 从来没设 `ASSETCATALOG_COMPILER_APPICON_NAME`。XcodeGen 不会像
+Xcode 模板那样自动补这一项，缺了它 actool 就不把 `AppIcon.appiconset` 编进
+`Assets.car`——产物 `Info.plist` 既没有 `CFBundleIcons` 也没有 `CFBundleIconName`，
+装上去是一个白图标，用户每次自签都得自己补一张。补上后产物出现
+`AppIcon60x60@2x.png` 与正确的 `CFBundleIcons`。
+
+### 新增：出包后拆包校验
+
+`Scripts/verify-ipa.py` 接进 `build.sh`，每次出包后拆开两个 IPA 核对显示名
+恒为 `Floc`、Bundle ID `com.fff.loc`、版本号一致、图标位图确实在包里。
+这类问题静态检查看源码看不出来，只有拆包才看得见。
+
+### 纯净版：设置页去掉账号分组
+
+`accountSection`（头像昵称 / 设备码 / 剩余时间 / 输入卡密）与 `licenseBadge`
+整体收进 `#if !PURE_BUILD`——纯净版设置页不再有账号这一类。
+`Shared/BuildFlavor.swift` 里记录了这次裁剪的范围与理由。
+
+### 其他
+
+- 引导第 2 步删掉「Wi-Fi 信息」一行：SSID 不是需要点系统弹窗的权限，
+  只是「读得到就读」的诊断信息，应用内代理设置页本来就会显示
+- 「开启虚拟定位」底部面板底边距 4pt → 2pt
+- 清理 64 条随第三方模式一起失去引用的本地化条目（416 → 352 条 × 3 语）
+- 新增静态护栏：`check_swift_sources.py` 第 9 项断言第三方相关路径已删除、
+  代码里零引用已删符号、`build.sh` 不再调用已删脚本
+
+---
+
+## [1.0.5 – 1.0.7] - 2026-10-07
+
+（这三版当时只出了本地 IPA，没写日志，这里按提交补记。）
+
+### 1.0.7
+
+- **修复 iOS 26+ 系统设置跳转落到本应用**：iOS 26 起设置 App 启用
+  `settings-navigation://`，老 `App-Prefs:` 不会被拒绝，而是被「安全兜底」到
+  **发起方自己的设置页**，且 `open` 回调仍返回 true——表现是「提示成功 + 跳到错页」，
+  肉眼回归抓不到。候选表改为一律新协议在前
+- **每次出包增加纯净版**：`PURE_BUILD` 编译条件，一次产出标准版 + 纯净版两个 IPA
+- 底部面板边距回调 16pt
+
+### 1.0.6
+
+- **修复第三方模块改不了定位**：定位响应是 protobuf 二进制，客户端没开
+  `binary-body-mode` 时会先按 UTF-8 解码，`0x80` 以上字节被替换成 U+FFFD，
+  脚本拼回来的字节流已损坏。模块加开关 + `$done` 按入参形状回包
+- 实时位置跑偏与缩放
+- 后台保活抗中断：判断存活改为问播放器（`isAlive`），不能信自己记的布尔标志
+
+### 1.0.5
+
+- 地图页贴边大圆角与状态行圆钮
+- 卡密回到「账号」分组，并内置离线测试卡密 `FLOC-TEST-2026`
+- 授权服务端（Cloudflare Worker + D1）入库
+
+---
+
 ## [1.0.4] - 2026-10-07
 
 设置页重构为五个分组、新增账号体系与外观个性化；修复「未部署授权服务端
