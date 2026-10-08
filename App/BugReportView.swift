@@ -7,6 +7,8 @@ import SwiftUI
 struct BugReportView: View {
 
     @ObservedObject private var proxy = ProxyManager.shared
+    @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
+    @ObservedObject private var runtimeMode = RuntimeModeStore.shared
 
     @Environment(\.dismiss) private var dismiss
 
@@ -96,8 +98,12 @@ struct BugReportView: View {
         defer { isGenerating = false }
 
         // 生成前跑一轮环境检查，让报告里带上真实状态。
-        await proxy.verifyCertificateTrust()
-        await proxy.verifyWiFiProxy()
+        if runtimeMode.mode == .localProxy {
+            await proxy.verifyCertificateTrust()
+            await proxy.verifyWiFiProxy()
+        } else {
+            await thirdParty.refresh()
+        }
 
         var lines: [String] = []
         lines.append("## \(AppLocalization.string("环境信息"))")
@@ -105,13 +111,20 @@ struct BugReportView: View {
         lines.append("- \(AppLocalization.string("内核版本")): \(CoreBridge.coreVersion)")
         lines.append("- iOS: \(UIDevice.current.systemVersion)")
         lines.append("- \(AppLocalization.string("设备型号")): \(deviceModel())")
+        lines.append("- \(AppLocalization.string("运行模式")): \(runtimeMode.mode.displayName)")
 
         lines.append("")
         lines.append("## \(AppLocalization.string("环境状态"))")
-        lines.append("- \(AppLocalization.string("代理状态")): \(proxy.status.displayText)")
-        lines.append("- \(AppLocalization.string("证书信任")): \(proxy.certificateTrustState.displayText)")
-        lines.append("- Wi-Fi \(AppLocalization.string("代理")): \(proxy.wiFiProxyState.displayText)")
-        lines.append("- \(AppLocalization.string("当前网络")): \(proxy.currentWiFiName.isEmpty ? "未知" : proxy.currentWiFiName)")
+        switch runtimeMode.mode {
+        case .localProxy:
+            lines.append("- \(AppLocalization.string("代理状态")): \(proxy.status.displayText)")
+            lines.append("- \(AppLocalization.string("证书信任")): \(proxy.certificateTrustState.displayText)")
+            lines.append("- Wi-Fi \(AppLocalization.string("代理")): \(proxy.wiFiProxyState.displayText)")
+            lines.append("- \(AppLocalization.string("当前网络")): \(proxy.currentWiFiName.isEmpty ? "未知" : proxy.currentWiFiName)")
+        case .thirdParty:
+            lines.append("- \(AppLocalization.string("客户端")): \(thirdParty.selectedClient.displayName)")
+            lines.append("- \(AppLocalization.string("连接状态")): \(thirdParty.state.displayText)")
+        }
         lines.append("- \(AppLocalization.string("数据共享")): \(AppGroup.isAvailable ? "可用" : "不可用")")
 
         lines.append("")

@@ -2,35 +2,45 @@ import Foundation
 
 /// 运行模式。
 ///
-/// 拦截工作在设备内的 Go 代理里完成，覆盖范围限于当前 Wi-Fi，
-/// App 关闭后即失效；需要把 CA 装进系统并开启完全信任。
-///
-/// **1.0.8 起只剩这一档。** 原来还有 `thirdParty`：把坐标写进
-/// Shadowrocket / Surge 等客户端，由客户端执行拦截。它被移除是因为那套
-/// 链路有两个绕不过去的毛病：
-///
-///   1. **拉不到就是静默失效。** 模块文件与两个 `.js` 都由手机上的客户端
-///      运行时去远端拉，拉不到时模块开关看着还是开的、也不会报错，
-///      表现只是「过一会自己恢复真实位置」，排查成本极高。
-///   2. **同一套改写逻辑维护两份。** 一份 Go（`Core/wloc.go`）一份 JS
-///      （`ThirdParty/ProxyScripts/wloc.js`），改一边忘一边就是
-///      「某个客户端能用、某个不能」。现在只有 Go 那一份。
-///
-/// 枚举本身保留而不是删干净，是为了让老用户的偏好数据有个去处：
-/// 本机存着 `proxyRuntimeMode = thirdParty` 的机器升级上来，
-/// 迁移逻辑会把这一档收敛到 `.localProxy`，不必清数据。
-///
-/// 只剩一个取值之后，原来那套给模式选择界面用的 `displayName` / `summary` /
-/// `systemImage` 已经没有调用方，一并删掉——界面上「应用内代理」这个词在
-/// 引导页与设置页各自有自己的常量，不从这里取。
-enum ProxyRuntimeMode: String {
+/// 两种模式的差别是本质性的，不是「高级 / 简单」的关系：
+///   - localProxy：拦截工作在设备内的 Go 代理里完成，覆盖范围限于当前 Wi-Fi，
+///     App 关闭后即失效。需要装 CA。
+///   - thirdParty：拦截工作交给用户自己的代理客户端（Shadowrocket 等），
+///     覆盖范围取决于客户端（可以走蜂窝网络），App 只负责把坐标写过去。
+enum ProxyRuntimeMode: String, CaseIterable, Codable, Identifiable {
     case localProxy
+    case thirdParty
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .localProxy: return AppLocalization.string("应用内代理")
+        case .thirdParty: return AppLocalization.string("第三方代理")
+        }
+    }
+
+    var summary: String {
+        switch self {
+        case .localProxy:
+            return AppLocalization.string("在设备内运行拦截代理，只覆盖当前 Wi-Fi，需要安装并信任证书。")
+        case .thirdParty:
+            return AppLocalization.string("由你自己的代理客户端执行拦截，可覆盖蜂窝网络，无需安装本应用证书。")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .localProxy: return "wifi.router"
+        case .thirdParty: return "shield.lefthalf.filled"
+        }
+    }
 }
 
-/// 运行模式的初始化状态。
+/// 运行模式的选择与初始化状态。
 ///
-/// 只回答一个问题：**这台设备上的代理环境配好了没有**。
-/// 答案决定应用是停在引导流程里，还是直接进主界面。
+/// 「初始化状态」是按模式分别记录的：用户可能先用了应用内代理完成配置，
+/// 后来换成第三方代理，此时两种模式的引导进度应当各自保留。
 @MainActor
 final class RuntimeModeStore: ObservableObject {
 
@@ -38,19 +48,17 @@ final class RuntimeModeStore: ObservableObject {
 
     private enum Key {
         static let mode = "proxyRuntimeMode"
-        /// 老版本（有两档模式时）记录「是否已经选过模式」。
-        /// 现在没有可选的模式了，不再读写；这里只留下一处说明，
-        /// 免得后来人看到偏好里这个键以为它还有用。
         static let hasSelected = "hasSelectedRuntimeMode"
         static let localProxyInitialized = "localProxyInitialized"
+        static let thirdPartyInitialized = "thirdPartyInitialized"
         static let legacyMigrationDone = "runtimeModeMigrationCompleted"
         static let legacySetupCompleted = "setupCompleted"
     }
 
-    /// 唯一的运行模式，不再是可变状态。
-    let mode: ProxyRuntimeMode = .localProxy
-
-    @Published private(set) var isInitialized: Bool
+    @Published private(set) var mode: ProxyRuntimeMode
+    @Published private(set) var hasSelectedMode: Bool
+    @Published private(set) var localProxyInitialized: Bool
+    @Published private(set) var thirdPartyInitialized: Bool
 
     private let defaults: UserDefaults
     private let legacyDefaults: UserDefaults
@@ -61,47 +69,65 @@ final class RuntimeModeStore: ObservableObject {
     ) {
         self.defaults = defaults
         self.legacyDefaults = legacyDefaults
-        self.isInitialized = defaults.bool(forKey: Key.localProxyInitialized)
-        normalizeStoredMode()
-    }
-
-    /// 把偏好里存的模式字符串归一到唯一档位。
-    ///
-    /// 老机器上这里存着 `thirdParty`。它已经不是一个合法的取值了，
-    /// 留在里面只会让「读不出来」这件事在下次改动时再咬人一口。
-    ///
-    /// **刻意不动 `localProxyInitialized`**：从第三方模式切过来的用户，
-    /// 本机的证书和 Wi-Fi 代理从来没配过，直接当他「已经配好」会让应用
-    /// 一路绿灯而定位纹丝不动。让他重走一遍引导（也就三步）才是对的；
-    /// 而本来就用过应用内代理的用户，这个标记本来就是 true，不会被重复引导。
-    private func normalizeStoredMode() {
-        let stored = defaults.string(forKey: Key.mode)
-        if stored != ProxyRuntimeMode.localProxy.rawValue {
-            defaults.set(ProxyRuntimeMode.localProxy.rawValue, forKey: Key.mode)
-        }
+        self.mode = defaults.string(forKey: Key.mode)
+            .flatMap(ProxyRuntimeMode.init(rawValue:)) ?? .localProxy
+        self.hasSelectedMode = defaults.bool(forKey: Key.hasSelected)
+        self.localProxyInitialized = defaults.bool(forKey: Key.localProxyInitialized)
+        self.thirdPartyInitialized = defaults.bool(forKey: Key.thirdPartyInitialized)
         migrateLegacyStateIfNeeded()
     }
 
-    /// 更早的版本只用一个 `setupCompleted` 布尔值记录引导状态，
-    /// 且那时只有应用内代理这一种链路。这里把它迁移过来，
-    /// 避免老用户升级后被重新引导一遍。
+    func select(_ mode: ProxyRuntimeMode) {
+        let changed = self.mode != mode
+        self.mode = mode
+        hasSelectedMode = true
+        defaults.set(mode.rawValue, forKey: Key.mode)
+        defaults.set(true, forKey: Key.hasSelected)
+        migrateLegacyStateIfNeeded()
+
+        if changed {
+            RuntimeLogger.info("APP", "Mode", "运行模式已切换", details: [
+                "mode": mode.displayName,
+            ])
+        }
+    }
+
+    func isInitialized(_ mode: ProxyRuntimeMode) -> Bool {
+        switch mode {
+        case .localProxy: return localProxyInitialized
+        case .thirdParty: return thirdPartyInitialized
+        }
+    }
+
+    func markInitialized(_ mode: ProxyRuntimeMode) {
+        setInitialized(true, for: mode)
+    }
+
+    func resetInitialization(_ mode: ProxyRuntimeMode) {
+        setInitialized(false, for: mode)
+    }
+
+    private func setInitialized(_ value: Bool, for mode: ProxyRuntimeMode) {
+        switch mode {
+        case .localProxy:
+            localProxyInitialized = value
+            defaults.set(value, forKey: Key.localProxyInitialized)
+        case .thirdParty:
+            thirdPartyInitialized = value
+            defaults.set(value, forKey: Key.thirdPartyInitialized)
+        }
+    }
+
+    /// 老版本只用一个 `setupCompleted` 布尔值记录引导状态。
+    /// 这里把它迁移到当前所选模式上，避免老用户升级后被重新引导一遍。
     private func migrateLegacyStateIfNeeded() {
-        guard !defaults.bool(forKey: Key.legacyMigrationDone) else { return }
+        guard hasSelectedMode, !defaults.bool(forKey: Key.legacyMigrationDone) else { return }
         if legacyDefaults.bool(forKey: Key.legacySetupCompleted) {
-            isInitialized = true
-            defaults.set(true, forKey: Key.localProxyInitialized)
-            RuntimeLogger.info("APP", "Mode", "已迁移旧版引导状态")
+            setInitialized(true, for: mode)
+            RuntimeLogger.info("APP", "Mode", "已迁移旧版引导状态", details: [
+                "mode": mode.displayName,
+            ])
         }
         defaults.set(true, forKey: Key.legacyMigrationDone)
-    }
-
-    func markInitialized() {
-        isInitialized = true
-        defaults.set(true, forKey: Key.localProxyInitialized)
-    }
-
-    func resetInitialization() {
-        isInitialized = false
-        defaults.set(false, forKey: Key.localProxyInitialized)
     }
 }

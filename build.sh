@@ -36,9 +36,10 @@ usage() {
 
 选项:
   --test    构建完成后运行 iOS 模拟器单元测试
-  --check   只跑静态检查，不构建（Go 测试 + 服务端测试 + 源码一致性）
+  --check   只跑静态检查，不构建（Go 测试 + 脚本测试 + 源码一致性）
 
 环境变量:
+  SKIP_MODULE_REACHABILITY=1   跳过打包前的模块联通性联网检查（离线时用）
   FULL_CLEAN=1                 连编译缓存一起清掉，强制全量重编
 USAGE
 }
@@ -64,13 +65,13 @@ run_simulator_tests() {
 # 构建前的静态检查。
 # 这些检查都不需要 Xcode，能在构建前把明显问题拦下来：
 #   - Go 核心单元测试
+#   - 第三方代理脚本测试
 #   - 授权服务端（Worker + D1）单元测试
 #   - 本地化条目对齐
-#   - Swift 源码一致性（括号、桥接头、测试引用、双口味出包）
+#   - Swift 源码一致性（括号、桥接头、测试引用）
+#   - 代理模块一致性（脚本 URL、路径、主机名、QX 重写资源格式）
 #   - 品牌命名一致性（Bundle ID、显示名、证书主题）
-#
-# 1.0.8 起只剩应用内代理，原来那三项围绕第三方模块的检查
-# （代理脚本测试 / 代理模块一致性 / 模块联通性）连同被检查的对象一起删掉了。
+#   - 模块联通性（远端地址可达 + 与本地内容一致）
 run_static_checks() {
   echo "==> 静态检查"
 
@@ -82,6 +83,9 @@ run_static_checks() {
   fi
 
   if command -v node >/dev/null 2>&1; then
+    ( cd "$ROOT/ThirdParty/ProxyScripts" && node --test >/dev/null 2>&1 )
+    echo "    代理脚本测试通过"
+
     # 授权服务端（Cloudflare Worker）单元测试。
     # 用的是 Node 22 内置的 node:sqlite，所以不需要 npm install，克隆下来就能跑。
     # Node < 22 没有这个模块，这时候跳过而不是报失败——只是少跑一层校验，
@@ -93,6 +97,7 @@ run_static_checks() {
       echo "    跳过授权服务端测试（需要 Node 22+ 的 node:sqlite）"
     fi
   else
+    echo "    跳过代理脚本测试（未安装 node）"
     echo "    跳过授权服务端测试（未安装 node）"
   fi
 
@@ -102,8 +107,25 @@ run_static_checks() {
   python3 "$ROOT/Tests/check_swift_sources.py" >/dev/null
   echo "    Swift 源码一致性通过"
 
+  python3 "$ROOT/Tests/check_proxy_modules.py" >/dev/null
+  echo "    代理模块一致性通过"
+
   python3 "$ROOT/Tests/check_branding.py" >/dev/null
   echo "    品牌命名一致性通过"
+
+  # 模块联通性：确认用户设备上客户端会去拉的那几个地址真的能拉到东西。
+  # 上面那几项都只看仓库内部自洽，查不出「地址 404」或「改了脚本忘了 push」——
+  # 而那两种情况的线上表现都是「模块装了但定位不变」，几乎没法排查。
+  # 需要离线构建时用 SKIP_MODULE_REACHABILITY=1 跳过。
+  if [ "${SKIP_MODULE_REACHABILITY:-0}" = "1" ]; then
+    echo "    跳过模块联通性检查（SKIP_MODULE_REACHABILITY=1）"
+  elif python3 "$ROOT/Tests/check_module_reachability.py" >/dev/null 2>&1; then
+    echo "    模块联通性检查通过"
+  else
+    echo "    模块联通性检查未通过：" >&2
+    python3 "$ROOT/Tests/check_module_reachability.py" >&2 || true
+    exit 1
+  fi
 }
 
 run_tests=0
@@ -122,6 +144,8 @@ if [ "$#" -gt 1 ]; then
 fi
 
 # --check 不构建，只跑检查。
+# 注意其中「模块联通性」这一项要联网，纯离线环境下用
+# SKIP_MODULE_REACHABILITY=1 ./build.sh --check 跳过。
 if [ "$check_only" -eq 1 ]; then
   run_static_checks
   echo

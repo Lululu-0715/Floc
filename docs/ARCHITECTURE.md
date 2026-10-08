@@ -64,7 +64,7 @@ Floc/
 │   ├── CoordinateConverter.swift   WGS-84 ↔ GCJ-02
 │   ├── CertificateTrustVerifier.swift  证书信任验证
 │   ├── ProxyManager.swift   本地代理生命周期
-│   ├── ProxyRuntimeMode.swift   运行模式（1.0.8 起只有应用内代理一档）
+│   ├── ThirdPartyProxyManager.swift   第三方客户端对接
 │   ├── MapLocationState.swift   全局状态
 │   ├── FavoriteLocationStore.swift  收藏夹
 │   ├── RuntimeLog.swift     脱敏日志
@@ -72,10 +72,15 @@ Floc/
 │
 ├── App/                     SwiftUI 界面
 │   ├── FlocApp.swift  入口
-│   ├── SetupFlowView.swift   3 步引导
+│   ├── SetupFlowView.swift   4 步引导
 │   ├── MapHomeView.swift     主界面（地图选点）
 │   ├── DiagnosticsView.swift 诊断页
 │   └── ...
+│
+└── ThirdParty/ProxyScripts/ JS 脚本 + 客户端模块
+    ├── wloc.js              响应改写脚本
+    ├── wloc-settings.js     配置接口脚本
+    └── modules/             5 种客户端模块格式
 ```
 
 ### 为什么用 Go 写核心
@@ -119,8 +124,8 @@ Go 侧通过 `//export` 暴露纯 C 接口，Swift 侧用 `cgo.Handle` 持有 Go
 
 > ⚠️ **踩过的坑**：6 字节魔数恰好是 8 字节前缀的后 6 字节。如果只按魔数搜索，
 > 会在偏移 2 处产生伪匹配，把载荷前两字节误读成长度，导致改写静默失败。
-> 所以 `Core/wloc.go` 的 `patchWlocBody` **先试 8 字节前缀，再回退到魔数搜索**。
-> （1.0.8 前 JS 那份实现有同名的 `patchMarkerFrame`，已随第三方模块一起删除。）
+> 所以 `wloc.js` 的 `patchMarkerFrame` 和 Go 的 `patchWlocBody` 都**先试 8 字节
+> 前缀，再回退到魔数搜索**。
 
 ### 3.2 载荷结构
 
@@ -240,8 +245,7 @@ GCJ-02 偏移只在中国境内生效。
 
 ## 5. 代理模式
 
-1.0.8 起只剩**应用内代理**一档。这一节记录它怎么工作、边界在哪，
-以及为什么把原本并存的「第三方代理模式」整个删掉了。
+App 支持两种运行模式，对应两类用户场景。
 
 ### 5.1 本地代理模式
 
@@ -273,13 +277,10 @@ App 内自带代理服务，监听 `127.0.0.1:8888`。
    声明 `UIBackgroundModes: audio`。音频用代码手写 WAV 的 RIFF 头生成，
    不占包体积。
 
-### 5.2 为什么只剩应用内代理（1.0.8 的决定）
+### 5.2 第三方代理模式
 
-1.0.7 及以前还有第二条链路：把改写规则写成 5 种代理客户端（Shadowrocket /
-Surge / QuantumultX / Loon / Stash / Egern）的模块文件，由用户自己装到
-客户端里跑。**1.0.8 把这条链路整个删掉了。**
-
-删除前它是这样的：
+给已经在用 Shadowrocket / Surge / QuantumultX 等工具的用户。
+App 只负责把配置写进去，代理本身交给用户的客户端。
 
 ```
 用户在 App 内选点 → App 请求 http://gs-loc.apple.com/wloc-settings/save?lat=..&lon=..
@@ -287,57 +288,76 @@ Surge / QuantumultX / Loon / Stash / Egern）的模块文件，由用户自己�
                         ├─ 客户端脚本 wloc-settings.js 拦截该请求
                         ├─ 把坐标写进客户端持久化存储
                         └─ 返回 success
-
+                        
 iOS 定位请求 → 客户端代理 → wloc.js 拦截 → 读存储 → 改写坐标
 ```
 
-删掉的理由，每一条都是踩出来的：
+支持 6 种客户端，各自模块格式：
 
-- **同一套算法写了两遍。** 改写逻辑在 `Core/wloc.go`（Go）里有一份完整的，
-  `ThirdParty/ProxyScripts/wloc.js` 里又有一份（JS）。信封顺序、长度回填、
-  gzip 处理任何一处改一边忘一边，表现都是「定位纹丝不动」，而且**两边都在
-  各自的测试里全绿**。删掉一份，剩下的那份就是唯一真源。
-- **脚本托管地址是个长期隐患。** 模块与 `.js` 都由**手机上的客户端**在运行时
-  主动去拉。地址写上 `raw.githubusercontent.com`，国内直接拉不到，而拉不到的
-  表现是**静默失效**——模块开关看着是开的、日志里只有一行 debug。改用 jsDelivr
-  只是把这个问题推远了一点，没有消除。
-- **客户端那边的坑永远修不完。** 各家段名与语法不同（小火箭**没有** `[Rewrite]`
-  段）、`binary-body-mode` 各家写法不同、`$done` 回包形状要跟入参形状一致、
-  每家的 CA 不能混用……每一条都对应一次「装了但不用」的线上事故。
-- **仓库不该有运行时资产。** 删完之后，仓库里不再有任何需要在运行时被外部
-  拉取的文件，想转私有仓库也就没有「用户的客户端拉不到」这层顾虑了。
+| 客户端 | 扩展名 | URL Scheme |
+|---|---|---|
+| Shadowrocket | `.module` | `shadowrocket://` |
+| Surge | `.sgmodule` | `surge://` |
+| QuantumultX | `.conf` | `quantumult-x://` |
+| Loon | `.lpx` | `loon://` |
+| Stash | `.stoverride` | `stash://` |
+| Egern | `.yaml` | `egern://` |
 
-### 5.3 应用内代理的边界
+### 5.3 脚本的存储兼容
 
-必须说清楚：**换模式不会让「过一会恢复真实位置」这个问题消失**，
-只是把成因从「脚本拉不到」换成「App 被系统挂起」。
+第三方客户端的持久化 API 各不相同：
 
-- 应用内代理是 App 进程里的一个 `127.0.0.1:8888`。**App 一旦被系统挂起，
-  端口就没了，定位立刻回到真实位置。** 保活靠播放静音音频（见 5.1），
-  但音频被电话或其他应用抢走时仍会中断——所以 `BackgroundKeepAlive`
-  判断存活要用 `isAlive`（问播放器），不能信自己记的布尔标志。
-- 它只覆盖**当前 Wi-Fi**。蜂窝网络不走 Wi-Fi 代理，需要有系统级 VPN 权限的
-  客户端才能覆盖，而自签名包拿不到 Network Extension entitlement。
-- 回前台时会自愈：`recoverAfterForeground()` 实测一次端口是否真的还在
-  （被挂起时 `proxy.status` 不会变成 `.stopped`，信它就会误判），失效则重新拉起。
+| 客户端 | 读 | 写 |
+|---|---|---|
+| Surge / Loon / Stash | `$persistentStore.read(key)` | `$persistentStore.write(v, key)` |
+| QuantumultX | `$prefs.valueForKey(key)` | `$prefs.setValueForKey(v, key)` |
+| Shadowrocket | `$rocket.settings.read(key)` | `$rocket.settings.write(key, v)` |
 
-> **不要再加回「把客户端 URL Scheme 当兜底」这类跳转。** 系统设置跳转全部
-> 集中在 `Shared/SystemSettingsNavigator.swift` 的 `Target` 枚举里，候选顺序
-> 新在前，`canOpenURL` 不许当闸门——详见该文件与
-> `Tests/check_swift_sources.py` 第 6 项。
+> ⚠️ **踩过的坑**：最初按客户端名字 `switch (ENV)` 分派，结果任何**未列出的
+> 客户端**（ENV 返回 `'unknown'`）都会走进没有匹配分支的路径，直接返回
+> `undefined`，虚拟定位**静默失效**。
+>
+> 改成**按 API 能力探测**：依次尝试 `$prefs.valueForKey` →
+> `$persistentStore.read` → `$rocket.settings.read`，哪个存在用哪个。
+> 这样不认识的客户端也能正常工作。
 
-### 5.4 证书那一步跑不掉
+### 5.4 各客户端的 CA 不能混用
 
-删掉第三方模式**不等于不需要证书**。应用内代理同样是 MITM，仍然要有一张被系统
-信任的根证书：App 自己生成（`CertificateAuthorityStore` + `certService`），
-通过本机 `127.0.0.1` 提供服务让用户在系统设置里下载、安装并开启完全信任。
+**这是第三方模式下最常见的坑。**
 
-少掉的是「去客户端导入模块」，多出来的是「手动设 Wi-Fi 代理 + 装证书」——
-操作步数没少，只是从别人家挪到了自己家。所以这一步在引导里仍然是必经项，
-`CertificateTrustVerifier` 负责探测信任状态，跳转路径必须新协议在前。
+代理客户端各自生成并管理自己的根证书，每张 CA 与生成它的 App 绑定。
+把 Surge 的 CA 拿去给 Egern 用，**MITM 会静默失败且不报任何错误** ——
+模块看起来装好了、开关也是开的，但定位就是不变。
+
+正确的做法是每个客户端各自生成一次：
+
+| 客户端 | 生成路径 |
+|---|---|
+| Surge | 设置 → MITM → 生成 CA |
+| Egern | 设置 → MitM → 生成 CA |
+| Shadowrocket | 设置 → 证书 → 生成新的 CA |
+| QuantumultX | 设置 → MitM → 生成证书 |
+| Loon / Stash | 设置 → MitM → 生成 CA |
+
+生成后在 iOS「设置 → 通用 → 关于本机 → 证书信任设置」里逐个打开完全信任。
+
+App 内「验证」页的第 3 项检查会探测模块连通性，失败时会提示这一点。
+
+### 5.5 模块文件与客户端的对应
+
+```
+ThirdParty/ProxyScripts/modules/
+├── wloc.module         Shadowrocket
+├── wloc.sgmodule       Surge、Egern（两者共用同一格式）
+├── wloc.conf           QuantumultX
+├── wloc.lpx            Loon
+└── wloc.stoverride     Stash
+```
+
+> **不要把被拦截的主机名写进 `DIRECT` 规则。** 那样流量会绕过代理，
+> 改写规则永远不会触发。`Tests/check_proxy_modules.py` 会检查这一点。
 
 ---
-
 
 ## 6. 数据流
 
@@ -394,19 +414,18 @@ iOS 定位请求 → 客户端代理 → wloc.js 拦截 → 读存储 → 改写
 
 ## 8. 界面流程
 
-### 首次启动：3 步引导
+### 首次启动：4 步引导
 
 ```
-① 权限申请        ② 代理配置        ③ 验证
-┌──────────┐    ┌──────────┐    ┌──────────┐
-│ 定位权限  │ →  │ 装证书    │ →  │ 6 项检查  │
-│          │    │ 设代理    │    │ 全绿完成  │
-└──────────┘    └──────────┘    └──────────┘
+① 模式选择        ② 权限申请        ③ 代理配置        ④ 验证
+┌──────────┐   ┌──────────┐    ┌──────────┐    ┌──────────┐
+│ 本地代理  │ → │ 定位权限  │ →  │ 装证书    │ →  │ 6 项检查  │
+│ 第三方    │   │ 本地网络  │    │ 设代理    │    │ 全绿完成  │
+└──────────┘   └──────────┘    └──────────┘    └──────────┘
 ```
 
-1.0.8 起第一步不再是「选择运行模式」——只剩应用内代理，没有可选的。
-`SetupCoordinator` 管理步骤状态机（`advance` / `goBack` / `jump` /
-`complete` / `reset`），用户可以随时跳回前面的步骤重做。
+`SetupCoordinator` 管理步骤状态机（`select` / `advance` / `goBack` /
+`jump` / `complete` / `reset`），用户可以随时跳回前面的步骤重做。
 
 ### 日常使用：主界面
 
@@ -438,13 +457,14 @@ iOS 定位请求 → 客户端代理 → wloc.js 拦截 → 读存储 → 改写
 | 改写策略 | 逐层降级 | 不同 iOS 版本信封格式不同，硬编码单一格式会失效 |
 | 未知字段 | 原样保留原始字节 | 丢字段会导致 iOS 拒绝整个响应 |
 | 坐标存储 | 双坐标并存 | 避免 GCJ-02 反向迭代累积误差 |
-| 运行模式 | 只留应用内代理一档 | 同一套算法写两遍，改一边忘一边就是「定位纹丝不动」 |
+| 脚本存储 API | 能力探测而非名字分派 | 未列出的客户端也能工作 |
 | 证书信任验证 | 自签 loopback 证书自测 | iOS 无公开 API 查询信任状态 |
 | 代理链路验证 | 请求百度回显 token | 证明代理确实拦到了流量 |
 | 后台保活 | 代码生成静音音频 | 不占包体积 |
 | 日志 | 写时就脱敏 | 日志可能外传，事后脱敏不可靠 |
 | 数值解析 | 严格拒绝 null/空串 | `Number(null) === 0` 会把定位静默改到几内亚湾 |
-| 构建前检查 | 脚本固化跨文件约定 | 「装了但定位不变」排查成本极高，且看不到线上表现 |
-| 已删功能的护栏 | 断言路径不存在 + 符号零引用 | 删一半的代码比不删更难查 |
+| 模块文件 | 每客户端一份，Surge 与 Egern 共用 | 各客户端格式不同，共用的不做无谓复制 |
+| CA 使用 | 每客户端各自生成 | 跨客户端 CA 会导致 MITM 静默失败 |
+| 构建前检查 | 脚本固化跨文件约定 | 「模块装了但定位不变」排查成本极高 |
 | 地图页安全区 | 只有地图层忽略，覆盖层守安全区 | 顶上那条安全区空着会露出窗口底色，浅色下就是状态栏底下一条白带 |
 

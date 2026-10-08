@@ -2,12 +2,13 @@ import SwiftUI
 
 /// 引导流程的容器视图。
 ///
-/// 三个步骤依次是：授权限 → 配代理 → 做检测。
+/// 四个步骤依次是：选模式 → 授权限 → 配代理 → 做检测。
 /// 顶部有步骤指示器，用户可以点击回看已完成的步骤。
 struct SetupFlowView: View {
 
     @ObservedObject var setup: SetupCoordinator
     @ObservedObject private var proxy = ProxyManager.shared
+    @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
 
     @State private var locationPermissionRequested = false
     @State private var isVerifying = false
@@ -27,6 +28,9 @@ struct SetupFlowView: View {
                     header
 
                     switch setup.currentStep {
+                    case .modeSelection:
+                        ModeSelectionStep(setup: setup)
+
                     case .permissionRequest:
                         PermissionStep(
                             setup: setup,
@@ -116,10 +120,14 @@ struct SetupFlowView: View {
 
     private var stepDescription: String {
         switch setup.currentStep {
+        case .modeSelection:
+            return AppLocalization.string("先确定拦截在哪里执行。这一步之后仍可随时切换。")
         case .permissionRequest:
-            return AppLocalization.string("在地图上显示真实位置需要定位权限，本应用不会上传任何位置数据。")
+            return AppLocalization.string("地图显示与 Wi-Fi 名称读取需要定位权限，本应用不会上传任何位置数据。")
         case .proxySetup:
-            return AppLocalization.string("需要安装本机证书，并把当前 Wi-Fi 的代理指向本机。")
+            return setup.selectedMode == .localProxy
+                ? AppLocalization.string("需要安装本机证书，并把当前 Wi-Fi 的代理指向本机。")
+                : AppLocalization.string("需要在你的代理客户端中导入模块，并开启对应主机名的解密。")
         case .verification:
             return AppLocalization.string("运行完整检测，确认每个环节都通了再开始使用。")
         }
@@ -129,7 +137,7 @@ struct SetupFlowView: View {
 
     private var bottomBar: some View {
         HStack(spacing: 12) {
-            if setup.currentStep != .permissionRequest {
+            if setup.currentStep != .modeSelection {
                 Button {
                     setup.goBack()
                 } label: {
@@ -154,7 +162,7 @@ struct SetupFlowView: View {
                 .padding(.vertical, 14)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(isVerifying)
+            .disabled(isVerifying || (setup.currentStep == .modeSelection && !setup.runtimeMode.hasSelectedMode))
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
@@ -163,6 +171,7 @@ struct SetupFlowView: View {
 
     private var primaryButtonTitle: String {
         switch setup.currentStep {
+        case .modeSelection: return AppLocalization.string("下一步")
         case .permissionRequest: return AppLocalization.string("下一步")
         case .proxySetup: return AppLocalization.string("开始检测")
         case .verification: return AppLocalization.string("完成")
@@ -199,63 +208,99 @@ struct SetupFlowView: View {
             detail: selfCheck
         ))
 
-        // 证书信任：需要有证书服务在跑。
-        if proxy.isCertificateServiceRunning {
-            await proxy.verifyCertificateTrust()
-            switch proxy.certificateTrustState {
-            case .trusted:
+        switch setup.selectedMode {
+        case .localProxy:
+            // 证书信任：需要有证书服务在跑。
+            if proxy.isCertificateServiceRunning {
+                await proxy.verifyCertificateTrust()
+                switch proxy.certificateTrustState {
+                case .trusted:
+                    collected.results.append(VerificationResult(
+                        kind: .certificateTrust, outcome: .passed,
+                        detail: AppLocalization.string("系统已信任本机根证书")
+                    ))
+                case .notTrusted:
+                    collected.results.append(VerificationResult(
+                        kind: .certificateTrust, outcome: .failed(
+                            AppLocalization.string("证书未安装或未开启完全信任")
+                        ),
+                        detail: proxy.certificateDownloadURL?.absoluteString ?? ""
+                    ))
+                case .failed(let reason):
+                    collected.results.append(VerificationResult(
+                        kind: .certificateTrust, outcome: .failed(reason), detail: ""
+                    ))
+                case .unknown:
+                    collected.results.append(VerificationResult(
+                        kind: .certificateTrust, outcome: .skipped(
+                            AppLocalization.string("证书服务未启动")
+                        ),
+                        detail: ""
+                    ))
+                }
+            } else {
                 collected.results.append(VerificationResult(
-                    kind: .certificateTrust, outcome: .passed,
-                    detail: AppLocalization.string("系统已信任本机根证书")
-                ))
-            case .notTrusted:
-                collected.results.append(VerificationResult(
-                    kind: .certificateTrust, outcome: .failed(
-                        AppLocalization.string("证书未安装或未开启完全信任")
-                    ),
-                    detail: proxy.certificateDownloadURL?.absoluteString ?? ""
-                ))
-            case .failed(let reason):
-                collected.results.append(VerificationResult(
-                    kind: .certificateTrust, outcome: .failed(reason), detail: ""
-                ))
-            case .unknown:
-                collected.results.append(VerificationResult(
-                    kind: .certificateTrust, outcome: .skipped(
-                        AppLocalization.string("证书服务未启动")
-                    ),
+                    kind: .certificateTrust,
+                    outcome: .skipped(AppLocalization.string("请先启动代理")),
                     detail: ""
                 ))
             }
-        } else {
-            collected.results.append(VerificationResult(
-                kind: .certificateTrust,
-                outcome: .skipped(AppLocalization.string("请先启动代理")),
-                detail: ""
-            ))
-        }
 
-        // Wi-Fi 代理链路。
-        //
-        // 这里必须先实测端口，不能只看 `proxy.status`：被挂起后状态不会
-        // 变成 .stopped，直接信它就会把「代理其实已经死了」误报成
-        // 「代理未启动 → 跳过」，让用户以为这一步没问题。
-        if proxy.syncStatusWithReality() {
-            await proxy.verifyWiFiProxy()
-            let passed = proxy.wiFiProxyState == .configured
-            collected.results.append(VerificationResult(
-                kind: .wifiProxy,
-                outcome: passed ? .passed : .failed(
-                    AppLocalization.string("请求没有经过本机代理，请检查 Wi-Fi 代理配置")
-                ),
-                detail: "\(ProxyManager.proxyHost):\(ProxyManager.proxyPort)"
-            ))
-        } else {
-            collected.results.append(VerificationResult(
-                kind: .wifiProxy,
-                outcome: .skipped(AppLocalization.string("代理未启动")),
-                detail: ""
-            ))
+            // Wi-Fi 代理链路。
+            //
+            // 这里必须先实测端口，不能只看 `proxy.status`：被挂起后状态不会
+            // 变成 .stopped，直接信它就会把「代理其实已经死了」误报成
+            // 「代理未启动 → 跳过」，让用户以为这一步没问题。
+            if proxy.syncStatusWithReality() {
+                await proxy.verifyWiFiProxy()
+                let passed = proxy.wiFiProxyState == .configured
+                collected.results.append(VerificationResult(
+                    kind: .wifiProxy,
+                    outcome: passed ? .passed : .failed(
+                        AppLocalization.string("请求没有经过本机代理，请检查 Wi-Fi 代理配置")
+                    ),
+                    detail: "\(ProxyManager.proxyHost):\(ProxyManager.proxyPort)"
+                ))
+            } else {
+                collected.results.append(VerificationResult(
+                    kind: .wifiProxy,
+                    outcome: .skipped(AppLocalization.string("代理未启动")),
+                    detail: ""
+                ))
+            }
+
+        case .thirdParty:
+            await thirdParty.refresh()
+            switch thirdParty.state {
+            case .connected, .connectedNoCoordinate:
+                collected.results.append(VerificationResult(
+                    kind: .thirdPartyModule, outcome: .passed,
+                    detail: AppLocalization.string("客户端已响应配置接口")
+                ))
+            case .clientMissing:
+                collected.results.append(VerificationResult(
+                    kind: .thirdPartyModule, outcome: .failed(
+                        AppLocalization.string("未检测到已安装的 %@", thirdParty.selectedClient.displayName)
+                    ),
+                    detail: ""
+                ))
+            case .moduleNotInstalled:
+                collected.results.append(VerificationResult(
+                    kind: .thirdPartyModule, outcome: .failed(
+                        AppLocalization.string("模块未生效，请确认已导入并开启解密")
+                    ),
+                    detail: ""
+                ))
+            case .failed(let reason):
+                collected.results.append(VerificationResult(
+                    kind: .thirdPartyModule, outcome: .failed(reason), detail: ""
+                ))
+            case .unknown, .checking:
+                collected.results.append(VerificationResult(
+                    kind: .thirdPartyModule, outcome: .skipped(AppLocalization.string("未完成检测")),
+                    detail: ""
+                ))
+            }
         }
 
         report = collected

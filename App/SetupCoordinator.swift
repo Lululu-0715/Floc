@@ -2,12 +2,10 @@ import Foundation
 
 /// 首次配置的引导流程协调器。
 ///
-/// 负责回答两个问题：
-///   1. 该设备的代理环境配置是否已经走完？
-///   2. 现在应该展示引导页还是主界面？
-///
-/// 引导三步：授权限 → 配代理 → 做检测。
-/// （1.0.8 之前第一步是「选择运行模式」，只剩应用内代理之后这一步没有意义了。）
+/// 负责回答三个问题：
+///   1. 用户选的是哪种运行模式？
+///   2. 该模式下的配置是否已经走完？
+///   3. 现在应该展示引导页还是主界面？
 @MainActor
 final class SetupCoordinator: ObservableObject {
 
@@ -21,8 +19,8 @@ final class SetupCoordinator: ObservableObject {
     /// 重新塞一遍介绍页面。
     @Published private(set) var hasSeenWelcome: Bool
 
-    /// 引导流程的当前步骤。
-    @Published var currentStep: Step = .permissionRequest
+    /// 引导流程的当前步骤。切换模式时会重置。
+    @Published var currentStep: Step = .modeSelection
 
     private enum Key {
         static let welcomeSeen = "welcomeOnboardingSeen"
@@ -31,6 +29,7 @@ final class SetupCoordinator: ObservableObject {
     private let defaults: UserDefaults
 
     enum Step: Int, CaseIterable, Comparable {
+        case modeSelection
         case permissionRequest
         case proxySetup
         case verification
@@ -41,6 +40,7 @@ final class SetupCoordinator: ObservableObject {
 
         var title: String {
             switch self {
+            case .modeSelection: return AppLocalization.string("选择运行模式")
             case .permissionRequest: return AppLocalization.string("授予必要权限")
             case .proxySetup: return AppLocalization.string("配置代理环境")
             case .verification: return AppLocalization.string("执行环境检测")
@@ -55,7 +55,11 @@ final class SetupCoordinator: ObservableObject {
         self.runtimeMode = runtimeMode
         self.defaults = defaults
         self.hasSeenWelcome = defaults.bool(forKey: Key.welcomeSeen)
-        self.isCompleted = runtimeMode.isInitialized
+        self.isCompleted = runtimeMode.hasSelectedMode && runtimeMode.isInitialized(runtimeMode.mode)
+
+        if runtimeMode.hasSelectedMode {
+            currentStep = .proxySetup
+        }
     }
 
     /// 记下欢迎页已看过，之后不再展示。
@@ -63,6 +67,18 @@ final class SetupCoordinator: ObservableObject {
         guard !hasSeenWelcome else { return }
         hasSeenWelcome = true
         defaults.set(true, forKey: Key.welcomeSeen)
+    }
+
+    /// 选定的运行模式。
+    var selectedMode: ProxyRuntimeMode { runtimeMode.mode }
+
+    /// 选择运行模式并进入下一步。
+    func select(_ mode: ProxyRuntimeMode) {
+        runtimeMode.select(mode)
+        currentStep = .permissionRequest
+        RuntimeLogger.info("APP", "Setup", "已选择运行模式", details: [
+            "mode": mode.displayName,
+        ])
     }
 
     /// 前进到下一步。
@@ -86,18 +102,20 @@ final class SetupCoordinator: ObservableObject {
         currentStep = step
     }
 
-    /// 标记引导已完成，进入主界面。
+    /// 标记当前模式的引导已完成，进入主界面。
     func complete() {
-        runtimeMode.markInitialized()
+        runtimeMode.markInitialized(runtimeMode.mode)
         isCompleted = true
-        RuntimeLogger.info("APP", "Setup", "引导流程完成")
+        RuntimeLogger.info("APP", "Setup", "引导流程完成", details: [
+            "mode": runtimeMode.mode.displayName,
+        ])
     }
 
     /// 重新走一遍引导（设置页里的「重置配置」）。
     func reset() {
-        runtimeMode.resetInitialization()
+        runtimeMode.resetInitialization(runtimeMode.mode)
         isCompleted = false
-        currentStep = .permissionRequest
+        currentStep = .modeSelection
         RuntimeLogger.info("APP", "Setup", "引导流程已重置")
     }
 }

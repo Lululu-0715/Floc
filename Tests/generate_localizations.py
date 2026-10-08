@@ -211,13 +211,24 @@ EN = {
 
     # 运行模式
     '应用内代理': 'In-app proxy',
+    '第三方代理': 'Third-party proxy',
+    '在设备内运行拦截代理，只覆盖当前 Wi-Fi，需要安装并信任证书。':
+        'Runs the intercepting proxy on-device. Covers the current Wi-Fi only, and requires installing a trusted certificate.',
+    '由你自己的代理客户端执行拦截，可覆盖蜂窝网络，无需安装本应用证书。':
+        'Your own proxy client performs the interception. Can cover cellular networks, and needs no certificate from this app.',
+    '运行模式': 'Runtime mode',
+    '选择运行模式': 'Choose runtime mode',
     '授予必要权限': 'Grant permissions',
     '配置代理环境': 'Set up proxy',
     '执行环境检测': 'Run environment checks',
-    '在地图上显示真实位置需要定位权限，本应用不会上传任何位置数据。':
-        'Showing your real position on the map needs location permission. This app never uploads location data.',
+    '先确定拦截在哪里执行。这一步之后仍可随时切换。':
+        'Decide where interception happens. You can switch later at any time.',
+    '地图显示与 Wi-Fi 名称读取需要定位权限，本应用不会上传任何位置数据。':
+        'Showing the map and reading the Wi-Fi name require location permission. This app never uploads location data.',
     '需要安装本机证书，并把当前 Wi-Fi 的代理指向本机。':
         'Install the on-device certificate and point the current Wi-Fi proxy to this device.',
+    '需要在你的代理客户端中导入模块，并开启对应主机名的解密。':
+        'Import the module into your proxy client and enable HTTPS decryption for the relevant hosts.',
     '运行完整检测，确认每个环节都通了再开始使用。':
         'Run the full check to confirm every step works before you begin.',
     '上一步': 'Back',
@@ -257,8 +268,10 @@ EN = {
     # 环境检测项
     '证书信任': 'Certificate trust',
     'Wi-Fi 代理链路': 'Wi-Fi proxy path',
+    '第三方模块连通': 'Third-party module link',
     '改写引擎自检': 'Rewrite engine self-check',
     '代理服务': 'Proxy service',
+    '模块连接': 'Module connection',
     '系统已信任本机根证书': 'The system trusts the on-device root certificate',
     '证书未安装或未开启完全信任': 'Certificate not installed, or full trust not enabled',
     '证书服务未启动': 'Certificate service not started',
@@ -266,6 +279,10 @@ EN = {
     '请求没有经过本机代理，请检查 Wi-Fi 代理配置':
         'Requests are not going through the on-device proxy. Check your Wi-Fi proxy settings.',
     '代理未启动': 'Proxy not started',
+    '客户端已响应配置接口': 'The client responded to the configuration endpoint',
+    '模块未生效，请确认已导入并开启解密':
+        'Module is inactive. Make sure it is imported and decryption is enabled.',
+    '未完成检测': 'Check not completed',
 
     # 代理配置
     '配置步骤': 'Steps',
@@ -284,9 +301,31 @@ EN = {
         'Under Settings → Wi-Fi → %@ → Configure Proxy, choose Manual, set the server to %@ and the port to %d.',
     '回到本应用执行环境检测，两项都通过后即可开启虚拟定位。':
         'Return to this app and run the environment check. Once both items pass, you can enable spoofing.',
+    '不要同时开启应用内代理和第三方代理，两条链路会互相干扰。':
+        'Do not enable the in-app proxy and a third-party proxy at the same time — the two paths interfere with each other.',
 
     # 第三方模式
+    '选择你使用的客户端': 'Choose your client',
+    '已真机验证': 'Verified on device',
+    '待验证': 'Unverified',
+    '已安装': 'Installed',
+    '未安装': 'Not installed',
+    '复制模块订阅地址': 'Copy module URL',
+    '打开客户端': 'Open client',
     '打开 %@': 'Open %@',
+    '复制下方的模块订阅地址。': 'Copy the module URL below.',
+    '在 %@ 中导入该地址对应的模块。': 'Import the module from that URL in %@.',
+    '确认模块已启用，并为定位相关主机名开启 HTTPS 解密。':
+        'Make sure the module is enabled and HTTPS decryption is on for the location hosts.',
+    '回到本应用点击「重新检测」，状态变为「已连接」即可。':
+        'Come back and tap Recheck. When the status shows Connected, you are done.',
+    '注意：该客户端在当前版本下可能无法覆盖蜂窝网络。':
+        'Note: this client may not cover cellular networks in the current version.',
+    '未安装客户端': 'Client not installed',
+    '模块未生效': 'Module inactive',
+    '已连接，未开启': 'Connected, not enabled',
+    '已连接': 'Connected',
+    '配置失败': 'Configuration failed',
 
     # 主界面
     '搜索地点或地址': 'Search a place or address',
@@ -305,14 +344,28 @@ EN = {
     '请先在地图上选择位置': 'Pick a location on the map first',
     '证书尚未被信任，定位不会生效': 'The certificate is not trusted yet, so spoofing will not work',
     'Wi-Fi 代理未生效，请检查代理配置': 'The Wi-Fi proxy is not active. Check your proxy settings.',
+    '坐标已写入客户端': 'Coordinates written to the client',
+    '写入失败，请检查客户端模块是否生效':
+        'Write failed. Check that the client module is active.',
     '已停止虚拟定位，请同时关闭 Wi-Fi 代理':
         'Spoofing stopped. Remember to turn off the Wi-Fi proxy as well.',
+    '已清除客户端坐标': 'Client coordinates cleared',
     '当前系统版本（%@）可能已禁用对定位服务的拦截，功能可能不生效。':
         'The current system version (%@) may have blocked interception of location services, so this feature may not work.',
 
     # 设置
     '设置': 'Settings',
+    '客户端': 'Client',
     '连接状态': 'Connection',
+    '自定义模块托管地址': 'Custom module host',
+    '重新检测连通性': 'Recheck connection',
+    '清除客户端坐标': 'Clear client coordinates',
+    '模块由第三方客户端执行拦截，本应用只负责写入坐标。':
+        'The third-party client performs the interception; this app only writes coordinates.',
+    '托管地址前缀': 'Host URL prefix',
+    '填写模块文件所在目录的地址前缀，不带文件名。':
+        'Enter the URL prefix of the directory holding the modules, without the file name.',
+    '模块托管地址': 'Module host',
     '代理状态': 'Proxy status',
     '当前网络': 'Current network',
     '重新检测环境': 'Recheck environment',
@@ -323,6 +376,8 @@ EN = {
         'After resetting, you must download the certificate again and re-trust it in system settings.',
     '模拟精度': 'Simulated accuracy',
     '运行改写引擎自检': 'Run rewrite engine self-check',
+    '精度与运动状态模拟都会写入客户端配置。':
+        'Accuracy and motion drift are both written to the client configuration.',
     '精度直接影响系统对定位可信度的判断，通常 25 米较为自然。':
         'Accuracy affects how the system judges location reliability. 25 m usually looks natural.',
     '收藏位置': 'Favorites',
@@ -397,11 +452,14 @@ EN = {
     # 提示
     '开启前请确认': 'Before you enable',
     '如何彻底恢复真实位置': 'How to fully restore your real location',
+    '第三方模式说明': 'About third-party mode',
     '关于证书信任': 'About certificate trust',
     '开启后定位响应会被改写。部分应用有独立的定位缓存或校验策略，可能需要等待缓存刷新或重启目标应用。':
         'Once enabled, location responses are rewritten. Some apps keep their own cache or validation, so you may need to wait for a refresh or restart the target app.',
     '停止虚拟定位后，还需要关闭 Wi-Fi 的手动代理配置。如果系统仍显示旧位置，等待缓存刷新，必要时重启设备。':
         'After stopping, also turn off the manual Wi-Fi proxy. If the old location still shows, wait for the cache to refresh or restart the device.',
+    '本应用只负责把坐标写给你的代理客户端，拦截与规则由客户端执行。应用关闭后客户端里的配置可能继续生效。':
+        'This app only writes coordinates to your proxy client; the client performs interception. Its configuration may keep working after this app is closed.',
     '安装描述文件后，还需要在「设置 → 通用 → 关于本机 → 证书信任设置」中手动开启完全信任，否则拦截不会生效。':
         'After installing the profile, you must also enable full trust under Settings → General → About → Certificate Trust Settings, or interception will not work.',
 
@@ -411,6 +469,9 @@ EN = {
     '无法启动本机代理服务': 'Could not start the on-device proxy service',
     '证书内容编码失败': 'Failed to encode the certificate',
     '写入钥匙串失败（状态码 %d）': 'Failed to write to the keychain (status %d)',
+    '无法构造查询地址': 'Could not build the query URL',
+    '无法构造保存地址': 'Could not build the save URL',
+    '客户端拒绝保存': 'The client rejected the save',
 
     # 地图页：实时位置与运动状态模拟
     '在选定位置附近轻微漂移，更接近真实 GPS。':
@@ -455,6 +516,7 @@ EN = {
     '证书与环境': 'Certificate & environment',
     '本机代理': 'On-device proxy',
     'Wi-Fi 代理': 'Wi-Fi proxy',
+    '模块文件': 'Module file',
     '生效说明': 'When it takes effect',
     '失效说明': 'When it stops working',
     '关闭 WiFi 代理': 'Turn off the Wi-Fi proxy',
@@ -484,6 +546,7 @@ EN = {
 
     # 其它
     '位置 %d': 'Location %d',
+    '未检测到已安装的 %@': 'No installed %@ detected',
 
     # 设置页重构与账号体系（1.0.4）：新设置页、账号体系、本地模式。
     '账号': 'Account',
@@ -520,6 +583,19 @@ EN = {
     '%ld 天': "%ld d",
     '%ld 小时': "%ld h",
     '公众号': "Official account",
+    '实际拦截': "Intercepting client",
+    '模块运行情况': "Module status",
+    '最近一次': "Last run",
+    '没有记录，响应改写规则一次都没跑到': "No record — the response rewrite rule never ran",
+    '已改写 %d 个位置点': "Rewrote %d location entries",
+    '已改写 %d 个位置点（原响应为 gzip，已解压）': "Rewrote %d location entries (response was gzip, decompressed)",
+    '模块在运行，但还没有写入过坐标': "Module is running but no coordinate has been written yet",
+    '模块收到的坐标无效': "The module received an invalid coordinate",
+    '脚本拿不到响应体，请确认模块处于开启状态': "The script got no response body; make sure the module is enabled",
+    '响应是 gzip 压缩，当前客户端没有提供解压能力': "The response is gzip-compressed and the client offers no decompression",
+    '响应里没有找到定位数据，系统可能换了新的响应格式': "No location data found in the response; iOS may use a new format now",
+    '改写过程出错：%@': "Rewrite failed: %@",
+    '当前拦截定位请求的是 %@，与上面选择的 %@ 不一致。请确认手机上只开着一个代理客户端，并在它里面启用本模块。': "Location requests are intercepted by %@, not the selected %@. Keep only one proxy client running and enable this module in it.",
     '最后两下要自己点：设置 → 无线局域网 → 当前网络右侧 ⓘ → 配置代理 → 手动，服务器填 127.0.0.1、端口 8888。': "Two taps are left to you: Settings → Wi-Fi → ⓘ next to the current network → Configure Proxy → Manual, server 127.0.0.1, port 8888.",
     '这里会显示作者的邮箱与公众号。发布前请在 Shared/AppContact.swift 里补上，否则用户想购买时找不到入口。': "The author's email and official account show here. Fill them in Shared/AppContact.swift before release, or buyers cannot reach you.",
     '卡密类型': 'Card type',
@@ -534,7 +610,9 @@ EN = {
     '卡密按设备绑定，一台设备一张卡，换手机可在本页自助解绑 1 次。': 'Card keys are bound to a device — one per device. You can unbind once from this page when you switch phones.',
     '好友连续使用 3 天，你就能获得天数奖励。': 'When a friend uses the app 3 days in a row, you earn bonus days.',
     '购买与续费': 'Buy or renew',
+    '切换模式会停止当前代理并重新走一遍配置引导，已保存的收藏和证书不受影响。': 'Switching modes stops the current proxy and re-runs the setup guide. Saved favorites and certificates are kept.',
     '自检只在本地跑一遍坐标转换与改写逻辑，不会改动当前生效的配置。': 'The self-check only runs coordinate conversion and rewriting locally; it does not touch the active configuration.',
+    '在客户端里导入模块后，本应用写入的坐标才会生效。': 'Coordinates written by this app only take effect after you import the module into your client.',
     '调整后立即生效，只影响本应用，不会改动系统的显示设置。': 'Takes effect immediately and only affects this app; it does not change system display settings.',
     '精度 %@ 米': '%@ m accuracy',
     '版本信息': 'Version info',

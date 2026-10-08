@@ -6,7 +6,7 @@
   - Bundle ID 与 App Group 不一致 → App Group 拿不到，配置写不进去
   - entitlements 里的 group 与代码不一致 → 同上
   - 桥接头 / entitlements 文件名与 project.yml 不一致 → 构建直接失败
-  - 远端配置指向已被删掉的模块目录 → 客户端去拉 404，静默失效
+  - 模块里的脚本 URL 与常量不一致 → 用户导入后下载 404
 
 这个脚本把「同一个值在多个地方出现」的约定全部核对一遍。
 
@@ -222,78 +222,155 @@ def check_display_name(app_name: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 4. 远端配置地址
+# 4. 脚本托管地址一致
 # ---------------------------------------------------------------------------
 
-# 1.0.8 起只剩应用内代理，脚本与模块文件全部删除，托管地址检查收敛成
-# **只剩 `AppRemoteConfiguration` 的远端配置地址**。
+# 脚本/配置的托管地址。生产**只认 jsDelivr**：
 #
-# 检查规则：
-#   - 必须是 https
-#   - **不许用 GitHub raw**：国内基本拉不到（DNS 污染），而远端配置拉不到
-#     的表现是静默降级——公告不弹、失效警示不显示，日志里只有一行 debug。
-#     曾经踩过一次：模块与配置都写着 raw，检查照样「通过」，直到用户报
-#     「切出去一分钟就恢复真实位置」才查出来。
-#   - 指向本仓库的文件时，本地必须真的存在
-#   - `remote-config.json` 里**不许再出现 `moduleBaseURL`**：那是指向已删除
-#     的模块目录的字段，留着会让旧版客户端去拉不存在的地址。
+#   jsDelivr    https://cdn.jsdelivr.net/gh/<owner>/<repo>@<ref>/<path>
+#   GitHub raw  https://raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>
+#
+# raw 国内基本不可用（DNS 污染），而模块与远端配置拉不到时的表现都是
+# **静默失效**——开关看着是开的、日志里只有一行 debug。所以 raw 不是
+# 「次优选择」，是明确的错误配置，这里直接拦掉而不是降级放行。
+#
+# 这段逻辑踩过一次坑：原来只写了 raw 的正则，换成 jsDelivr 之后匹配数变成 0，
+# 检查照样「通过」，但「脚本 URL 指向了别的仓库」这条保护已经悄悄失效了。
+# 所以下面除了比对坐标，还断言**每个模块文件恰好 2 条脚本 URL**——
+# 让正则失配变成显式失败，而不是静默放行。
+JSDELIVR_PATTERN = re.compile(
+    r"https://cdn\.jsdelivr\.net/gh/"
+    r"(?P<owner>[\w.\-]+)/(?P<repo>[\w.\-]+)@(?P<ref>[\w.\-]+)/"
+)
 RAW_PATTERN = re.compile(
     r"https://raw\.githubusercontent\.com/"
     r"(?P<owner>[\w.\-]+)/(?P<repo>[\w.\-]+)/(?P<ref>[\w.\-]+)/"
 )
 
-JSDELIVR_PATTERN = re.compile(
-    r"https://cdn\.jsdelivr\.net/gh/"
-    r"(?P<owner>[\w.\-]+)/(?P<repo>[\w.\-]+)@(?P<ref>[\w.\-]+)/"
-)
+SCRIPT_URL_PATTERN = re.compile(r"https://[^\s,;'\"]+\.js(?![A-Za-z0-9])")
 
-# 仓库里实际存在的、会被远端配置引用的文件。
-REMOTE_CONFIG_PATH = "Resources/remote-config.json"
+# 每个模块文件里应当出现的脚本 URL 条数（wloc.js + wloc-settings.js）。
+EXPECTED_SCRIPTS_PER_MODULE = 2
+
+
+def repo_coordinates(url: str) -> tuple[str, str, str] | None:
+    """从 jsDelivr 地址取出 (owner, repo, ref)；其他主机的地址返回 None。"""
+    match = JSDELIVR_PATTERN.match(url)
+    if not match:
+        return None
+    return (match.group("owner"), match.group("repo"), match.group("ref"))
+
+
+def hosted_url_problem(
+    url: str, expected: tuple[str, str, str] | None, where: str
+) -> str | None:
+    """核对一条托管地址。没问题是 None，否则返回一句可读的原因。"""
+    if RAW_PATTERN.match(url):
+        return (
+            f"{where} 用了 GitHub raw 地址，国内基本拉不到（表现是静默失效）：\n"
+            f"      {url}\n"
+            f"      请改用 https://cdn.jsdelivr.net/gh/<owner>/<repo>@<branch>/<path>"
+        )
+    match = JSDELIVR_PATTERN.match(url)
+    if not match:
+        return f"{where} 的地址不在已知托管主机上（既不是 jsDelivr 也不是 raw）：\n      {url}"
+    if expected is None:
+        return None
+    coords = (match.group("owner"), match.group("repo"), match.group("ref"))
+    if coords != expected:
+        return (
+            f"{where} 指向了其他仓库：\n"
+            f"      {url}\n"
+            f"      期望 {expected[0]}/{expected[1]}@{expected[2]}"
+        )
+    return None
+
+
+def without_comment_lines(content: str) -> str:
+    """去掉注释行。
+
+    模块文件里到处是「对着旧写法讲道理」的注释，注释里出现地址很正常
+    （比如 wloc.conf 头部就写着它自己的订阅地址）。不排除注释的话，
+    这些字样会参与判定，改配置时容易被骗过去。
+    注释前缀在这里统一处理：`;`（module/sgmodule/lpx/conf）、`#`、`//`。
+    """
+    kept = []
+    for line in content.split("\n"):
+        stripped = line.lstrip()
+        if stripped.startswith((";", "#", "//")):
+            continue
+        kept.append(line)
+    return "\n".join(kept)
 
 
 def check_script_hosting() -> None:
-    """核对远端配置地址。
+    # 从 Swift 常量取期望仓库
+    match = re.search(
+        r"defaultModuleBaseURL\s*=\s*\n?\s*\"([^\"]+)\"",
+        read("Shared/ThirdPartyProxyManager.swift"),
+    )
+    if not match:
+        fail("无法从 ThirdPartyProxyManager.swift 读出 defaultModuleBaseURL")
+        return
 
-    历史名字保留（`check_script_hosting`），因为它干的就是「看那些**用户
-    设备会去拉的东西**是不是指对了地方」；现在只剩配置这一条。
-    """
+    base_url = match.group(1)
+    problem = hosted_url_problem(base_url, None, "defaultModuleBaseURL")
+    if problem:
+        fail(problem)
+        return
+
+    expected = repo_coordinates(base_url)
+    repo_label = f"{expected[0]}/{expected[1]}@{expected[2]}"
+    print(f"  脚本仓库：{repo_label}")
+
+    # 逐个模块核对脚本 URL
+    modules_dir = ROOT / "ThirdParty" / "ProxyScripts" / "modules"
+    checked = 0
+    for path in sorted(modules_dir.iterdir()):
+        if not path.is_file() or path.suffix == ".md":
+            continue
+        content = without_comment_lines(path.read_text(encoding="utf-8"))
+        urls = SCRIPT_URL_PATTERN.findall(content)
+        if len(urls) != EXPECTED_SCRIPTS_PER_MODULE:
+            fail(
+                f"{path.name} 里找到 {len(urls)} 条脚本 URL，"
+                f"应为 {EXPECTED_SCRIPTS_PER_MODULE} 条"
+                f"（正则失配会让「指向其他仓库 / 用错主机」被静默放过）"
+            )
+        for url in urls:
+            checked += 1
+            problem = hosted_url_problem(url, expected, f"{path.name} 的脚本 URL")
+            if problem:
+                fail(problem)
+    print(f"  模块脚本地址：{checked} 条（{repo_label}）")
+
+    # 远端配置地址
     match = re.search(
         r"defaultConfigurationURL\s*=\s*\n?\s*\"([^\"]+)\"",
         read("Shared/AppRemoteConfiguration.swift"),
     )
     if not match:
         fail("无法从 AppRemoteConfiguration.swift 读出 defaultConfigurationURL")
-        return
-
-    url = match.group(1)
-
-    if not url.startswith("https://"):
-        fail(f"远端配置地址不是 https：\n      {url}")
-
-    if RAW_PATTERN.match(url):
-        fail(
-            f"远端配置用了 GitHub raw 地址，国内基本拉不到（表现是静默降级）：\n"
-            f"      {url}\n"
-            f"      请改用 https://cdn.jsdelivr.net/gh/<owner>/<repo>@<branch>/<path>"
-            f"，或你自己的域名"
-        )
-
-    if JSDELIVR_PATTERN.match(url):
-        print("  远端配置托管：jsDelivr")
     else:
-        print("  远端配置托管：自有/其他主机")
+        config_url = match.group(1)
+        problem = hosted_url_problem(config_url, expected, "远端配置 URL")
+        if problem:
+            fail(problem)
+        for suffix in ("Resources/remote-config.json",):
+            if config_url.endswith(suffix) and not (ROOT / suffix).exists():
+                fail(f"远端配置指向 {suffix}，但仓库里没有这个文件")
 
-    if url.endswith(REMOTE_CONFIG_PATH) and not (ROOT / REMOTE_CONFIG_PATH).exists():
-        fail(f"远端配置指向 {REMOTE_CONFIG_PATH}，但仓库里没有这个文件")
-
-    # 配置内容本身：不许再留指向已删除模块的字段。
-    remote = json.loads(read(REMOTE_CONFIG_PATH))
-    if "moduleBaseURL" in remote:
-        fail(
-            f"{REMOTE_CONFIG_PATH} 里还有 moduleBaseURL，"
-            f"但第三方模块已于 1.0.8 删除，这个字段只会把客户端指向 404"
+    # 远端配置里的 moduleBaseURL 会覆盖应用内置值——它要是写回 raw，
+    # 等于把用户又推回拉不到的地址上，所以这里一起核。
+    remote = json.loads(read("Resources/remote-config.json"))
+    remote_base = remote.get("moduleBaseURL")
+    if remote_base:
+        problem = hosted_url_problem(
+            remote_base, expected, "Resources/remote-config.json 的 moduleBaseURL"
         )
-    print(f"  远端配置字段：{', '.join(sorted(remote)) or '(空)'}")
+        if problem:
+            fail(problem)
+    print(f"  远端配置地址：{repo_label}")
 
 
 # ---------------------------------------------------------------------------
@@ -386,7 +463,7 @@ def main() -> int:
     print("\n[3/6] 显示名")
     check_display_name(app_name)
 
-    print("\n[4/6] 远端配置地址")
+    print("\n[4/6] 脚本托管地址")
     check_script_hosting()
 
     print("\n[5/6] 证书主题")

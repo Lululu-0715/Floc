@@ -1,17 +1,37 @@
 import SwiftUI
 
-/// 引导第二步：配置应用内代理环境。
-///
-/// 1.0.8 起只剩应用内代理这一条链路，所以这一步不再分模式。
+/// 引导第三步：按所选模式配置代理环境。
 struct ProxySetupStep: View {
 
     @ObservedObject var setup: SetupCoordinator
     @ObservedObject private var proxy = ProxyManager.shared
+    @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
 
     @State private var isStarting = false
     @State private var errorMessage: String?
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            switch setup.selectedMode {
+            case .localProxy: localProxyContent
+            case .thirdParty: thirdPartyContent
+            }
+        }
+        .task {
+            // 进入本步就把代理起起来，这样证书服务可用，用户能立刻去装证书。
+            // 先实测一次端口：状态可能停在 .running 而进程实际已被系统回收。
+            if setup.selectedMode == .localProxy {
+                proxy.syncStatusWithReality()
+                if !proxy.status.isRunning {
+                    await startLocalProxy()
+                }
+            }
+        }
+    }
+
+    // MARK: - 应用内代理
+
+    private var localProxyContent: some View {
         VStack(alignment: .leading, spacing: 18) {
             StatusCard(
                 title: AppLocalization.string("代理服务"),
@@ -92,14 +112,6 @@ struct ProxySetupStep: View {
                 .disabled(isStarting)
             }
         }
-        .task {
-            // 进入本步就把代理起起来，这样证书服务可用，用户能立刻去装证书。
-            // 先实测一次端口：状态可能停在 .running 而进程实际已被系统回收。
-            proxy.syncStatusWithReality()
-            if !proxy.status.isRunning {
-                await startLocalProxy()
-            }
-        }
     }
 
     private func startLocalProxy() async {
@@ -121,6 +133,103 @@ struct ProxySetupStep: View {
                 "error": error.localizedDescription,
             ])
         }
+    }
+
+    // MARK: - 第三方代理
+
+    private var thirdPartyContent: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(AppLocalization.string("选择你使用的客户端"))
+                    .font(.headline)
+
+                ForEach(ThirdPartyProxyClient.allCases) { client in
+                    ClientRow(
+                        client: client,
+                        isSelected: thirdParty.selectedClient == client
+                    ) {
+                        thirdParty.selectedClient = client
+                    }
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+
+            StatusCard(
+                title: AppLocalization.string("模块连接"),
+                value: thirdParty.state.displayText,
+                isGood: thirdParty.state.isUsable,
+                icon: "link.circle"
+            )
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text(AppLocalization.string("配置步骤"))
+                    .font(.headline)
+
+                ForEach(Array(thirdPartyInstructions.enumerated()), id: \.offset) { index, instruction in
+                    HStack(alignment: .top, spacing: 10) {
+                        Text("\(index + 1)")
+                            .font(.caption.weight(.bold))
+                            .frame(width: 20, height: 20)
+                            .background(Color.accentColor.opacity(0.15), in: Circle())
+                            .foregroundStyle(Color.accentColor)
+                        Text(instruction)
+                            .font(.subheadline)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+
+            Button {
+                if thirdParty.copyModuleURLToPasteboard() {
+                    RuntimeLogger.info("APP", "Setup", "模块地址已复制到剪贴板")
+                }
+            } label: {
+                Label(AppLocalization.string("复制模块订阅地址"), systemImage: "doc.on.doc")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+            }
+            .buttonStyle(.bordered)
+
+            HStack(spacing: 10) {
+                Button {
+                    thirdParty.selectedClient.open()
+                } label: {
+                    Label(AppLocalization.string("打开客户端"), systemImage: "arrow.up.forward.app")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.bordered)
+                .disabled(!thirdParty.selectedClient.isInstalled)
+
+                Button {
+                    Task { await thirdParty.refresh() }
+                } label: {
+                    Label(AppLocalization.string("重新检测"), systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    private var thirdPartyInstructions: [String] {
+        let client = thirdParty.selectedClient
+        var steps = [
+            AppLocalization.string("复制下方的模块订阅地址。"),
+            AppLocalization.string("在 %@ 中导入该地址对应的模块。", client.displayName),
+            AppLocalization.string("确认模块已启用，并为定位相关主机名开启 HTTPS 解密。"),
+            AppLocalization.string("回到本应用点击「重新检测」，状态变为「已连接」即可。"),
+        ]
+        if !client.supportsCellular {
+            steps.append(AppLocalization.string("注意：该客户端在当前版本下可能无法覆盖蜂窝网络。"))
+        }
+        return steps
     }
 }
 
@@ -228,5 +337,49 @@ struct InlineAlert: View {
             )
             .mapGlassSurface()
         }
+    }
+}
+
+/// 客户端选择行。
+struct ClientRow: View {
+
+    let client: ThirdPartyProxyClient
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
+                    .foregroundStyle(isSelected ? Color.accentColor : Color(.tertiaryLabel))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(client.displayName)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                    HStack(spacing: 6) {
+                        Text(client.supportLevel.displayName)
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                (client.supportLevel == .verified ? Color.green : Color.orange).opacity(0.15),
+                                in: Capsule()
+                            )
+                            .foregroundStyle(client.supportLevel == .verified ? Color.green : Color.orange)
+
+                        Text(client.isInstalled
+                             ? AppLocalization.string("已安装")
+                             : AppLocalization.string("未安装"))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

@@ -12,7 +12,6 @@
   6. 系统设置跳转            —— 不许退回 canOpenURL 与老 scheme 写法
   7. 双口味出包              —— 标准版 + 纯净版必须成对
   8. 地图页全面屏            —— 地图层铺满，覆盖层守安全区
-  9. 第三方代理已移除        —— 不许再有残留引用或复活成半吊子状态
 
 运行：python3 Tests/check_swift_sources.py
 """
@@ -514,68 +513,6 @@ def check_full_bleed_map() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 9. 第三方代理已移除
-# ---------------------------------------------------------------------------
-
-# 1.0.8 起只剩应用内代理，第三方那一整套（客户端枚举、模块管理器、
-# 5 个模块文件 + 2 个脚本、设置页与引导步骤、三项配套检查）全部删除。
-#
-# 删除容易删一半：界面分支拿掉了但管理器还在、检查脚本删了但 build.sh
-# 还在调它、模块目录删了但 project.yml 还指着它。这些都不会在编译期报错
-# （除非真引用到符号），却会让后来的人以为「还有第三方模式」。
-#
-# 所以这里做成显式断言，让「复活成半吊子状态」变成一次失败。
-REMOVED_THIRD_PARTY_PATHS = (
-    "ThirdParty",
-    "Shared/ThirdPartyProxyManager.swift",
-    "Shared/ThirdPartyProxyClient.swift",
-    "App/ModeSelectionStep.swift",
-    "Tests/FlocTests/ThirdPartyProxyClientTests.swift",
-    "Tests/check_proxy_modules.py",
-    "Tests/check_module_reachability.py",
-)
-
-REMOVED_THIRD_PARTY_SYMBOLS = (
-    "ThirdPartyProxyManager",
-    "ThirdPartyProxyClient",
-    "ThirdPartyProxyProtocol",
-)
-
-
-def check_third_party_removed() -> None:
-    for rel in REMOVED_THIRD_PARTY_PATHS:
-        if (ROOT / rel).exists():
-            fail(
-                f"{rel} 应当已随第三方模式一起删除，但它还在。"
-                f"（1.0.8 起只有应用内代理）"
-            )
-
-    # 源码里不许再引用已删掉的类型。注释里提到历史是允许的
-    # （`shared/ProxyRuntimeMode.swift` 就留着「原来是 thirdParty」的说明），
-    # 所以只查去掉注释后的代码。
-    hits: list[str] = []
-    for folder in ("App", "Shared", "Tests"):
-        for path in (ROOT / folder).rglob("*.swift"):
-            source = strip_strings_and_comments(path.read_text(encoding="utf-8"))
-            for symbol in REMOVED_THIRD_PARTY_SYMBOLS:
-                if symbol in source:
-                    hits.append(f"{path.relative_to(ROOT)} 仍引用 {symbol}")
-    for hit in hits:
-        fail(hit)
-
-    # build.sh 不许再调那两个已删除的检查脚本。
-    build = ROOT / "build.sh"
-    if build.exists():
-        script = build.read_text(encoding="utf-8")
-        for name in ("check_proxy_modules.py", "check_module_reachability.py"):
-            if name in script:
-                fail(f"build.sh 仍在调用已删除的 {name}")
-
-    removed = len(REMOVED_THIRD_PARTY_PATHS) + len(hits)
-    print(f"  第三方相关路径 {len(REMOVED_THIRD_PARTY_PATHS)} 个均已移除，残留引用 {len(hits)} 处")
-
-
-# ---------------------------------------------------------------------------
 # 主流程
 # ---------------------------------------------------------------------------
 
@@ -589,34 +526,31 @@ def main() -> int:
         + list((ROOT / "Tests").rglob("*.swift"))
     )
 
-    print(f"\n[1/9] 括号配平（{len(swift_files)} 个 Swift 文件）")
+    print(f"\n[1/8] 括号配平（{len(swift_files)} 个 Swift 文件）")
     for path in swift_files:
         check_balance(path, path.read_text(encoding="utf-8"))
     print(f"      已检查 {len(swift_files)} 个文件")
 
-    print("\n[2/9] 桥接头与 Go 导出对齐")
+    print("\n[2/8] 桥接头与 Go 导出对齐")
     check_bridging_header()
 
-    print("\n[3/9] 测试类型引用")
+    print("\n[3/8] 测试类型引用")
     check_test_references()
 
-    print("\n[4/9] project.yml 源路径")
+    print("\n[4/8] project.yml 源路径")
     check_project_sources()
 
-    print("\n[5/9] 资源完整性")
+    print("\n[5/8] 资源完整性")
     check_resources()
 
-    print("\n[6/9] 系统设置跳转")
+    print("\n[6/8] 系统设置跳转")
     check_settings_navigator()
 
-    print("\n[7/9] 双口味出包")
+    print("\n[7/8] 双口味出包")
     check_build_flavors()
 
-    print("\n[8/9] 地图页全面屏")
+    print("\n[8/8] 地图页全面屏")
     check_full_bleed_map()
-
-    print("\n[9/9] 第三方代理已移除")
-    check_third_party_removed()
 
     print("\n" + "=" * 60)
 
