@@ -39,15 +39,17 @@ private struct ModeCard: View {
     let isSelected: Bool
     let action: () -> Void
 
+    @Environment(\.themeAccent) private var accent
+
     var body: some View {
         Button(action: action) {
             HStack(alignment: .top, spacing: 14) {
                 Image(systemName: mode.systemImage)
                     .font(.title2)
                     .frame(width: 36, height: 36)
-                    .foregroundStyle(isSelected ? Color.white : Color.accentColor)
+                    .foregroundStyle(isSelected ? Color.white : accent)
                     .background(
-                        isSelected ? Color.accentColor : Color.accentColor.opacity(0.12),
+                        isSelected ? accent : accent.opacity(0.12),
                         in: RoundedRectangle(cornerRadius: 9)
                     )
 
@@ -65,7 +67,7 @@ private struct ModeCard: View {
 
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
-                    .foregroundStyle(isSelected ? Color.accentColor : Color(.tertiaryLabel))
+                    .foregroundStyle(isSelected ? accent : Color(.tertiaryLabel))
             }
             .padding(16)
             .background(
@@ -74,7 +76,7 @@ private struct ModeCard: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 14)
-                    .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+                    .stroke(isSelected ? accent : Color.clear, lineWidth: 2)
             )
         }
         .buttonStyle(.plain)

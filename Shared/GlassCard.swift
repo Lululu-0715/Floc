@@ -28,6 +28,11 @@ import SwiftUI
 /// 第 2 条最容易被省掉，但恰恰是它让平面材质读起来像一块玻璃而不是
 /// 半透明色块，所以固定在 modifier 里，调用方无需重复。
 ///
+/// **`.interactive()` 是「Q 弹」的来源。** 没有它，`.glassEffect` 只是一层
+/// 静态的折射材质：手指按下去玻璃一点反应都没有，观感就是「死」的。
+/// 加上之后玻璃会跟着按压轻微隆起/回弹（`interactiveSpring` 那一套），
+/// 摸起来才像果冻。1.0.10 漏了这一步，用户的原话是「一点都不 Q 弹」。
+///
 /// 用法：
 /// ```swift
 /// content.glassCard()                       // 默认 16pt 圆角
@@ -41,11 +46,17 @@ struct GlassCardModifier: ViewModifier {
     /// 投影半径。放在地图上时调大一点，浮起感更明显。
     var shadowRadius: CGFloat = 12
 
+    /// 玻璃是否响应触摸。默认开——本工程的玻璃几乎都是可点元素的底板。
+    var interactive: Bool = true
+
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         if #available(iOS 26.0, *) {
             content
-                .glassEffect(Glass.regular, in: shape)
+                .glassEffect(
+                    interactive ? Glass.regular.interactive() : Glass.regular,
+                    in: shape
+                )
         } else {
             content
                 .background(shape.fill(.ultraThinMaterial))
@@ -81,23 +92,38 @@ struct MapGlassSurfaceModifier<S: Shape>: ViewModifier {
     ///
     /// iOS 26 的液态玻璃不能嵌套：内层会被外层吃掉，表现是按钮的底色整块
     /// 消失——1.0.10 第一版就踩了这个坑，底部面板的主按钮直接变成一片透明。
-    /// 所以贴玻璃的那一档在 iOS 26 上不再叠玻璃，改用一层淡色填充把可点区域
-    /// 画出来，玻璃感由外层面板负责。iOS 15~18 行为不变。
+    /// 所以贴玻璃的那一档在 iOS 26 上不再叠玻璃，改用一层淡色填充 + 一圈
+    /// 亮边把可点区域画出来，玻璃感由外层面板负责。iOS 15~18 行为不变。
     var nested: Bool = false
+
+    /// 这一层是不是可点元素的底板。地图页所有浮层都是，所以默认开。
+    var interactive: Bool = true
 
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
             if nested {
+                // 1.0.10 这里只填了一层 `Color.primary.opacity(0.08)`，
+                // 在玻璃面板上几乎看不见 —— 按钮看起来"没被点亮"。
+                // 现在补上主题色填充与一圈白色亮边，边界才立得住。
                 content
-                    .background(shape.fill(Color.primary.opacity(GlassMetrics.mapCapsuleTint)))
+                    .background(shape.fill(ThemeStore.shared.innerCapsuleFill))
+                    .overlay(
+                        // 用 `stroke` 而不是 `strokeBorder`：形状参数是泛型
+                        // `S: Shape`，`strokeBorder` 只在 `InsettableShape` 上有。
+                        shape.stroke(Color.white.opacity(0.45), lineWidth: 1)
+                    )
+                    // 见 `mapGlassSurface` 的说明：整块浮层都要挡住触摸。
+                    .contentShape(shape)
             } else {
                 content
                     .glassEffect(
-                        Glass.regular.tint(
-                            Color(.systemBackground).opacity(GlassMetrics.mapGlassTint)
-                        ),
+                        (interactive
+                         ? Glass.regular.interactive()
+                         : Glass.regular)
+                            .tint(ThemeStore.shared.glassTint),
                         in: shape
                     )
+                    .contentShape(shape)
             }
         } else {
             content
@@ -111,6 +137,7 @@ struct MapGlassSurfaceModifier<S: Shape>: ViewModifier {
                     shape.stroke(Color.white.opacity(0.18), lineWidth: 0.5)
                 )
                 .shadow(color: .black.opacity(0.18), radius: GlassMetrics.mapShadowRadius, y: 4)
+                .contentShape(shape)
         }
     }
 }
@@ -119,8 +146,11 @@ extension View {
 
     /// 套用玻璃卡片外观。
     func glassCard(cornerRadius: CGFloat = GlassMetrics.cardCornerRadius,
-                   shadowRadius: CGFloat = 12) -> some View {
-        modifier(GlassCardModifier(cornerRadius: cornerRadius, shadowRadius: shadowRadius))
+                   shadowRadius: CGFloat = 12,
+                   interactive: Bool = true) -> some View {
+        modifier(GlassCardModifier(cornerRadius: cornerRadius,
+                                   shadowRadius: shadowRadius,
+                                   interactive: interactive))
     }
 
     /// 地图页浮层统一的玻璃外观。
@@ -128,6 +158,13 @@ extension View {
     /// 地图上同时存在搜索框、图层切换、底部面板等多个浮层，圆角和材质
     /// 各自写一套很快就会走形（之前就出现过 12 / 14 / 20 混用、材质在
     /// regular 与 ultraThin 之间跳的情况）。统一从这里取。
+    ///
+    /// **整块浮层都参与命中测试**（modifier 里统一加了 `.contentShape(shape)`）。
+    /// 这一条是 1.0.11 补的，用户反馈「点搜索框的 X 点不动、一点就变成地图选点」：
+    /// 玻璃本身只用 `.background` 画了个底，**不扩大命中区域**，于是浮层上
+    /// 除了真正的控件以外全是"洞"——点偏两三像素就穿透到下面的全屏地图，
+    /// 被地图的单击手势当成一次选点。加上 contentShape 之后，
+    /// 浮层范围内的空白点击会被浮层吃掉，不再误触地图。
     ///
     /// 用于**直接贴在地图上**的浮层；已经在大玻璃面板内部的元素走
     /// `mapGlassCapsule()`（那一档不能再叠玻璃）。
@@ -148,6 +185,45 @@ extension View {
     /// 否则 iOS 26 上会少一层玻璃。
     func mapGlassCapsule(nested: Bool = true) -> some View {
         modifier(MapGlassSurfaceModifier(shape: Capsule(style: .continuous), nested: nested))
+    }
+
+    /// 按下时轻微缩小、松手弹回。
+    ///
+    /// 这是「Q 弹」的另一半来源：`.glassEffect(.interactive())` 让玻璃有触感，
+    /// 但**玻璃背后的内容不会动**。按钮加一层缩放，按下去整块元素跟着
+    /// 缩一点点再弹回来，手势才有回馈。
+    ///
+    /// 刻意不排除老系统：这不是「液态玻璃」的外观，是一次交互反馈，
+    /// iOS 15~18 的用户一样受用（用户明确要求「Q 弹」）。
+    func glassPressEffect(scale: CGFloat = 0.94) -> some View {
+        modifier(GlassPressModifier(scale: scale))
+    }
+}
+
+/// `glassPressEffect()` 的实现。用 `ButtonStyle` 而不是
+/// `simultaneousGesture`：后者会和按钮自身的点击手势抢事件，
+/// 长按类按钮（如「实时位置」）尤其容易失灵。
+struct GlassPressModifier: ViewModifier {
+
+    var scale: CGFloat
+
+    func body(content: Content) -> some View {
+        content.buttonStyle(GlassPressButtonStyle(scale: scale))
+    }
+}
+
+/// 按下缩放 + 弹性回弹的按钮样式。
+struct GlassPressButtonStyle: ButtonStyle {
+
+    var scale: CGFloat = 0.94
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? scale : 1)
+            .animation(
+                .spring(response: 0.26, dampingFraction: 0.6),
+                value: configuration.isPressed
+            )
     }
 }
 
@@ -185,7 +261,7 @@ enum GlassMetrics {
     /// 只在 **iOS 15 ~ 18** 这条路径上生效。
     static let mapSurfaceTint: Double = 0.55
 
-    /// iOS 26 液态玻璃的地图浮层染色强度。
+    /// iOS 26 液态玻璃的地图浮层染色强度（**未选主题**时用）。
     ///
     /// 语义与 `mapSurfaceTint` 相同（把浮层压实一点、压住卫星图的碎纹理），
     /// 但走的是 `Glass.tint(_:)` 而不是叠一层色块 —— 玻璃本身已经提供了
@@ -193,12 +269,22 @@ enum GlassMetrics {
     /// 所以数值比 `mapSurfaceTint` 小一档。
     static let mapGlassTint: Double = 0.35
 
-    /// iOS 26 上「贴在玻璃面板里的胶囊」的填充强度。
+    /// 选了彩色主题时，玻璃改用主题首色染色，浓度取这个值。
+    ///
+    /// 比 `mapGlassTint` 低不少：那 0.35 是拿**系统底色**（白/黑）压的，
+    /// 相当于「加厚」；这里是拿一个**饱和色**染，同样数值会直接把玻璃
+    /// 变成一块彩色板。0.22 刚好能看出色偏又留得住折射。
+    static let themedGlassTint: Double = 0.22
+
+    /// 选了彩色主题时，玻璃面板内部胶囊的填充浓度。
+    static let themedCapsuleTint: Double = 0.30
+
+    /// iOS 26 上「贴在玻璃面板里的胶囊」的填充强度（**未选主题**时用）。
     ///
     /// 这一档**不能**再叠一层 `.glassEffect`（嵌套玻璃会被外层吃掉），
-    /// 于是退回成一层淡色填充。取值对标 iOS 15~18 那套在白色面板上
-    /// 呈现出来的浅灰：既画出可点区域，又不至于变成一块实心色块。
-    static let mapCapsuleTint: Double = 0.08
+    /// 于是退回成一层淡色填充 + 一圈白色亮边。1.0.10 只填了 0.08 的灰、
+    /// 没有亮边，结果按钮在玻璃面板上几乎看不出来，用户反馈「点不亮」。
+    static let mapCapsuleTint: Double = 0.12
 }
 
 /// 玻璃胶囊按钮组里的单个按钮。
@@ -214,6 +300,9 @@ struct GlassSegmentButton: View {
     var itemSize: CGSize = CGSize(width: 38, height: 32)
     let action: () -> Void
 
+    /// 选中态的底色跟着主题走。
+    @Environment(\.themeAccent) private var accent
+
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
@@ -222,11 +311,11 @@ struct GlassSegmentButton: View {
                 .frame(width: itemSize.width, height: itemSize.height)
                 .background(
                     Capsule(style: .continuous)
-                        .fill(isSelected ? Color.blue : Color.clear)
+                        .fill(isSelected ? accent : Color.clear)
                 )
                 .contentShape(Capsule(style: .continuous))
         }
-        .buttonStyle(.plain)
+        .glassPressEffect(scale: 0.88)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }

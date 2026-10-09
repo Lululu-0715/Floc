@@ -15,8 +15,8 @@ knownRegions:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "1.0.10"
-    CURRENT_PROJECT_VERSION: "13"
+    MARKETING_VERSION: "1.0.11"
+    CURRENT_PROJECT_VERSION: "14"
     # 未签名构建：签名由用户在 Impactor / 爱思助手中完成
     CODE_SIGN_STYLE: Manual
     CODE_SIGNING_ALLOWED: "NO"
@@ -76,6 +76,19 @@ targets:
     dependencies:
       - target: Floc
 
+  FlocUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: Tests/FlocUITests
+    settings:
+      base:
+        PRODUCT_NAME: FlocUITests
+        # UI 测试要靠这个键知道去启动哪个 App；XcodeGen 不会自动补。
+        TEST_TARGET_NAME: Floc
+    dependencies:
+      - target: Floc
+
 schemes:
   Floc:
     build:
@@ -87,5 +100,6 @@ schemes:
       config: Debug
       targets:
         - FlocTests
+        - FlocUITests
     archive:
       config: Release

@@ -19,7 +19,15 @@ final class MapLocationState: ObservableObject {
     /// 是否正在执行启停操作，用于禁用按钮防止连点。
     @Published private(set) var isBusy = false
 
-    /// 当前地图使用的坐标体系，由 MapKit 探测得出。
+    /// 地图画布使用的坐标体系，用于「按该体系取坐标」（居中等）与诊断展示。
+    ///
+    /// **它不参与「地图上的点该怎么解释」这个决定。** 那件事由
+    /// `CoordinateConverter.mapSystem(latitude:longitude:)` 按点落在哪个区域
+    /// 直接判定（境内 GCJ-02 / 境外 WGS-84），不依赖任何探测 —— 探测是启发式的，
+    /// 判错一次的代价是几百米的整体偏移（1.0.10 的实拍反馈）。
+    ///
+    /// 这里的默认值 `.gcj02` 对国内用户恒正确：换算只在境内生效，
+    /// 境外的两套数值相等，取哪套都一样。
     @Published var mapCoordinateSystem: CoordinateConverter.MapCoordinateSystem = .gcj02
 
     /// 精度（米），写进 WLOC 响应。

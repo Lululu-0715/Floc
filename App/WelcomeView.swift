@@ -39,6 +39,10 @@ struct WelcomeView: View {
 
     @State private var currentPage = 0
 
+    /// 主题在欢迎页上是最显眼的：整页渐变 + 图标块 + 主按钮三处同时换色，
+    /// 效果和参考图里那六张色卡基本一致。
+    @ObservedObject private var theme = ThemeStore.shared
+
     let onFinish: () -> Void
 
     var body: some View {
@@ -62,7 +66,9 @@ struct WelcomeView: View {
             }
         }
         .onAppear {
-            RuntimeLogger.info("APP", "Welcome", "欢迎页已显示")
+            RuntimeLogger.info("APP", "Welcome", "欢迎页已显示", details: [
+                "theme": theme.palette.id,
+            ])
             // 全新安装后的第一屏：把定位授权直接弹出来，别让用户自己去找。
             // 这里只在欢迎页出现（`hasSeenWelcome` 为 false）时触发，
             // 所以不会在每次启动时打扰用户。
@@ -72,20 +78,29 @@ struct WelcomeView: View {
 
     // MARK: - 背景
 
-    /// 顶部一层淡蓝渐变，向下淡出到系统背景色。
+    /// 顶部一层强调色渐变，向下淡出到系统背景色。
     ///
-    /// 用 `Color.blue` 叠加而不是写死 RGB：深色模式下它会自动变成暗蓝，
-    /// 不必为两种外观各维护一套常量。
+    /// 用 `Color.blue` / 主题色叠加而不是写死 RGB：深色模式下它会自动
+    /// 变成暗色，不必为两种外观各维护一套常量。
+    ///
+    /// 选了彩色主题时换成该主题的渐变（左上浓、右下淡），观感与参考图一致；
+    /// 未选主题时仍是原来的蓝色调 —— 没选过主题的用户看不到任何变化。
     private var backdrop: some View {
-        LinearGradient(
-            stops: [
-                .init(color: Color.blue.opacity(0.18), location: 0.0),
-                .init(color: Color.blue.opacity(0.05), location: 0.42),
-                .init(color: Color.blue.opacity(0.0), location: 0.7),
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
+        Group {
+            if let gradient = theme.gradient {
+                gradient.opacity(0.55)
+            } else {
+                LinearGradient(
+                    stops: [
+                        .init(color: Color.blue.opacity(0.18), location: 0.0),
+                        .init(color: Color.blue.opacity(0.05), location: 0.42),
+                        .init(color: Color.blue.opacity(0.0), location: 0.7),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+        }
     }
 
     // MARK: - 单页
@@ -121,15 +136,19 @@ struct WelcomeView: View {
         .padding(.horizontal, 24)
     }
 
-    /// 120×120 的渐变图标块，外圈带一层蓝色辉光。
+    /// 120×120 的渐变图标块，外圈带一层同色辉光。
+    ///
+    /// 颜色随主题走：未选主题时是原来的蓝→青，选了就换成主题渐变
+    /// （用 `solidGradient` 只取前两色，第三色是收尾的浅色，
+    /// 铺上去会把白色图标吃掉）。
     private func iconTile(_ systemImage: String) -> some View {
         RoundedRectangle(cornerRadius: 28, style: .continuous)
             .fill(
-                LinearGradient(
-                    colors: [Color.blue, Color.cyan],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                theme.isThemed
+                    ? theme.palette.solidGradient
+                    : LinearGradient(colors: [Color.blue, Color.cyan],
+                                     startPoint: .topLeading,
+                                     endPoint: .bottomTrailing)
             )
             .frame(width: 120, height: 120)
             .overlay(
@@ -137,7 +156,7 @@ struct WelcomeView: View {
                     .font(.system(size: 48, weight: .medium))
                     .foregroundStyle(.white)
             )
-            .shadow(color: Color.blue.opacity(0.35), radius: 24, y: 10)
+            .shadow(color: theme.accent.opacity(0.35), radius: 24, y: 10)
     }
 
     // MARK: - 底部
@@ -156,7 +175,7 @@ struct WelcomeView: View {
         HStack(spacing: 8) {
             ForEach(items.indices, id: \.self) { index in
                 Capsule(style: .continuous)
-                    .fill(index == currentPage ? Color.blue : Color.secondary.opacity(0.3))
+                    .fill(index == currentPage ? theme.accent : Color.secondary.opacity(0.3))
                     .frame(width: index == currentPage ? 22 : 8, height: 8)
             }
         }
@@ -178,10 +197,16 @@ struct WelcomeView: View {
             .padding(.vertical, 16)
             .background(
                 Capsule(style: .continuous)
-                    .fill(Color.blue)
+                    .fill(
+                        theme.isThemed
+                            ? AnyShapeStyle(theme.palette.solidGradient)
+                            : AnyShapeStyle(theme.accent)
+                    )
             )
         }
-        .buttonStyle(.plain)
+        // 按下缩一点点再弹回来 —— 欢迎页只有这一个按钮，
+        // 没有触感的话整页会显得「死」。
+        .glassPressEffect(scale: 0.96)
     }
 
     private var buttonTitle: String {

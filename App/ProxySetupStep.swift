@@ -7,6 +7,9 @@ struct ProxySetupStep: View {
     @ObservedObject private var proxy = ProxyManager.shared
     @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
 
+    /// 主题强调色。
+    @Environment(\.themeAccent) private var accent
+
     @State private var isStarting = false
     @State private var errorMessage: String?
 
@@ -53,8 +56,8 @@ struct ProxySetupStep: View {
                         Text("\(index + 1)")
                             .font(.caption.weight(.bold))
                             .frame(width: 20, height: 20)
-                            .background(Color.accentColor.opacity(0.15), in: Circle())
-                            .foregroundStyle(Color.accentColor)
+                            .background(accent.opacity(0.15), in: Circle())
+                            .foregroundStyle(accent)
                         Text(instruction)
                             .font(.subheadline)
                             .fixedSize(horizontal: false, vertical: true)
@@ -172,8 +175,8 @@ struct ProxySetupStep: View {
                         Text("\(index + 1)")
                             .font(.caption.weight(.bold))
                             .frame(width: 20, height: 20)
-                            .background(Color.accentColor.opacity(0.15), in: Circle())
-                            .foregroundStyle(Color.accentColor)
+                            .background(accent.opacity(0.15), in: Circle())
+                            .foregroundStyle(accent)
                         Text(instruction)
                             .font(.subheadline)
                             .fixedSize(horizontal: false, vertical: true)
@@ -347,11 +350,13 @@ struct ClientRow: View {
     let isSelected: Bool
     let action: () -> Void
 
+    @Environment(\.themeAccent) private var accent
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
-                    .foregroundStyle(isSelected ? Color.accentColor : Color(.tertiaryLabel))
+                    .foregroundStyle(isSelected ? accent : Color(.tertiaryLabel))
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(client.displayName)

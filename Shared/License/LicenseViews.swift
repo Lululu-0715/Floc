@@ -251,6 +251,7 @@ struct ActivateSheet: View {
 struct ReferralView: View {
 
     @ObservedObject var manager: LicenseManager
+    @Environment(\.themeAccent) private var accent
     @State private var inputCode = ""
     @State private var copied = false
 
@@ -504,7 +505,7 @@ struct ReferralView: View {
                 .font(.caption2.bold())
                 .foregroundStyle(.white)
                 .frame(width: 16, height: 16)
-                .background(Circle().fill(Color.accentColor))
+                .background(Circle().fill(accent))
             Text(text)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)

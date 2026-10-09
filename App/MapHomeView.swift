@@ -12,12 +12,17 @@ import SwiftUI
 struct MapHomeView: View {
 
     @Environment(\.scenePhase) private var scenePhase
+    /// 主题强调色。和 `theme.accent` 是同一个值，走环境是为了让
+    /// 子视图（`FavoriteChip`）也能拿到，不必逐层传。
+    @Environment(\.themeAccent) private var accent
 
     @ObservedObject var setup: SetupCoordinator
     @ObservedObject private var proxy = ProxyManager.shared
     @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
     @ObservedObject private var runtimeMode = RuntimeModeStore.shared
     @ObservedObject private var remoteConfiguration = AppRemoteConfigurationStore.shared
+    /// 配色主题。主按钮的强调色、玻璃的染色都从这里取。
+    @ObservedObject private var theme = ThemeStore.shared
     #if !PURE_BUILD
     @ObservedObject private var license = LicenseManager.shared
     #endif
@@ -280,12 +285,24 @@ struct MapHomeView: View {
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundStyle(.tertiary)
+                                // 触摸目标放大到 30×30：图标本身只有 ~20pt，
+                                // 稍微点偏一点就落到搜索框的玻璃上——更糟的情况是
+                                // 透过玻璃落到地图上，变成一次地图选点。
+                                // 30 是这一行的极限：行高由它决定（30 + 上下各 6
+                                // 的内边距 = 42），再大整个搜索栏就会被撑高。
+                                .frame(width: 30, height: 30)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(AppLocalization.string("清空"))
                     }
                 }
+                // 行高固定 30：清除按钮是 30×30（触摸目标），放大镜与输入框
+                // 都比它矮。给一个 minHeight 之后，「有没有 X」都不会改变行高，
+                // 搜索栏不会在开始输入的一瞬间跳一下。
+                .frame(minHeight: 30)
                 .padding(.horizontal, 14)
-                .padding(.vertical, 10)
+                .padding(.vertical, 6)
                 .mapGlassSurface()
 
                 Button {
@@ -294,10 +311,19 @@ struct MapHomeView: View {
                     Image(systemName: "gearshape")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(.primary)
-                        .frame(width: 42, height: 42)
+                        // 44×44 是 iOS 的最小可靠触摸尺寸。原来是 42×42，肉眼看不出
+                        // 差别，但用户反馈「设置很难点进去」——近两年机型的边缘手势
+                        // 会把最外侧十几像素吃掉，宁可多给两像素。
+                        .frame(width: 44, height: 44)
                         .mapGlassSurface()
+                        // 玻璃本身没有 hit area，图标那点像素才是热区；
+                        // 显式给整块定形，避免「点边角没反应」。
+                        .contentShape(RoundedRectangle(cornerRadius: GlassMetrics.mapCornerRadius,
+                                                       style: .continuous))
                 }
-                .buttonStyle(.plain)
+                // 按下缩一下再弹回：玻璃有 `.interactive()`，内容也跟着动，
+                // 点下去才有「按到了」的感觉。
+                .glassPressEffect(scale: 0.92)
                 .accessibilityLabel(AppLocalization.string("设置"))
             }
 
@@ -329,7 +355,7 @@ struct MapHomeView: View {
                     } label: {
                         HStack(alignment: .top, spacing: 12) {
                             Image(systemName: "mappin.circle.fill")
-                                .foregroundStyle(Color.accentColor)
+                                .foregroundStyle(accent)
                                 .font(.title3)
 
                             VStack(alignment: .leading, spacing: 2) {
@@ -631,12 +657,12 @@ struct MapHomeView: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 4)
                         .padding(.vertical, 1)
-                        .background(Capsule().fill(Color.accentColor))
+                        .background(Capsule().fill(accent))
                         .offset(x: 3, y: -3)
                 }
             }
         }
-        .buttonStyle(.plain)
+        .glassPressEffect(scale: 0.9)
         .accessibilityLabel(accessibilityLabel)
     }
 
@@ -673,7 +699,7 @@ struct MapHomeView: View {
                 .mapGlassCapsule()
                 .contentShape(Capsule(style: .continuous))
             }
-            .buttonStyle(.plain)
+            .glassPressEffect(scale: 0.95)
             .disabled(state.selection == nil || state.isBusy)
             .accessibilityLabel(state.isEnabled
                                 ? AppLocalization.string("停止虚拟定位")
@@ -684,9 +710,12 @@ struct MapHomeView: View {
     }
 
     /// 主按钮的着色：未选点时置灰（点了也没用），开启后用红色表示「再点就是关」。
+    ///
+    /// 关闭态取主题强调色而不是 `accent`：后者读的是资源目录里的
+    /// 静态色，跟不了运行时切换的 `.tint`，选完主题这个按钮会留在系统蓝上。
     private var spoofButtonTint: Color {
         guard state.selection != nil else { return .secondary }
-        return state.isEnabled ? .red : .accentColor
+        return state.isEnabled ? .red : theme.accent
     }
 
     /// 「实时位置」按钮。
@@ -709,12 +738,12 @@ struct MapHomeView: View {
                 Text(AppLocalization.string("实时位置"))
                     .font(.system(size: 10, weight: .medium))
             }
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(theme.accent)
             .frame(width: 62, height: 44)
             .mapGlassCapsule()
             .contentShape(Capsule(style: .continuous))
         }
-        .buttonStyle(.plain)
+        .glassPressEffect(scale: 0.95)
         .disabled(realLocation.isLocating)
         .accessibilityLabel(AppLocalization.string("实时位置"))
         .accessibilityHint(AppLocalization.string("长按回到已选点"))
@@ -750,8 +779,12 @@ struct MapHomeView: View {
         realLocation.requestOnce { result in
             switch result {
             case .success(let coordinate):
+                // 与地图点选同一条判据：境内按 GCJ-02 解释，境外按 WGS-84。
                 let pair: CoordinateConverter.CoordinatePair
-                switch state.mapCoordinateSystem {
+                switch CoordinateConverter.mapSystem(
+                    latitude: coordinate.latitude,
+                    longitude: coordinate.longitude
+                ) {
                 case .gcj02:
                     pair = CoordinateConverter.CoordinatePair(
                         gcj02Latitude: coordinate.latitude,
@@ -932,8 +965,18 @@ struct MapHomeView: View {
     // MARK: - 交互
 
     private func handleMapTap(_ coordinate: CLLocationCoordinate2D) {
-        // MapKit 返回的坐标属于当前地图体系，交给对应构造器换算另一套。
-        switch state.mapCoordinateSystem {
+        // 按「点落在哪个区域」解释这枚坐标，**不按探测出来的体系**。
+        //
+        // 境内的地图数据一定是 GCJ-02，境外一定是 WGS-84，而换算在境外是
+        // 恒等 —— 这条规则不依赖任何启发式判断（判据见
+        // `CoordinateConverter.mapSystem`）。1.0.10 走的是探测结果，而探测的
+        // 锚点取错了（把高德的 GCJ 值当成了 WGS-84），境内被恒定判成 WGS-84，
+        // 于是每个选点写进定位服务的坐标都差一个 GCJ 偏移（数百米），
+        // 表现就是「地图选点跟定位出来的位置有偏差」。
+        switch CoordinateConverter.mapSystem(
+            latitude: coordinate.latitude,
+            longitude: coordinate.longitude
+        ) {
         case .gcj02:
             state.select(gcj02Latitude: coordinate.latitude, gcj02Longitude: coordinate.longitude)
         case .wgs84:
@@ -1191,17 +1234,19 @@ struct MapHomeView: View {
                 let coordinate = item.placemark.coordinate
                 guard CLLocationCoordinate2DIsValid(coordinate) else { return nil }
 
-                // Apple 在国内返回的是 GCJ-02，境外是 WGS-84，用国境判断来分流。
+                // Apple 在国内返回的是 GCJ-02，境外是 WGS-84，按点落在哪个
+                // 区域分流 —— 和地图点选用的是同一条判据，两处不会再走偏。
                 let pair: CoordinateConverter.CoordinatePair
-                if CoordinateConverter.isOutOfChina(
+                switch CoordinateConverter.mapSystem(
                     latitude: coordinate.latitude,
                     longitude: coordinate.longitude
                 ) {
+                case .wgs84:
                     pair = CoordinateConverter.CoordinatePair(
                         wgs84Latitude: coordinate.latitude,
                         wgs84Longitude: coordinate.longitude
                     )
-                } else {
+                case .gcj02:
                     pair = CoordinateConverter.CoordinatePair(
                         gcj02Latitude: coordinate.latitude,
                         gcj02Longitude: coordinate.longitude
@@ -1235,21 +1280,33 @@ struct MapHomeView: View {
 
     // MARK: - 坐标体系探测
 
-    /// 判断 MapKit 当前返回的是 GCJ-02 还是 WGS-84。
+    /// 判断 MapKit 当前返回的是 GCJ-02 还是 WGS-84，**只为确认与留痕**。
     ///
-    /// 做法：去查一个已知坐标的固定锚点，把返回坐标分别按两套体系解释，
-    /// 与真实坐标偏移更小的那个即为当前体系。这是启发式方法，取不到结果时
-    /// 保留上一次的判断。
+    /// 做成「查一个已知坐标的固定锚点，看它更接近哪一套」：拿真实搜索接口
+    /// 确认地图数据源还是国内那一套（高德）。判定结果会被区域判据卡一道
+    /// （见 `CoordinateConverter.inferSystem`），**判成 WGS-84 时视为探错**、
+    /// 保留原值 —— 坐标怎么解释由 `CoordinateConverter.mapSystem` 决定，
+    /// 不经过这里。
+    ///
+    /// ## 锚点为什么必须换算一次
+    ///
+    /// `tiananmenGCJ02` 那对数字（116.397499, 39.908722）是**高德给天安门的
+    /// GCJ-02 输出**，不是 WGS-84。1.0.10 及以前直接把它当 `referenceWGS84`
+    /// 传了进来，漏掉文档里「反算出对应的 WGS-84 坐标」那一步，于是两个候选
+    /// 落点几乎重合在「高德那个点」上：地图返回 GCJ 坐标时反而离「WGS-84
+    /// 候选」更近，境内设备被**恒定判成 WGS-84**。
+    ///
+    /// 这里的报错很隐蔽 —— 界面上的选点标记仍然落在手指按下的地方（它用的
+    /// 是同一个错误值，自洽），但写进定位服务的目标坐标整体偏了数百米。
     private func probeCoordinateSystem() {
         coordinateSystemProbeTask?.cancel()
         coordinateSystemProbeTask = Task {
-            let anchorLatitude = 39.908722
-            let anchorLongitude = 116.397499
+            let anchor = CoordinateConverter.tiananmenWGS84
 
             let request = MKLocalSearch.Request()
             request.naturalLanguageQuery = "天安门"
             request.region = MKCoordinateRegion(
-                center: CLLocationCoordinate2D(latitude: anchorLatitude, longitude: anchorLongitude),
+                center: CLLocationCoordinate2D(latitude: anchor.latitude, longitude: anchor.longitude),
                 latitudinalMeters: 3000,
                 longitudinalMeters: 3000
             )
@@ -1261,13 +1318,29 @@ struct MapHomeView: View {
                 let probe = CoordinateConverter.inferSystem(
                     mapCoordinate: item.placemark.coordinate,
                     referenceWGS84: CLLocationCoordinate2D(
-                        latitude: anchorLatitude,
-                        longitude: anchorLongitude
+                        latitude: anchor.latitude,
+                        longitude: anchor.longitude
                     )
                 )
 
+                if probe.contradictsRegion {
+                    // 探成 WGS-84 而锚点在境内 —— 一定是探测本身错了，
+                    // 不是地图换了体系。记一条日志，值保持原样。
+                    RuntimeLogger.warn("APP", "Home", "坐标体系探测与区域判据矛盾，判定作废", details: [
+                        "mapCoordinate": "\(item.placemark.coordinate.latitude),\(item.placemark.coordinate.longitude)",
+                        "distanceToWGS84": String(format: "%.0f", probe.distanceToWGS84),
+                        "distanceToGCJ02": String(format: "%.0f", probe.distanceToGCJ02),
+                        "expected": probe.expectedSystem.diagnosticName,
+                    ])
+                    return
+                }
+
                 guard let inferred = probe.inferredSystem, probe.isConclusive else {
-                    RuntimeLogger.debug("APP", "Home", "坐标体系探测结果不明确，保留原值")
+                    RuntimeLogger.debug("APP", "Home", "坐标体系探测结果不明确，保留原值", details: [
+                        "distanceToWGS84": String(format: "%.0f", probe.distanceToWGS84),
+                        "distanceToGCJ02": String(format: "%.0f", probe.distanceToGCJ02),
+                        "separation": String(format: "%.0f", probe.separation),
+                    ])
                     return
                 }
 
@@ -1378,6 +1451,8 @@ private struct FavoriteChip: View {
     let onTap: () -> Void
     let onLongPress: () -> Void
 
+    @Environment(\.themeAccent) private var accent
+
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 5) {
@@ -1390,10 +1465,10 @@ private struct FavoriteChip: View {
             .padding(.horizontal, 11)
             .padding(.vertical, 7)
             .background(
-                isSelected ? Color.accentColor.opacity(0.18) : Color(.quaternarySystemFill),
+                isSelected ? accent.opacity(0.18) : Color(.quaternarySystemFill),
                 in: Capsule()
             )
-            .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+            .foregroundStyle(isSelected ? accent : Color.primary)
         }
         .buttonStyle(.plain)
         .simultaneousGesture(

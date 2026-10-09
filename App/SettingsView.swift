@@ -22,6 +22,7 @@ struct SettingsView: View {
     @ObservedObject private var runtimeMode = RuntimeModeStore.shared
     @ObservedObject private var remoteConfiguration = AppRemoteConfigurationStore.shared
     @ObservedObject private var appearance = AppearanceStore.shared
+    @ObservedObject private var theme = ThemeStore.shared
     @ObservedObject private var fontScale = FontScaleStore.shared
     #if !PURE_BUILD
     @ObservedObject private var license = LicenseManager.shared
@@ -327,6 +328,14 @@ struct SettingsView: View {
                 .labelsHidden()
             }
             .padding(.vertical, SettingsMetrics.rowVerticalPadding)
+
+            detailLink(
+                systemImage: "paintpalette.fill",
+                title: AppLocalization.string("配色主题"),
+                value: theme.palette.displayName
+            ) {
+                ColorThemeSettingsView(store: theme)
+            }
 
             detailLink(
                 systemImage: "globe",

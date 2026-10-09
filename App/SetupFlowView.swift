@@ -10,6 +10,8 @@ struct SetupFlowView: View {
     @ObservedObject private var proxy = ProxyManager.shared
     @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
 
+    @Environment(\.themeAccent) private var accent
+
     @State private var locationPermissionRequested = false
     @State private var isVerifying = false
     @State private var report = VerificationReport()
@@ -56,7 +58,8 @@ struct SetupFlowView: View {
 
             bottomBar
         }
-        .background(Color(.systemGroupedBackground))
+        // 背景走主题渐变：没选主题时它就是系统分组底色，观感与以前一致。
+        .background(ThemedBackground())
     }
 
     // MARK: - 步骤指示器
@@ -73,7 +76,7 @@ struct SetupFlowView: View {
                     VStack(spacing: 6) {
                         ZStack {
                             Circle()
-                                .fill(isDone ? Color.accentColor : (isActive ? Color.accentColor : Color(.tertiarySystemFill)))
+                                .fill(isDone ? accent : (isActive ? accent : Color(.tertiarySystemFill)))
                                 .frame(width: 28, height: 28)
                             if isDone {
                                 Image(systemName: "checkmark")
@@ -97,7 +100,7 @@ struct SetupFlowView: View {
 
                 if step != SetupCoordinator.Step.allCases.last {
                     Rectangle()
-                        .fill(isDone ? Color.accentColor : Color(.tertiarySystemFill))
+                        .fill(isDone ? accent : Color(.tertiarySystemFill))
                         .frame(height: 2)
                         .frame(maxWidth: .infinity)
                         .padding(.bottom, 18)

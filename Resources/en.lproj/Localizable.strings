@@ -422,3 +422,13 @@
 "Wi-Fi" = "Wi-Fi";
 "移动网络" = "Cellular";
 "未知网络" = "Unknown network";
+"配色主题" = "Color theme";
+"默认蓝色" = "Default blue";
+"玫红雪白" = "Rose Snow";
+"薄荷孔雀绿" = "Mint Peacock";
+"夜紫橙金" = "Night Violet Gold";
+"湖蓝淡粉" = "Lake Blue Pink";
+"荧光水绿" = "Neon Aqua";
+"电光蓝紫" = "Electric Blue Violet";
+"主题预览：%@" = "Theme preview: %@";
+"主题会改变应用的强调色与页面配色，地图上的浮层会跟着染上主题色。选「跟随系统」即恢复默认的蓝色。" = "The theme changes the accent color and page tint of the app, and the map overlays pick it up too. Choose \"Follow system\" to go back to the default blue.";

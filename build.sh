@@ -16,22 +16,26 @@ usage() {
   cat <<'USAGE'
 用法: ./build.sh [--test|--check]
 
-构建未签名 IPA，一次两个口味，输出到 dist/ 目录。
+构建未签名 IPA，输出到 dist/ 目录，并归档到桌面「Floc 发布包/<口味>/」。
 
-每次构建会把版本号末位 +1（1.0.0 → 1.0.1），共四个文件：
+每次构建会把版本号末位 +1（1.0.0 → 1.0.1）。当前**默认只出全功能版**：
 
-  dist/Floc-1.0.1-unsigned.ipa        标准版：带卡密 / 授权 / 推荐
-  dist/Floc-1.0.1-纯净-unsigned.ipa   纯净版：没有卡密那套（PURE_BUILD）
-  dist/Floc-unsigned.ipa              标准版的固定名字副本，供发布链接引用
-  dist/Floc-纯净-unsigned.ipa         纯净版的固定名字副本
+  dist/Floc-1.0.1-unsigned.ipa        全功能版：第三方代理 + 应用内代理 + 卡密
+  dist/Floc-unsigned.ipa              同上的固定名字副本，供发布链接引用
 
-两个包是同一个 App（Bundle ID 与显示名都是 Floc），源码也只有一份，
+要一次出多个口味时用 FLAVORS 显式指定（可用 standard / localOnly / pure）：
+
+  FLAVORS="standard localOnly" ./build.sh
+
+  localOnly   仅内置代理版（只有应用内代理）
+  pure        纯净版：没有卡密那套（PURE_BUILD）
+
+所有口味都是同一个 App（Bundle ID 与显示名都是 Floc），源码也只有一份，
 区别只在编译条件里有没有 PURE_BUILD —— 详见 Shared/BuildFlavor.swift。
 同一个 Bundle ID 只能装一个，装上会覆盖另一个。
 
 版本号写进 IPA 文件名，并在 App 内的「设置 → 关于 → 应用版本」里显示。
-桌面图标的显示名恒为 Floc，不随版本号变化——要区分多个自签构建，
-看 IPA 文件名或 App 内版本号即可；纯净版的版本号后面会多一个「（纯净版）」。
+桌面图标的显示名恒为 Floc，不随版本号变化。
 构建失败会自动回退版本号。
 
 选项:
@@ -39,6 +43,7 @@ usage() {
   --check   只跑静态检查，不构建（Go 测试 + 脚本测试 + 源码一致性）
 
 环境变量:
+  FLAVORS                      出包口味，默认 "standard"
   SKIP_MODULE_REACHABILITY=1   跳过打包前的模块联通性联网检查（离线时用）
   FULL_CLEAN=1                 连编译缓存一起清掉，强制全量重编
 USAGE
@@ -206,6 +211,22 @@ restore_version_on_failure() {
 }
 trap restore_version_on_failure EXIT
 
+# 出包口味。定义在这里、由 Scripts/build-unsigned-ipa.sh 消费。
+#
+# 当前**默认只出全功能版**：用户要求先把一款调透，等全部调好之后再恢复
+# 「仅内置代理版」。要出两个包时显式指定即可，例如：
+#     FLAVORS="standard localOnly" ./build.sh
+# （可用口味：standard / localOnly / pure，含义见 Scripts/build-unsigned-ipa.sh）
+FLAVORS="${FLAVORS:-standard}"
+export FLAVORS
+
+flavor_enabled() {
+  case " $FLAVORS " in
+    *" $1 "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 VERSION="$VERSION" "$ROOT/Scripts/build-unsigned-ipa.sh"
 
 # 各口味文件名的后缀。默认值与 Scripts/build-unsigned-ipa.sh 里的一致——
@@ -220,14 +241,19 @@ LOCAL_ONLY_STABLE_IPA="$ROOT/dist/$APP_NAME-$LOCAL_ONLY_SUFFIX-unsigned.ipa"
 
 test -s "$STANDARD_IPA"
 test -s "$STANDARD_STABLE_IPA"
-test -s "$LOCAL_ONLY_IPA"
-test -s "$LOCAL_ONLY_STABLE_IPA"
+if flavor_enabled localOnly; then
+  test -s "$LOCAL_ONLY_IPA"
+  test -s "$LOCAL_ONLY_STABLE_IPA"
+fi
 
 # 静态检查看源码，看不出打包结果对不对——图标没进包、显示名带版本号
 # 这类问题只有拆开 IPA 才看得见。见 Scripts/verify-ipa.py。
 echo
-python3 "$ROOT/Scripts/verify-ipa.py" --version "$VERSION" \
-  "$STANDARD_IPA" "$LOCAL_ONLY_IPA"
+VERIFY_ARGS=("$STANDARD_IPA")
+if flavor_enabled localOnly; then
+  VERIFY_ARGS+=("$LOCAL_ONLY_IPA")
+fi
+python3 "$ROOT/Scripts/verify-ipa.py" --version "$VERSION" "${VERIFY_ARGS[@]}"
 
 # 出包之后往桌面放一份。用户要求每版都留档，并按版本类型分文件夹，
 # 免得 dist/ 里几个包反复互相覆盖、事后分不清哪个是哪个。
@@ -266,16 +292,20 @@ echo "未签名 IPA 已生成:"
 echo "  全功能版（第三方代理 + 应用内代理 + 卡密）"
 echo "    $STANDARD_IPA"
 echo "    $STANDARD_STABLE_IPA"
-echo "  仅内置代理版（只有应用内代理）"
-echo "    $LOCAL_ONLY_IPA"
-echo "    $LOCAL_ONLY_STABLE_IPA"
+if flavor_enabled localOnly; then
+  echo "  仅内置代理版（只有应用内代理）"
+  echo "    $LOCAL_ONLY_IPA"
+  echo "    $LOCAL_ONLY_STABLE_IPA"
+fi
 
 echo
 echo "已归档到桌面:"
 archive_ipa "$STANDARD_IPA" "全功能版"
 archive_notes "全功能版"
-archive_ipa "$LOCAL_ONLY_IPA" "仅内置代理版"
-archive_notes "仅内置代理版"
+if flavor_enabled localOnly; then
+  archive_ipa "$LOCAL_ONLY_IPA" "仅内置代理版"
+  archive_notes "仅内置代理版"
+fi
 # 纯净版默认不出；真要出时（FLAVORS 里带上 pure）也一并归档。
 archive_ipa "$ROOT/dist/$APP_NAME-$VERSION-$PURE_SUFFIX-unsigned.ipa" "纯净版"
 

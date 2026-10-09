@@ -74,6 +74,8 @@ enum TipKind {
 /// 所以用编号步骤而不是一段散文。
 struct UsageGuideView: View {
 
+    @Environment(\.themeAccent) private var accent
+
     private struct Step: Identifiable {
         let id = UUID()
         let title: String
@@ -151,7 +153,7 @@ struct UsageGuideView: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 26, height: 26)
-                .background(Circle().fill(Color.accentColor))
+                .background(Circle().fill(accent))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(step.title)

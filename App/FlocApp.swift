@@ -5,6 +5,7 @@ struct FlocApp: App {
 
     @StateObject private var setup = SetupCoordinator()
     @StateObject private var appearance = AppearanceStore.shared
+    @StateObject private var theme = ThemeStore.shared
     #if !PURE_BUILD
     @StateObject private var license = LicenseManager.shared
     #endif
@@ -31,6 +32,12 @@ struct FlocApp: App {
                 // 外观在根节点统一施加：设置页里改一档，整个应用（含已经
                 // 打开的 sheet 和导航栈）立刻跟着变，不用逐页传值。
                 .preferredColorScheme(appearance.mode.colorScheme)
+                // 配色主题的强调色同样挂在根节点：`.tint` 管系统控件
+                // （开关、段选、链接），`\.themeAccent` 管我们自己写的那些
+                // `Color.accentColor` 位置——两者都得给，缺一个就会留下
+                // 几处永远是系统蓝的元素。
+                .tint(theme.accent)
+                .environment(\.themeAccent, theme.accent)
                 // 字号：把档位挂到根节点的动态字体环境上，整棵树会随之重算，
                 // 设置页里那些固定字号（`SettingsMetrics`，读的是静态属性）
                 // 也就一并拿到新系数，不需要逐页传值。

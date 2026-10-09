@@ -172,6 +172,180 @@ struct FontSizeSettingsView: View {
     }
 }
 
+// MARK: - 配色主题
+
+/// 配色主题选择。
+///
+/// 顶部先给一张**预览卡**，再列选项。理由是「玫红雪白」「电光蓝紫」这种名字
+/// 只能说明大概，真正决定选哪套的是看到它铺在页面上是什么样。预览卡用
+/// 当前选中的主题画一个迷你版首页（渐变底 + 一块玻璃胶囊），
+/// 点下面任意一行它就跟着变。
+struct ColorThemeSettingsView: View {
+
+    @ObservedObject var store: ThemeStore
+    @Environment(\.themeAccent) private var accent
+
+    var body: some View {
+        List {
+            Section {
+                ColorThemePreview(palette: store.palette)
+                    .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+
+            Section {
+                ForEach(ThemeCatalog.all) { palette in
+                    optionRow(palette)
+                }
+            } header: {
+                SettingsSectionHeader(title: AppLocalization.string("配色主题"))
+            } footer: {
+                Text(AppLocalization.string(
+                    "主题会改变应用的强调色与页面配色，地图上的浮层会跟着染上主题色。选「跟随系统」即恢复默认的蓝色。"
+                ))
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle(AppLocalization.string("配色主题"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func optionRow(_ palette: ThemePalette) -> some View {
+        let isSelected = store.palette == palette
+        return Button {
+            store.palette = palette
+        } label: {
+            HStack(spacing: 12) {
+                ColorThemeSwatch(palette: palette)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(palette.displayName)
+                        .font(SettingsMetrics.titleFont)
+                        .foregroundStyle(.primary)
+
+                    Text(palette.isSystem
+                         ? AppLocalization.string("默认蓝色")
+                         : palette.gradientHexes.joined(separator: "  ·  ").uppercased())
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(accent)
+                }
+            }
+            .padding(.vertical, SettingsMetrics.rowVerticalPadding)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? AccessibilityTraits.isSelected : AccessibilityTraits())
+    }
+}
+
+/// 主题色卡：32×32 的圆角色块，铺该主题的三色渐变。
+struct ColorThemeSwatch: View {
+
+    let palette: ThemePalette
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 9, style: .continuous)
+            .fill(swatchFill)
+            .frame(width: 32, height: 32)
+            .overlay(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+            )
+    }
+
+    private var swatchFill: AnyShapeStyle {
+        // 「跟随系统」没有渐变，用一张中性色卡 + 图标表示，避免看起来
+        // 像少了点什么。
+        palette.isSystem
+            ? AnyShapeStyle(Color(.tertiarySystemFill))
+            : AnyShapeStyle(palette.previewGradient)
+    }
+}
+
+/// 主题预览：一张迷你首页。
+///
+/// 用当前主题的渐变铺底，上面压一个玻璃胶囊，右下角一个「开启虚拟定位」
+/// 那样的小按钮 —— 三个元素正好对应主题实际会染色的三处。
+struct ColorThemePreview: View {
+
+    let palette: ThemePalette
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(palette.isSystem
+                      // 不能用 `Color.blue.gradient`：那个 shape style 是
+                      // iOS 16 才有的，最低版本是 15.0，编译直接报错。
+                      ? AnyShapeStyle(LinearGradient(colors: [Color.blue, Color.cyan],
+                                                     startPoint: .topLeading,
+                                                     endPoint: .bottomTrailing))
+                      : AnyShapeStyle(palette.previewGradient))
+
+            VStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.9))
+                    Text(AppLocalization.string("搜索地点或地址"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.85))
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.white.opacity(0.22))
+                )
+
+                HStack(spacing: 8) {
+                    Capsule(style: .continuous)
+                        .fill(Color.white.opacity(0.28))
+                        .frame(height: 26)
+                        .overlay(
+                            Text(AppLocalization.string("开启虚拟定位"))
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.white)
+                        )
+                    Circle()
+                        .fill(Color.white.opacity(0.28))
+                        .frame(width: 26, height: 26)
+                }
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.black.opacity(0.12))
+            )
+            .padding(12)
+        }
+        .frame(height: 148)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            Text(palette.displayName)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Color.black.opacity(0.22)))
+                .padding(8),
+            alignment: .topLeading
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(AppLocalization.string("主题预览：%@", palette.displayName))
+    }
+}
+
 // MARK: - 定位模拟
 
 /// 精度、运动状态模拟与自检。
