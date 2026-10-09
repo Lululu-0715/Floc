@@ -52,7 +52,7 @@ index 090cadc..4aa2d8b 100644
  
          lines.append("")
 diff --git a/App/DiagnosticsView.swift b/App/DiagnosticsView.swift
-index 24f7ed0..e66da9c 100644
+index 63c5722..d825f6c 100644
 --- a/App/DiagnosticsView.swift
 +++ b/App/DiagnosticsView.swift
 @@ -6,8 +6,6 @@ struct DiagnosticsView: View {
@@ -423,7 +423,7 @@ index 025de23..e6ed297 100644
              latitude: pair?.wgs84.latitude ?? 0,
 diff --git a/App/ModeSelectionStep.swift b/App/ModeSelectionStep.swift
 deleted file mode 100644
-index 384a027..0000000
+index 332f856..0000000
 --- a/App/ModeSelectionStep.swift
 +++ /dev/null
 @@ -1,84 +0,0 @@
@@ -456,7 +456,7 @@ index 384a027..0000000
 -                }
 -                .padding(12)
 -                .frame(maxWidth: .infinity, alignment: .leading)
--                .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+-                .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: GlassMetrics.inlineCornerRadius))
 -            }
 -        }
 -    }
@@ -479,7 +479,7 @@ index 384a027..0000000
 -                    .foregroundStyle(isSelected ? Color.white : accent)
 -                    .background(
 -                        isSelected ? accent : accent.opacity(0.12),
--                        in: RoundedRectangle(cornerRadius: 9)
+-                        in: RoundedRectangle(cornerRadius: GlassMetrics.inlineCornerRadius)
 -                    )
 -
 -                VStack(alignment: .leading, spacing: 6) {
@@ -500,11 +500,11 @@ index 384a027..0000000
 -            }
 -            .padding(16)
 -            .background(
--                RoundedRectangle(cornerRadius: 14)
+-                RoundedRectangle(cornerRadius: GlassMetrics.cardCornerRadius)
 -                    .fill(Color(.secondarySystemGroupedBackground))
 -            )
 -            .overlay(
--                RoundedRectangle(cornerRadius: 14)
+-                RoundedRectangle(cornerRadius: GlassMetrics.cardCornerRadius)
 -                    .stroke(isSelected ? accent : Color.clear, lineWidth: 2)
 -            )
 -        }
@@ -512,7 +512,7 @@ index 384a027..0000000
 -    }
 -}
 diff --git a/App/ProxySetupStep.swift b/App/ProxySetupStep.swift
-index 09bbc91..18482a4 100644
+index d85c6ed..8e55adf 100644
 --- a/App/ProxySetupStep.swift
 +++ b/App/ProxySetupStep.swift
 @@ -1,11 +1,12 @@
@@ -597,7 +597,7 @@ index 09bbc91..18482a4 100644
 -            }
 -            .padding(16)
 -            .frame(maxWidth: .infinity, alignment: .leading)
--            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: GlassMetrics.cardCornerRadius))
 -
 -            StatusCard(
 -                title: AppLocalization.string("模块连接"),
@@ -625,7 +625,7 @@ index 09bbc91..18482a4 100644
 -            }
 -            .padding(16)
 -            .frame(maxWidth: .infinity, alignment: .leading)
--            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: GlassMetrics.cardCornerRadius))
 -
 -            Button {
 -                if thirdParty.copyModuleURLToPasteboard() {
@@ -728,7 +728,7 @@ index 09bbc91..18482a4 100644
 -    }
 -}
 diff --git a/App/SettingsDetailViews.swift b/App/SettingsDetailViews.swift
-index a13d866..60f0fdb 100644
+index 3e69249..dc15924 100644
 --- a/App/SettingsDetailViews.swift
 +++ b/App/SettingsDetailViews.swift
 @@ -7,67 +7,6 @@ import SwiftUI
@@ -1495,7 +1495,7 @@ index dd3d072..b884c8c 100644
  
          report = collected
 diff --git a/App/TipViews.swift b/App/TipViews.swift
-index 2932520..5b2e75d 100644
+index 17cd364..8095486 100644
 --- a/App/TipViews.swift
 +++ b/App/TipViews.swift
 @@ -13,7 +13,6 @@ enum TipKind {
@@ -1541,7 +1541,7 @@ index 2932520..5b2e75d 100644
      }
  }
 diff --git a/Resources/en.lproj/Localizable.strings b/Resources/en.lproj/Localizable.strings
-index 852cf47..1f270fc 100644
+index 0f20016..e447d78 100644
 --- a/Resources/en.lproj/Localizable.strings
 +++ b/Resources/en.lproj/Localizable.strings
 @@ -24,16 +24,11 @@
@@ -1716,7 +1716,7 @@ index 458a1e9..7d8cfb0 100644
 +  "_note": "应用启动时拉取本文件，用于「不发版也能改行为」。blockedFromSystemVersion 写 \"27.0\" 这样的版本号，命中时界面会给兼容性警示；announcement 挂一条公告，announcementExpiresAt 到期后自动不再展示。三项都可以留空。1.0.8 起只剩应用内代理，原来的 moduleBaseURL 与 scriptVersion 已随第三方模式一起删除。"
  }
 diff --git a/Resources/zh-Hans.lproj/Localizable.strings b/Resources/zh-Hans.lproj/Localizable.strings
-index 650822a..1fef17c 100644
+index e65b1f9..9ab2ace 100644
 --- a/Resources/zh-Hans.lproj/Localizable.strings
 +++ b/Resources/zh-Hans.lproj/Localizable.strings
 @@ -24,16 +24,11 @@
@@ -1878,7 +1878,7 @@ index 650822a..1fef17c 100644
  "这里会显示作者的邮箱与公众号。发布前请在 Shared/AppContact.swift 里补上，否则用户想购买时找不到入口。" = "这里会显示作者的邮箱与公众号。发布前请在 Shared/AppContact.swift 里补上，否则用户想购买时找不到入口。";
  
 diff --git a/Resources/zh-Hant.lproj/Localizable.strings b/Resources/zh-Hant.lproj/Localizable.strings
-index 8b82688..d4c4d2c 100644
+index f782639..78677f8 100644
 --- a/Resources/zh-Hant.lproj/Localizable.strings
 +++ b/Resources/zh-Hant.lproj/Localizable.strings
 @@ -24,16 +24,11 @@
