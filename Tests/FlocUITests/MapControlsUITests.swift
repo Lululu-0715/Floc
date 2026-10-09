@@ -83,11 +83,19 @@ final class MapControlsUITests: XCTestCase {
                   + "keyboards=\(app.keyboards.count) frame=\(field.frame)")
         }
         XCTAssertTrue(focused, "点搜索框拿不到键盘焦点")
-        field.typeText("beijing")
-
+        // 焦点拿到≠字进去：18.4 上偶发 `typeText` 不落字（键盘在、文本没进，
+        // 表现就是「清空」按钮一直不出现，单跑却必过）。重试有界（≤2 次），
+        // 和图层浮标那条一样，别把模拟器偶发判成红。
         let clear = app.buttons["清空"]
-        XCTAssertTrue(clear.waitForExistence(timeout: 5),
-                      "输入之后没有出现「清空」按钮")
+        var typed = false
+        for attempt in 1...2 where !typed {
+            field.typeText("beijing")
+            typed = clear.waitForExistence(timeout: 5)
+            if !typed {
+                print("[DUMP] 第 \(attempt) 次输入后「清空」没出现，重试")
+            }
+        }
+        XCTAssertTrue(typed, "输入之后没有出现「清空」按钮")
         print("[DUMP] 清空 frame=\(clear.frame) hittable=\(clear.isHittable)")
         XCTAssertTrue(clear.isHittable, "「清空」按钮存在但不可点")
         attach(app, name: "03-输入后")
