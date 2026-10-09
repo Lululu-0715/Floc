@@ -309,6 +309,9 @@ struct GlassPressButtonStyle: ButtonStyle {
 /// `mapCornerRadius` 是浮在地图上的一小块（边距小，圆角也小），
 /// `mapPanelCornerRadius` 是左右贴屏幕边的大面（半径要跟屏幕圆角同心）。
 ///
+/// 七档管的是「这一块自己该多圆」；**嵌套**的元素不该各挑一档，而要走
+/// `concentric(outer:inset:)` —— 内层圆角 = 外层圆角 − 间距，两条弧才同心。
+///
 /// 胶囊类（`Capsule()` / `mapGlassCapsule()`）的圆角等于自身高度的一半，
 /// 由系统算，通常不进这套档位；`buttonCornerRadius` 是唯一的例外 ——
 /// 它写死的 23 就是「46pt 主按钮」的半高，用常量是为了给这个隐含依赖
@@ -365,6 +368,23 @@ enum GlassMetrics {
     /// **刻意不写成 `mapCornerRadius` 的别名**：两个值差一倍多，别名一旦
     /// 加回来，这张大卡片会瞬间塌成地图小浮层的圆角（第 10 项静态检查会拦）。
     static let mapPanelCornerRadius: CGFloat = 44
+
+    /// **同心圆角**：内层元素贴着外层容器时，它自己的圆角 = 外层圆角 − 两者间距。
+    ///
+    /// 两条弧共用同一个圆心，中间那条缝才会**处处等宽**（不然拐角处会一头
+    /// 宽一头窄，就是「不同心」）。跟屏幕同心的 `mapPanelCornerRadius`（55 − 12）
+    /// 是同一条式子，这里只是把它写成可复用的形式。
+    ///
+    /// **不是第 8 档**：它是从已有档位**推出来**的一个值，不进
+    /// `CORNER_RADIUS_TIERS` 登记表，也不受「七档两两不同」约束 ——
+    /// 第 10 项静态检查只认 `static let *CornerRadius: CGFloat = <数字>`。
+    ///
+    /// 用之前先想想间距够不够：内层是按钮的话，算出超过它**半高**的值没有意义，
+    /// 系统会把它夹回胶囊，同心也就名存实亡。地图页大卡片里那个 46pt 的主按钮
+    /// 就是这个道理 —— 留边取 24 而不是 14，正是为了让 44 − 24 = 20 < 23。
+    static func concentric(outer: CGFloat, inset: CGFloat) -> CGFloat {
+        max(outer - inset, 0)
+    }
 
     /// 地图页浮层的投影半径。比卡片稍小，浮起感够用又不至于发糊。
     static let mapShadowRadius: CGFloat = 10

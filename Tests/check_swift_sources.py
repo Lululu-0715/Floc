@@ -795,7 +795,11 @@ def check_corner_radius_ladder() -> None:
       4. 地图小浮层（`mapCornerRadius` = 20）与地图底部大卡片
          （`mapPanelCornerRadius` = 44）必须各留各的值，**不许并成别名**；
       5. `App/` 与 `Shared/` 下除 `GlassCard.swift` 外，任何 Swift 文件
-         里都不出现 `cornerRadius: <数字>`。
+         里都不出现 `cornerRadius: <数字>`；
+      6. 地图页大卡片里的两个内层容器（主按钮、已选位置面板）必须走
+         `panelInnerCornerRadius`（= `GlassMetrics.concentric(44, 留边)`），
+         且留边够大（≥ 44 − 23）—— 内层是 46pt 按钮，圆角超过半高会被
+         系统夹回胶囊，同心就不成立了。
     """
     glass_path = ROOT / CORNER_ENTRY_FILE
     if not glass_path.exists():
@@ -864,6 +868,71 @@ def check_corner_radius_ladder() -> None:
             "`mapCornerRadius` 的别名了 —— 地图底部大卡片（44）与地图小浮层"
             "（20）是两个独立档，合并会让大卡片的圆角塌成浮层的圆角"
         )
+
+    # 地图页大卡片里的两个内层容器必须跟卡片**同心**：圆角一律走
+    # `panelInnerCornerRadius`（= `GlassMetrics.concentric(44, 留边)`），
+    # 不许各挑一个档位。1.0.13 的第一版就是各挑一档 —— 主按钮是「46pt 胶囊」
+    # （`buttonCornerRadius` = 半高 23）却只离卡片边 14pt，同心要求 44 − 14 = 30，
+    # 两条弧的圆心错开 7pt，拐角那条缝一头宽一头窄，「已选位置」面板（20，差 10）
+    # 更明显。用户一眼就看出来「不跟面板同心」。
+    map_path = ROOT / "App" / "MapHomeView.swift"
+    if not map_path.exists():
+        fail("缺少 App/MapHomeView.swift")
+        return
+    map_source = strip_strings_and_comments(map_path.read_text(encoding="utf-8"))
+
+    inset_match = re.search(
+        r"private\s+let\s+panelContentInset\s*:\s*CGFloat\s*=\s*([0-9.]+)",
+        map_source,
+    )
+    if not inset_match:
+        fail(
+            "MapHomeView 里找不到 `panelContentInset` —— 卡片内容四边的留边"
+            "必须是一个共享常量，同心圆角是拿它算出来的"
+        )
+        return
+    inset = float(inset_match.group(1))
+    # 同心要求 内层圆角 = 44 − 留边，而 46pt 高的主按钮圆角不能超过半高 23
+    # （再多会被系统夹回胶囊，同心就名存实亡）。
+    limit = float(CORNER_RADIUS_TIERS["mapPanelCornerRadius"]) - float(
+        CORNER_RADIUS_TIERS["buttonCornerRadius"]
+    )
+    if inset < limit:
+        fail(
+            f"`panelContentInset` = {inset:g} 太小（同心要求 ≥ {limit:g}）：\n"
+            "      内层圆角 = mapPanelCornerRadius − 留边，不能超过 46pt 主按钮的"
+            "半高 23，否则会被系统夹回胶囊，两条弧的圆心就对不上了"
+        )
+
+    inner = swift_block(map_source, "private var panelInnerCornerRadius")
+    if not inner:
+        fail(
+            "MapHomeView 里找不到 `panelInnerCornerRadius` —— 卡片里层的圆角"
+            "得由「跟大卡片同心」推出来，不能各挑一个档位"
+        )
+    elif "GlassMetrics.concentric(" not in inner:
+        fail(
+            "`panelInnerCornerRadius` 没有走 `GlassMetrics.concentric(...)`：\n"
+            "      同心圆角 = 外层圆角 − 内外间距，写死一个数就不跟着留边走了"
+        )
+    elif "GlassMetrics.mapPanelCornerRadius" not in inner:
+        fail(
+            "`panelInnerCornerRadius` 不是从 `mapPanelCornerRadius` 推出来的 —— "
+            "它得跟着大卡片的圆角走"
+        )
+
+    for declaration, name in (
+        ("private var selectionCard: some View", "selectionCard"),
+        ("private var primaryActionButton: some View", "primaryActionButton"),
+    ):
+        block = swift_block(map_source, declaration)
+        if not block:
+            fail(f"MapHomeView 里找不到 {name}：检查脚本的定位字串已失效")
+        elif "panelInnerCornerRadius" not in block:
+            fail(
+                f"{name} 的圆角没有用 `panelInnerCornerRadius` —— 它贴着卡片"
+                "拐角，必须跟大卡片同心"
+            )
 
     scanned = 0
     for path in sorted(

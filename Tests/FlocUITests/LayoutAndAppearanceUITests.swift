@@ -46,8 +46,9 @@ final class LayoutAndAppearanceUITests: XCTestCase {
         XCTAssertTrue(realLocation.exists, "找不到「实时位置」浮标")
 
         // 主按钮是卡片里的最后一行、占满整行，所以它的左右边就是卡片的**内容区**；
-        // 反推卡片外沿要各加 14pt（卡片内边距）。
-        let contentInset: CGFloat = 14
+        // 反推卡片外沿要各加 24pt（卡片内边距，见 `MapHomeView.panelContentInset`
+        // —— 24 是被「同心圆角」倒推出来的：44 − 24 = 20 才不比按钮半高 23 大）。
+        let contentInset: CGFloat = 24
         let edgeInset: CGFloat = 12
         let screen = window.frame
 
@@ -63,8 +64,9 @@ final class LayoutAndAppearanceUITests: XCTestCase {
         XCTAssertEqual(rightGap, edgeInset, accuracy: 1.5,
                        "卡片右边没有留出 12pt（实际 \(rightGap)pt）——它又贴回屏幕边了")
 
-        // 下边：主按钮与屏幕物理下沿之间隔着「卡片内容下边距 + 卡片下边距」，
-        // 其中第一份至少 14、有 Home 指示条时更大。这里钉的是「主按钮完全
+        // 下边：主按钮与屏幕物理下沿之间隔着「卡片内容下边距 + 卡片下边距」。
+        // 内容下边距现在跟左右留边同值（24，同心圆角要求的），所以是 12 + 24 = 36；
+        // 只有 Home 指示条安全区更深时才会被顶上去。钉的还是「主按钮完全
         // 躲开了 Home 指示条那 34pt」——被压住的话看着能点、实际点不到。
         let gapBelowButton = screen.height - start.frame.maxY
         print("[DUMP] 主按钮下方留白=\(gapBelowButton)")

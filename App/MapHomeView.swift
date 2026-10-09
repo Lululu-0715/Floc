@@ -592,8 +592,8 @@ struct MapHomeView: View {
             }
             primaryActionButton
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 14)
+        .padding(.horizontal, panelContentInset)
+        .padding(.top, panelContentInset)
         .padding(.bottom, bottomPanelContentInset)
         // **四角全圆**、四周留边 12：1.0.13 起这张面板从「贴底 sheet」改回
         // **悬浮大卡片**（对齐参考图里的 Apple 地图），所以走 `mapGlassSurface()`
@@ -603,14 +603,38 @@ struct MapHomeView: View {
         .padding(.bottom, 12)
     }
 
+    /// 卡片内容四周的留边。
+    ///
+    /// **24 是算出来的，不是随手定的**：卡片里那两个容器（主按钮、已选位置
+    /// 面板）的圆角都要跟卡片**同心**，即 44 − 留边；而主按钮高 46pt，
+    /// 圆角超过半高 23 就没意义了（系统会把它夹回胶囊），于是
+    ///
+    ///     留边 ≥ mapPanelCornerRadius − 23 = 21
+    ///
+    /// 原来左右留 14 / 下面留 28（避 Home 指示条）—— 先不说 14 根本不够，
+    /// 四边还各不相同，同一圈缝从侧面绕到拐角就变宽，所以怎么摆都不像同心。
+    /// 取 24 同时满足两件事：≥ 21，且 ≥ 22（= 指示条安全区 34 − 卡片留边 12）。
+    private let panelContentInset: CGFloat = 24
+
+    /// 卡片**里层**容器的圆角：跟大卡片同心（44 − 24 = 20）。
+    ///
+    /// 主按钮和「已选位置」面板共用它 —— 两者都贴着卡片的拐角，各挑一个档位
+    /// 就会各偏一个圆心。注意 20 恰好等于 `mapCornerRadius`，但**不是**那一档：
+    /// 那一档是「浮在地图上的小块」，这里是「跟卡片同心推出来的值」，改留边
+    /// 它会跟着变，所以别换成常量。
+    private var panelInnerCornerRadius: CGFloat {
+        GlassMetrics.concentric(outer: GlassMetrics.mapPanelCornerRadius,
+                                inset: panelContentInset)
+    }
+
     /// 卡片内容与卡片下沿之间的留白。
     ///
-    /// 卡片本身距屏幕物理下沿只有 12pt，而 Home 指示条占的是底下那 34pt 的
-    /// 安全区 —— 两者重叠 22pt，所以内容侧要把这段补回来，否则最下面那颗
-    /// 主按钮会被指示条压住（看着能点、实际点不到）。
-    /// 老机型没有指示条（`bottomSafeInset` = 0），固定留 14pt 即可。
+    /// 默认就等于左右留边（`panelContentInset`），这样主按钮的左右下三边到
+    /// 卡片外沿的距离一致，同心才成立。只有 Home 指示条那 34pt 安全区**比
+    /// 留边还深**时才往上让 —— 那时按钮会被指示条压住（看着能点、实际点不到），
+    /// 宁可牺牲一点同心。当前所有带指示条的机型都够不到这条分支。
     private var bottomPanelContentInset: CGFloat {
-        max(14, bottomSafeInset - 12 + 6)
+        max(panelContentInset, bottomSafeInset - 12)
     }
 
     /// 已选位置卡片：左边地名与两行坐标，右边竖排两个入口。
@@ -706,7 +730,7 @@ struct MapHomeView: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: GlassMetrics.mapCornerRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: panelInnerCornerRadius, style: .continuous)
                 .fill(Color.primary.opacity(0.06))
         )
     }
@@ -934,8 +958,11 @@ struct MapHomeView: View {
     /// 换成「实心 + 白字」是有意的：面板里其余元素都是玻璃，只有它是
     /// 「按下去就做事」的那一颗，用实心度把主次分开。
     ///
-    /// 圆角取 `buttonCornerRadius`（正是 46 的一半），把「按钮高度 → 圆角」
-    /// 这个隐含依赖写成了常量。
+    /// 圆角取**同心值**（`panelInnerCornerRadius` = 44 − 24 = 20），跟着大卡片的
+    /// 拐角走。1.0.12 及以前它是「46pt 胶囊」（`buttonCornerRadius` = 半高 23），
+    /// 而离卡片边只有 14pt：44 − 14 = 30 才同心，23 差了一截，两条弧的圆心错开
+    /// 7pt，拐角那条缝一头宽一头窄 —— 所以看起来「不跟面板同心」。
+    /// 同心值 20 小于半高，不会被系统夹回胶囊。
     private var primaryActionButton: some View {
         Button {
             toggleSpoofing()
@@ -959,12 +986,12 @@ struct MapHomeView: View {
             .frame(maxWidth: .infinity)
             .frame(height: 46)
             .background(
-                RoundedRectangle(cornerRadius: GlassMetrics.buttonCornerRadius,
+                RoundedRectangle(cornerRadius: panelInnerCornerRadius,
                                  style: .continuous)
                     .fill(spoofButtonTint)
             )
             .contentShape(
-                RoundedRectangle(cornerRadius: GlassMetrics.buttonCornerRadius,
+                RoundedRectangle(cornerRadius: panelInnerCornerRadius,
                                  style: .continuous)
             )
         }
