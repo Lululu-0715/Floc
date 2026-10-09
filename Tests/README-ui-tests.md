@@ -64,6 +64,38 @@ defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
 用例本身也写了重试（点一次、等 1 秒、读一次 `hasKeyboardFocus`，最多三次），
 并把每次的焦点状态打进日志——换台机器也能一眼看出是哪一类失败。
 
+## 二·六、用「像素亮度」断言颜色
+
+颜色**不在可访问性树里**，`XCUIElement` 断言不了「这块卡片是深色还是浅色」。
+`LayoutAndAppearanceUITests` 里的做法是读截图：
+
+```swift
+// 把截图里某个矩形缩成 1×1 像素，取平均亮度 0.299R + 0.587G + 0.114B
+func averageLuminance(_ shot: XCUIScreenshot, in rect: CGRect) -> CGFloat
+```
+
+实测基准：深色卡片 ≈ `0.17`，浅色 ≈ `0.95 ~ 1.00`。
+**全黑 `0.00` 是「模拟器没渲染出来」的信号**（连状态栏都是 0），不是真的黑——
+所以 `measure()` 会重拍最多 4 次，仍然全黑就 `XCTSkip` 而不是判红。
+
+`testAppearanceSwitchAppliesToPresentedSettingsSheet` 就是靠这个抓到
+「深色改回浅色回不去」那个 bug 的：修之前量到「深 `0.173` → 切浅**仍** `0.173`」。
+断言本身要有余量（这里用 `> 0.5` 判浅、`< 0.5` 判深），别去比具体数值。
+
+## 二·七、负对照别点在屏幕正中
+
+「点空白处不该有反应」这类负对照，**不要点屏幕正中**：
+App 启动时会把当前位置自动选成选点，蓝点就落在约 `(0.5, 0.30)` 处，
+点在它上面坐标会**逐位相同**，于是用例假失败。
+
+`MapControlsUITests.testBottomPanelDoesNotLeakTapsToMap` 改成在 5 个地图空处
+落点轮流试（`(0.22,0.42)` / `(0.80,0.38)` / `(0.20,0.58)` / `(0.68,0.55)` /
+`(0.35,0.25)`），每点一次等 2 秒再读坐标；5 个点全不动说明「地图当前还不可
+交互、合成点击被吞了」，这时 `XCTSkip`（防穿透的断言前面已经跑过了）。
+
+同理，推 sheet 这类操作也可能比等待慢：`LayoutAndAppearanceUITests` 里点
+「设置」第一次没推出就重点一次，两次都不行才 `XCTSkip`。
+
 ## 三、写完的新用例放哪
 
 `Tests/FlocUITests/*.swift`。注意 `Tests/check_swift_sources.py` 的

@@ -5,6 +5,97 @@
 > 1.0.5 ~ 1.0.9 的详细记录见各版本的 `dist/RELEASE_NOTES_v*.md`（出包时会一并
 > 归档到 `~/Desktop/Floc 发布包/<口味>/`），本文件从 1.0.10 起继续维护。
 
+## [1.0.12] - 2026-10-09
+
+把 1.0.11 之后用户实拍反馈的 5 件事全部做完：新增虚拟定位「生效检测」、
+修掉「深色切不回浅色」、底部面板改成贴底三面齐平、设置页账号面板跟随主题、
+把全项目散着的 11 档圆角收敛成 4 档。
+
+### 新增：虚拟定位「生效检测」
+
+- 点「开启虚拟定位」后去系统设置关开定位服务，回到 App 会自己检测到并提示
+  「已生效」。新增 `Shared/SpoofEffectVerifier.swift`：
+  `idle / verifying / effective(verifiedAt) / ineffective(reason)`
+- 判据**不是**问系统「定位服务开着吗」（那个永远返回开着），而是**回读本机
+  真实定位与目标点比距离**，阈值 **80 米**——移动模拟最大 20 米抖动 + 系统取整，
+  阈值再小会把「其实已经生效」判成失败
+- 读取必须走 `RealLocationProvider.forceFresh` **绕开 60 秒定位缓存**，
+  否则拿到的是开虚拟定位之前的旧坐标，永远显示「未生效」
+- 比对用的目标点必须与地图**同源**：`pair.coordinate(for:
+  state.mapCoordinateSystem)`，否则境内会被 GCJ-02 偏移量骗过去
+- 默认轮询 10 次 × 3 秒；`stopSpoofing` 开头 `verifier.reset()`，
+  不把上一轮结果留在界面上。配套 12 条单测
+
+### 修复
+
+- **深色改回浅色回不去，必须退出设置页重进**。两层原因，缺一层都修不好：
+  (a) `.preferredColorScheme` 挂在 `WindowGroup` 根节点**管不到已经弹出去的
+  sheet**，而设置页正是 sheet；(b) 只写 `UIWindow.overrideUserInterfaceStyle`
+  **仍然不够**——SwiftUI 弹 sheet 时会给那个**视图控制器**单独写一份 override，
+  而**视图控制器的优先级高于窗口**。新增
+  `Shared/WindowAppearanceBridge.swift`，把窗口 + **整棵视图控制器树**
+  （`children` 顺着 `presentedViewController` 一起走）都写一遍
+- 这条 bug 的定位靠**像素亮度**：颜色不在可访问性树里断言不了，改用
+  `CGContext` 把截图里设置页卡片那块区域缩成 1×1 像素读平均亮度
+  （深色 ≈ 0.17 / 浅色 ≈ 0.95~1.00）。修前量到「深 `0.173` → 切浅**仍**
+  `0.173`」，修后 `1.0 / 0.173 / 1.0`
+
+### 调整
+
+- **底部面板贴底三面齐平（对齐 Apple 地图）**。原因是给面板加**负 padding
+  只影响绘制，不会扩大父视图的布局区与命中区**。改法：外层
+  `.ignoresSafeArea(edges: .bottom)` + 量真实安全区（`Color.clear` +
+  `GeometryReader` + `allowsHitTesting(false)`）+ 内容侧
+  `.padding(.bottom, 安全区 + 8)`；面板形状换成自建 `MapBottomSheetShape`
+  （**只有上沿两个角是圆的**，下沿直角；不用 `UnevenRoundedRectangle`，
+  那是 iOS 16+）。`mapPanelCornerRadius` 顺带从 34 收到 20——面板贴底后只有
+  两个角可见，当年「又宽又高所以要 34」的理由不成立了，正好与地图浮层同档
+- **设置页账号面板跟随配色主题**：那一组的 `listRowBackground` 换成
+  `ThemedGroupedCardBackground()`（主题色 0.22 淡填充）；未选主题时
+  （「跟随系统」）仍是原来的系统分组底色
+- **圆角收敛成四档**：全项目原来散着 11 个数值（4 / 9 / 10 / 12 / 13 / 14 /
+  15.5 / 16 / 18 / 20 / 28），相邻两档差 1~2pt，肉眼分不出、代码里却在
+  「改一处漏一处」。按语义收进 `GlassMetrics`：
+  `inlineCornerRadius = 10`（收 4/9/10）、`cardCornerRadius = 16`
+  （收 12/13/14/15.5/16/18）、`mapCornerRadius = 20`、`heroCornerRadius = 28`。
+  卡片档取 16 是因为它夹在中间：玻璃卡片本来就 16 **一处不动**，
+  14 只往圆挪 2pt、18 往方 2pt，两边视觉位移都最小。
+  `mapPanelCornerRadius` 改成 `mapCornerRadius` 的**别名**（两个名字一个值），
+  将来面板与浮层要拆开只改定义那一行
+- 新增 `Tests/check_swift_sources.py` **第 10 项** `check_corner_radius_ladder`：
+  四档的值必须是约定值、面板档必须挂在浮层档上、`App/` 与 `Shared/` 下除
+  `GlassCard.swift` 外不得出现 `cornerRadius: <数字>`。负向测试过（塞一句
+  `cornerRadius: 7` 立刻判红）。Swift 源码一致性检查因此从 9 项扩到 10 项
+
+### 修复（测试）
+
+- **修掉三语里重复定义的 `未验证` / `已生效`**：这两条早被「连接状态」胶囊
+  用掉了，新加的校验文案又定义了一遍，`check_localization.py` 会拦下
+  （en 里还撞出两种译法 `Unverified` / `Not verified`、`Active` / `In effect`）。
+  改为复用前面的定义
+- **两处界面测试的「模拟器偶发」不再判红**：
+  (a) `XCUIScreenshot` 偶发返回全黑图 → `measure()` 重拍 4 次，仍全黑则
+  `XCTSkip`；(b) 地图可交互之前的合成点击会被吞掉，负对照从「点屏幕正中」
+  （App 启动会把当前位置自动选成选点，正好点在蓝点上 → 假失败）改成
+  5 个地图空处落点轮流试、每次等 2 秒，全不动则 `XCTSkip`
+
+### 重新生成
+
+- **「仅内置代理」补丁**：本轮改了 5 个补丁覆盖到的文件（DiagnosticsView /
+  ModeSelectionStep / ProxySetupStep / SettingsDetailViews / TipViews），补丁漂移。
+  按三方合并重生成（ours = 新源码 / base = 打补丁前的旧源码 / theirs = 打了旧
+  补丁的旧源码 → `git merge-file`）：16 个文件自动合并干净；`ProxySetupStep.swift`
+  一处冲突（ours 在 `thirdPartyContent` 里改了圆角、theirs 把整段第三方 UI
+  删掉）**按 theirs 解**；4 个在这一口味里被删除的文件按删除处理。
+  实测跑过一遍 `git apply` → `xcodegen generate` → 编译 `BUILD SUCCEEDED`
+  → `git apply -R` → 工作区干净
+
+### 备注
+
+- 远端 Release 仍停在 **v1.0.2**（1.0.3 起都只出了本地包），要不要发版等用户拍板
+- 上一版遗留的两件待办仍未动：引导第一步「选择运行模式」的两张卡片是否统一成
+  玻璃；第三方代理在真机上改不了位置（需真机环境）
+
 ## [1.0.11] - 2026-10-09
 
 加上六套主题配色，并把 1.0.10 的液态玻璃修到真正有「Q 弹」手感。
