@@ -125,7 +125,7 @@ index 63c5722..d825f6c 100644
          environmentChecks = results
          reload()
 diff --git a/App/MapHomeView.swift b/App/MapHomeView.swift
-index 9a867fa..f0a1925 100644
+index 25bb257..930ff44 100644
 --- a/App/MapHomeView.swift
 +++ b/App/MapHomeView.swift
 @@ -19,8 +19,6 @@ struct MapHomeView: View {
@@ -137,7 +137,7 @@ index 9a867fa..f0a1925 100644
      @ObservedObject private var remoteConfiguration = AppRemoteConfigurationStore.shared
      /// 配色主题。主按钮的强调色、玻璃的染色都从这里取。
      @ObservedObject private var theme = ThemeStore.shared
-@@ -738,38 +736,24 @@ struct MapHomeView: View {
+@@ -762,38 +760,24 @@ struct MapHomeView: View {
      private var statusRow: some View {
          HStack(spacing: 8) {
              StatusPill(
@@ -189,7 +189,7 @@ index 9a867fa..f0a1925 100644
                  )
              }
  
-@@ -1071,9 +1055,7 @@ struct MapHomeView: View {
+@@ -1098,9 +1082,7 @@ struct MapHomeView: View {
  
          // 进入主界面就刷新一次环境状态，让用户立刻看到还差什么。
          Task {
@@ -200,7 +200,7 @@ index 9a867fa..f0a1925 100644
                  await proxy.verifyCertificateTrust()
                  await proxy.verifyWiFiProxy()
              }
-@@ -1142,32 +1124,23 @@ struct MapHomeView: View {
+@@ -1169,32 +1151,23 @@ struct MapHomeView: View {
      /// 注意 MapLocationState 初始化时会把 isEnabled 置为 false，
      /// 这里处理的是「同一次运行中从设置页返回」这种情况。
      private func restoreActiveState(pair: CoordinateConverter.CoordinatePair) async {
@@ -248,7 +248,7 @@ index 9a867fa..f0a1925 100644
          }
      }
  
-@@ -1187,7 +1160,7 @@ struct MapHomeView: View {
+@@ -1214,7 +1187,7 @@ struct MapHomeView: View {
              // 进后台前的最后一次自救。音频一旦被别的应用抢走，播放停掉，
              // 进程随后就被系统挂起——那一刻之后我们再也跑不了任何代码，
              // 所以「检查播放是否还活着」只能放在这里。
@@ -257,7 +257,7 @@ index 9a867fa..f0a1925 100644
              BackgroundKeepAlive.shared.resumeIfNeeded()
  
          case .active:
-@@ -1229,7 +1202,7 @@ struct MapHomeView: View {
+@@ -1256,7 +1229,7 @@ struct MapHomeView: View {
      /// 变成 `.stopped`，所以这里必须实际探一次代理是否还活着，不能只看状态。
      /// 保活同理——`isAlive` 问的是播放器，而不是我们记的布尔标志。
      private func recoverAfterForeground() {
@@ -266,7 +266,7 @@ index 9a867fa..f0a1925 100644
  
          if !BackgroundKeepAlive.shared.isAlive {
              RuntimeLogger.warn("APP", "KeepAlive", "回前台时保活已失效，重新拉起")
-@@ -1244,7 +1217,7 @@ struct MapHomeView: View {
+@@ -1271,7 +1244,7 @@ struct MapHomeView: View {
              proxy.stop()
  
              // 停掉之后 `status` 变成 `.stopped`，`restoreActiveState` 会把它重新拉起来。
@@ -275,7 +275,7 @@ index 9a867fa..f0a1925 100644
              await restoreActiveState(pair: pair)
  
              await proxy.verifyWiFiProxy()
-@@ -1350,67 +1323,49 @@ struct MapHomeView: View {
+@@ -1377,67 +1350,49 @@ struct MapHomeView: View {
      #endif
  
      private func startSpoofing(pair: CoordinateConverter.CoordinatePair) async {
@@ -379,7 +379,7 @@ index 9a867fa..f0a1925 100644
          }
      }
  
-@@ -1433,29 +1388,21 @@ struct MapHomeView: View {
+@@ -1460,29 +1415,21 @@ struct MapHomeView: View {
          // 绿色的「已生效」，而位置早就放开了）。
          verifier.reset()
  
