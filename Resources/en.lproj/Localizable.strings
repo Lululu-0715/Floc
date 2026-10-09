@@ -432,3 +432,19 @@
 "电光蓝紫" = "Electric Blue Violet";
 "主题预览：%@" = "Theme preview: %@";
 "主题会改变应用的强调色与页面配色，地图上的浮层会跟着染上主题色。选「跟随系统」即恢复默认的蓝色。" = "The theme changes the accent color and page tint of the app, and the map overlays pick it up too. Choose \"Follow system\" to go back to the default blue.";
+
+// Virtual location verification
+"未验证" = "Not verified";
+"验证中" = "Verifying";
+"正在校验…" = "Checking…";
+"已生效" = "In effect";
+"未生效" = "Not in effect";
+"重新验证" = "Verify again";
+"已验证 %@" = "Verified %@";
+"关开定位服务再验证" = "Toggle Location Services, then verify";
+"定位服务或权限未开" = "Location Services or permission is off";
+"尚未校验虚拟定位是否生效" = "The virtual location has not been verified yet";
+"正在校验虚拟定位是否生效，请稍候" = "Checking whether the virtual location is in effect, please wait";
+"虚拟定位已生效，系统当前的位置就是选点位置" = "The virtual location is in effect — the system's current location is the selected point";
+"读不到本机定位：请确认系统「定位服务」和本 App 的定位权限都已打开" = "Cannot read this device's location: make sure Location Services and this app's location permission are both on";
+"还没生效：请到「设置 → 隐私与安全性 → 定位服务」关一下再打开，然后点「重新验证」" = "Not in effect yet: turn Location Services off and on again in Settings → Privacy & Security → Location Services, then tap Verify again";

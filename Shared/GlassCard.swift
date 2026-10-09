@@ -4,8 +4,8 @@ import SwiftUI
 ///
 /// **这是全工程唯一允许出现 iOS 26 液态玻璃 API（`glassEffect` / `Glass`）的文件。**
 /// 两个原因：
-///   1. 界面侧只有三个入口（`glassCard` / `mapGlassSurface` / `mapGlassCapsule`），
-///      散出去就会出现「改一处漏一处」的老问题；
+///   1. 界面侧只有四个入口（`glassCard` / `mapGlassSurface` / `mapGlassCapsule` /
+///      `mapGlassSheet`），散出去就会出现「改一处漏一处」的老问题；
 ///   2. `Tests/check_swift_sources.py` 第 9 项靠这个不变量做静态守卫 ——
 ///      任何绕过 `if #available(iOS 26, *)` 直接用玻璃 API 的写法都会被拦下，
 ///      同时它还会断言 `project.yml` 的 `deploymentTarget` 仍然是 iOS 15.0。
@@ -142,6 +142,40 @@ struct MapGlassSurfaceModifier<S: Shape>: ViewModifier {
     }
 }
 
+/// 贴底 sheet 的形状：**只圆上沿两个角，下沿是直角**。
+///
+/// 底部的面板要一直铺到屏幕物理下沿（背景从 Home 指示条底下穿过去），
+/// 这时候四个角都圆就会在屏幕下方两个角上切出缺口，露出一块地图。
+///
+/// 为什么不用系统的 `UnevenRoundedRectangle`：那是 iOS 16 才有的 API，
+/// 本工程最低支持 15.0（见 `Tests/check_swift_sources.py` 第 9 项）。
+struct MapBottomSheetShape: Shape {
+
+    /// 上沿两个角的圆角。下沿恒为直角。
+    var topCornerRadius: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        // 半径不能超过可用高度的一半，否则上下两段圆弧会互相穿透。
+        let radius = min(max(topCornerRadius, 0), rect.height / 2)
+
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + radius))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX + radius, y: rect.minY),
+            control: CGPoint(x: rect.minX, y: rect.minY)
+        )
+        path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: rect.minY + radius),
+            control: CGPoint(x: rect.maxX, y: rect.minY)
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+}
+
 extension View {
 
     /// 套用玻璃卡片外观。
@@ -185,6 +219,20 @@ extension View {
     /// 否则 iOS 26 上会少一层玻璃。
     func mapGlassCapsule(nested: Bool = true) -> some View {
         modifier(MapGlassSurfaceModifier(shape: Capsule(style: .continuous), nested: nested))
+    }
+
+    /// 贴底 sheet 的玻璃外观：**只圆上沿两个角**。
+    ///
+    /// 底部面板用它。和 `mapGlassSurface()` 是同一套材质/描边/投影，
+    /// 只是把形状换成 `MapBottomSheetShape` —— 面板要一直铺到屏幕物理下沿，
+    /// 下沿再圆就会在屏幕下面两个角切出缺口。
+    ///
+    /// 面板永远是「直接贴在地图上」的那一层，所以 `nested` 恒为 false。
+    func mapGlassSheet(topCornerRadius: CGFloat = GlassMetrics.mapPanelCornerRadius) -> some View {
+        modifier(MapGlassSurfaceModifier(
+            shape: MapBottomSheetShape(topCornerRadius: topCornerRadius),
+            nested: false
+        ))
     }
 
     /// 按下时轻微缩小、松手弹回。
@@ -239,16 +287,15 @@ enum GlassMetrics {
     /// 地图页浮层的统一圆角。图层切换、搜索框取这个值。
     static let mapCornerRadius: CGFloat = 20
 
-    /// 底部面板的圆角。
+    /// 底部面板**上沿两个角**的圆角。下沿两个角是直角（面板贴到屏幕底边，
+    /// 圆角会切出缺口）。
     ///
-    /// 比同级浮层大 14pt：面板又宽又高，同样的绝对圆角在它身上看起来明显
-    /// 比搜索框、图层切换「方」，两个数值一致反而不像一套东西。
-    ///
-    /// 左右内边距在 1.0.6 收窄到 6pt 想贴屏幕圆角，但面板和上面那些浮层
-    /// 对不齐反而显得"贴边"；1.0.7 把横向改回页面统一的 16pt 之后，
-    /// 面板左右两条边与搜索框落在同一条竖线上，34 这一档仍然合适 ——
-    /// 面板够宽够高，圆角小了四角会显得尖。
-    static let mapPanelCornerRadius: CGFloat = 34
+    /// 1.0.12 起面板改成**贴底三面齐平**的 sheet（左/右/下边距全为 0），
+    /// 参照 Apple 地图：整块面板压到屏幕边缘，只有上沿是圆的。
+    /// 改成 sheet 之后原来那套「面板又宽又高所以要 34」的理由不成立了——
+    /// 只有两个角可见，而参考图量下来是 20 上下（约 18pt），正好回到
+    /// 地图浮层同一档，四个浮层从此是一个数值。
+    static let mapPanelCornerRadius: CGFloat = 20
 
     /// 地图页浮层的投影半径。比卡片稍小，浮起感够用又不至于发糊。
     static let mapShadowRadius: CGFloat = 10

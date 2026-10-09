@@ -33,6 +33,21 @@ final class RealLocationProvider: NSObject, ObservableObject {
 
     @Published private(set) var isLocating = false
 
+    /// 当前是否已经拿到定位权限。
+    ///
+    /// 用于「要不要主动发起一次定位」的判断：没授权就发请求会当场弹系统
+    /// 授权框，冷启动时这样弹一下很突兀（用户还没做任何操作）。
+    var isAuthorized: Bool {
+        switch manager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            return true
+        case .notDetermined, .denied, .restricted:
+            return false
+        @unknown default:
+            return false
+        }
+    }
+
     /// 缓存位置的有效期（秒）。超过这个年龄就重新定位一次。
     /// 取值理由见 `requestLocationOrUseCache`。
     private static let cacheValidity: TimeInterval = 60
@@ -40,6 +55,8 @@ final class RealLocationProvider: NSObject, ObservableObject {
     private let manager = CLLocationManager()
     /// 本次请求的回调。拿到结果或失败后立即清空，保证只回调一次。
     private var pendingCompletion: ((Result<CLLocationCoordinate2D, Failure>) -> Void)?
+    /// 本次请求是否**绕开缓存**（见 `requestOnce(forceFresh:completion:)`）。
+    private var pendingForceFresh = false
 
     override init() {
         super.init()
@@ -50,9 +67,18 @@ final class RealLocationProvider: NSObject, ObservableObject {
     /// 请求一次当前位置。
     ///
     /// 未授权时会先弹系统授权框，用户同意后自动继续；拒绝则直接回调失败。
-    func requestOnce(completion: @escaping (Result<CLLocationCoordinate2D, Failure>) -> Void) {
+    ///
+    /// - Parameter forceFresh: 为 true 时**跳过一分钟缓存**，强制向系统要一次
+    ///   新解算的位置。用于「虚拟定位生效没有」这类校验：缓存里那份很可能
+    ///   是改写生效**之前**的旧结果，拿它比对会得出错误的结论。
+    ///   实时位置按钮（`goToRealLocation`）不要用它，那里的等待代价更显眼。
+    func requestOnce(
+        forceFresh: Bool = false,
+        completion: @escaping (Result<CLLocationCoordinate2D, Failure>) -> Void
+    ) {
         // 上一条请求还没结束就再来一次：直接放弃旧的，以最新一次为准。
         pendingCompletion = completion
+        pendingForceFresh = forceFresh
         isLocating = true
 
         switch manager.authorizationStatus {
@@ -78,7 +104,10 @@ final class RealLocationProvider: NSObject, ObservableObject {
     ///
     /// 超过一分钟（或从来没有过）才回退到现取，保证结果不会离谱。
     private func requestLocationOrUseCache() {
-        if let cached = manager.location,
+        // 校验路径明确要求「现取」，缓存再新也不能用：那一份多半正是改写
+        // 生效之前的旧坐标（用户点「开启虚拟定位」前刚看过自己的真实位置）。
+        if !pendingForceFresh,
+           let cached = manager.location,
            abs(cached.timestamp.timeIntervalSinceNow) < Self.cacheValidity {
             RuntimeLogger.debug("APP", "Location", "实时位置命中缓存", details: [
                 "ageSeconds": String(format: "%.1f", -cached.timestamp.timeIntervalSinceNow),
@@ -91,6 +120,7 @@ final class RealLocationProvider: NSObject, ObservableObject {
 
     private func finish(_ result: Result<CLLocationCoordinate2D, Failure>) {
         isLocating = false
+        pendingForceFresh = false
         let completion = pendingCompletion
         pendingCompletion = nil
         completion?(result)

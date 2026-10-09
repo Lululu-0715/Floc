@@ -82,6 +82,34 @@ final class ThemeStore: ObservableObject {
     }
 }
 
+/// 「账号」分组卡片的底色：跟随配色主题。
+///
+/// 分组列表的卡片底色本来由系统给（`secondarySystemGroupedBackground`），
+/// 跟主题没有任何关系。这里在系统底色**之上**再铺一层很淡的主题渐变：
+/// 保留系统色提供的对比度（正文、分隔线、次要文字全靠它），只让卡片带一点
+/// 主题的色偏。直接拿主题色当底色的话，浅色主题下深色正文还能看，
+/// 深色主题配浅字就会糊成一片。
+///
+/// 「跟随系统」这一档不染色 —— 和整页背景的处理保持一致。
+struct ThemedGroupedCardBackground: View {
+
+    @ObservedObject private var theme = ThemeStore.shared
+
+    /// 染色浓度。比整页背景（0.30 / 0.42）更淡：卡片面积小、上面压着
+    /// 正文和图标，染重了会先把可读性搞掉。
+    private static let tintOpacity: Double = 0.22
+
+    var body: some View {
+        ZStack {
+            Color(.secondarySystemGroupedBackground)
+
+            if let gradient = theme.gradient {
+                gradient.opacity(Self.tintOpacity)
+            }
+        }
+    }
+}
+
 /// 整页主题背景。
 ///
 /// 铺在系统分组底色之上：主题只负责**染色**，不负责提供对比度，

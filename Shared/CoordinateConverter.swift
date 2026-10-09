@@ -247,7 +247,7 @@ enum CoordinateConverter {
         /// 候选只差几百米，地图上随便一个点都会略微偏向某一侧。要求偏向幅度
         /// 超过候选间距的四成，才算真的对上了锚点。
         var isConclusive: Bool {
-            guard let inferredSystem else { return false }
+            guard inferredSystem != nil else { return false }
             let margin = abs(distanceToWGS84 - distanceToGCJ02)
             return margin > max(50, separation * 0.4)
         }

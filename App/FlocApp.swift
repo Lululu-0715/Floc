@@ -31,7 +31,13 @@ struct FlocApp: App {
                 #endif
                 // 外观在根节点统一施加：设置页里改一档，整个应用（含已经
                 // 打开的 sheet 和导航栈）立刻跟着变，不用逐页传值。
+                //
+                // 两处都要给：`.preferredColorScheme` 管 SwiftUI 侧的环境值，
+                // 窗口那一层（`syncingWindowAppearance`）才能把新的 trait
+                // 送进**已经弹出来的 sheet**——只挂前者的话，在设置页里改外观
+                // 不会立刻生效，退出重进才行（1.0.11 的用户反馈）。
                 .preferredColorScheme(appearance.mode.colorScheme)
+                .syncingWindowAppearance(appearance.mode.colorScheme)
                 // 配色主题的强调色同样挂在根节点：`.tint` 管系统控件
                 // （开关、段选、链接），`\.themeAccent` 管我们自己写的那些
                 // `Color.accentColor` 位置——两者都得给，缺一个就会留下

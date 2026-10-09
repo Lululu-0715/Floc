@@ -24,6 +24,8 @@ struct SettingsView: View {
     @ObservedObject private var appearance = AppearanceStore.shared
     @ObservedObject private var theme = ThemeStore.shared
     @ObservedObject private var fontScale = FontScaleStore.shared
+    /// 虚拟定位的生效校验结论（连接状态里那一行要显示它）。
+    @ObservedObject private var verifier = SpoofEffectVerifier.shared
     #if !PURE_BUILD
     @ObservedObject private var license = LicenseManager.shared
     @ObservedObject private var profile = ProfileStore.shared
@@ -176,6 +178,9 @@ struct SettingsView: View {
         } header: {
             SettingsSectionHeader(title: AppLocalization.string("账号"))
         }
+        // 「账号」这张卡片跟着配色主题走：选了彩色主题就铺一层主题渐变，
+        // 「跟随系统」时与系统分组底色完全一致（老用户升级后外观零变化）。
+        .listRowBackground(ThemedGroupedCardBackground())
     }
 
     /// 授权状态小胶囊。颜色跟着「能不能用」走，而不是跟着具体状态枚举——
@@ -259,10 +264,8 @@ struct SettingsView: View {
             SettingsStatusRow(
                 systemImage: "location.north.line",
                 title: AppLocalization.string("虚拟定位"),
-                value: state.isEnabled
-                    ? AppLocalization.string("已开启")
-                    : AppLocalization.string("已关闭"),
-                valueColor: state.isEnabled ? .green : .secondary
+                value: virtualLocationSummary,
+                valueColor: virtualLocationValueColor
             )
 
             detailLink(
@@ -275,6 +278,18 @@ struct SettingsView: View {
         } header: {
             SettingsSectionHeader(title: AppLocalization.string("连接状态"))
         }
+    }
+
+    /// 「虚拟定位」这一行的取值。
+    ///
+    /// 开着的时候显示**校验结论**而不是「已开启」：「开关亮着但其实没生效」
+    /// 正是最需要被看见的状态，写「已开启」等于把问题盖住。
+    private var virtualLocationSummary: String {
+        state.isEnabled ? verifier.status.pillText : AppLocalization.string("已关闭")
+    }
+
+    private var virtualLocationValueColor: Color {
+        state.isEnabled ? verifier.status.pillColor : .secondary
     }
 
     /// 二级页入口：图标 + 标题 + 当前取值 + 箭头。

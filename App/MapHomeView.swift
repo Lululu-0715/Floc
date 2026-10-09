@@ -31,6 +31,16 @@ struct MapHomeView: View {
     @StateObject private var favorites = FavoriteLocationStore()
     @StateObject private var mapBridge = MapViewBridge()
     @StateObject private var realLocation = RealLocationProvider()
+    /// 「虚拟定位生效没有」的校验。「实时位置」按钮共用一个回读通道，
+    /// 但校验走的是强制现取（`forceFresh`），不会拿缓存里的旧坐标下结论。
+    @ObservedObject private var verifier = SpoofEffectVerifier.shared
+
+    /// 屏幕下沿的安全区高度（Home 指示条那一条）。
+    ///
+    /// 底部面板要铺到屏幕**物理**下沿（贴底，见 `bottomPanel`），而覆盖层
+    /// 整体是守在安全区里的，所以需要知道这条有多高，才能把面板往下顶出去
+    /// 对应的距离、再把内容重新垫回来。
+    @State private var bottomSafeInset: CGFloat = 0
 
     @State private var searchText = ""
     @State private var searchResults: [SearchResult] = []
@@ -104,6 +114,32 @@ struct MapHomeView: View {
             mapLayer
             overlayLayer
         }
+        // 底部面板要**贴到屏幕物理下沿**（对齐 Apple 地图的 sheet），而安全区
+        // 是"下不去"的：覆盖层守在安全区里，面板的下沿就只能停在指示条上面。
+        //
+        // 所以让这一层整体忽略**下边**的安全区，面板才落得到屏幕边缘；
+        // 顶边不动（搜索框不能顶到刘海下面去）。面板自己再把这条留白垫回来，
+        // 见 `bottomSheetContentInset`。
+        //
+        // 曾经试过「面板自己用负 padding 往下顶」：玻璃确实画到了屏幕边缘，
+        // 但**命中区没有跟着出去**（负 padding 只影响绘制、不扩父视图的命中
+        // 范围），结果面板最下面那一条点下去会穿透成地图选点。界面测试
+        // `LayoutAndAppearanceUITests` 里有一条专门盯这个。
+        .ignoresSafeArea(edges: .bottom)
+        // 量一次屏幕下沿的安全区高度，供底部面板把内容垫回指示条上方。
+        //
+        // 这个 GeometryReader 只是**读数**（内容是 `Color.clear`，不吃触摸），
+        // 并且自己忽略安全区——不忽略的话它量到的是安全区**内部**的高度，
+        // 下沿那条永远是 0。覆盖层该守的安全区照守，这里只是把数字取出来。
+        .background(
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { bottomSafeInset = proxy.safeAreaInsets.bottom }
+                    .onChange(of: proxy.safeAreaInsets.bottom) { bottomSafeInset = $0 }
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+        )
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .settings:
@@ -143,6 +179,20 @@ struct MapHomeView: View {
         .onChange(of: state.selection) { _ in
             state.persist()
             refreshDisplayName()
+            // 目标点换了，之前的校验结论就不作数了，重新跑一轮。
+            if state.isEnabled, let pair = state.selection {
+                startVerification(pair: pair)
+            }
+        }
+        .onChange(of: verifier.status) { status in
+            switch status {
+            case .effective:
+                showBanner(status.explanation, style: .info)
+            case .ineffective:
+                showBanner(status.explanation, style: .warning)
+            default:
+                break
+            }
         }
         .onChange(of: state.isEnabled) { _ in
             state.persist()
@@ -180,10 +230,14 @@ struct MapHomeView: View {
         // 就空出来了——空的区域露出的是窗口底色，浅色模式下就是一条白带，
         // 状态栏（时间 / 信号 / 电量）像贴在一条白条上，和下面的地图断开。
         //
-        // 这里**只让地图层**忽略安全区。ZStack 里的覆盖层（搜索框、图层
-        // 切换、底部面板）不受兄弟节点影响，仍然按安全区排布，所以搜索框
-        // 不会顶到刘海或状态栏下面去——底边同理：底部面板一直让开 Home
-        // 指示条，靠的就是这条性质。
+        // 这里让地图层忽略**全部**边（只写 `.bottom` 就会在顶上留出那条白带）。
+        // ZStack 里的覆盖层不受兄弟节点影响，仍然按安全区排布，所以搜索框
+        // 不会顶到刘海或状态栏下面去。
+        //
+        // 底边是唯一的例外：外层 ZStack 为了「底部面板贴屏幕下沿」忽略了
+        // 下边安全区（见 `body`），代价是覆盖层底部那一条也一起下去了——
+        // 面板自己用 `bottomSheetContentInset` 把内容垫回 Home 指示条上方，
+        // 其余覆盖层都在上边，不受影响。
         .ignoresSafeArea()
     }
 
@@ -416,20 +470,27 @@ struct MapHomeView: View {
             }
 
             statusRow
+            if state.isEnabled {
+                verificationRow
+            }
             actionButtons
         }
-        .padding(14)
-        .mapGlassSurface(cornerRadius: GlassMetrics.mapPanelCornerRadius)
-        // 左右 16pt，和地图页其他浮层（搜索框、提示条、图层切换）对齐 ——
-        // 它们本来就是这个数。1.0.6 一度收到 6pt，想把面板往外推到屏幕圆角
-        // 附近，结果面板左右两条边和上面那些浮层对不齐，看起来像是"贴边了"。
-        // 真正要贴近的是**下边**，横向上跟页面节奏保持一致才不别扭。
-        //
-        // 底边这 2pt 是相对「安全区下沿」而不是屏幕物理下沿 —— 面板仍然让开
-        // 那条 Home 指示条，只是把它和屏幕下沿之间的距离压到最小（1.0.7 是 4pt，
-        // 用户希望再压紧一档）。
-        .padding(.horizontal, 16)
-        .padding(.bottom, 2)
+        .padding(.horizontal, 14)
+        .padding(.top, 14)
+        // 内容一侧把安全区垫回来：这一层整体已经忽略了下边安全区（见 `body`），
+        // 面板是铺到屏幕物理下沿的，但文字和按钮不能压在 Home 指示条上。
+        .padding(.bottom, bottomSheetContentInset)
+        // 只圆上沿两个角：下沿是直角，铺到屏幕边缘才不会切出缺口。
+        .mapGlassSheet()
+    }
+
+    /// 底部面板内容与屏幕物理下沿之间的留白。
+    ///
+    /// 有 Home 指示条的机型（`bottomSafeInset` = 34）取它 +8：指示条本身只占
+    /// 底下 5pt 左右、居中在那一带里，多留 8pt 让按钮和它拉开一点。
+    /// 老机型没有指示条，也要留一条，否则按钮会贴着屏幕下沿。
+    private var bottomSheetContentInset: CGFloat {
+        max(bottomSafeInset, 12) + 8
     }
 
     /// 已选位置卡片：左边地名与两行坐标，右边竖排两个入口。
@@ -602,6 +663,82 @@ struct MapHomeView: View {
                 }
             }
         }
+    }
+
+    /// 生效校验行。
+    ///
+    /// 只在虚拟定位开着时出现：结论 + 一句人话 + 一个「重新验证」。
+    ///
+    /// 为什么要单独占一行而不是塞进上面的状态行：那一行已经有「运行模式 /
+    /// 证书 / Wi-Fi 代理」三个胶囊，再加一个在窄机型上会挤到换行；
+    /// 而且这三条说的是「链路配好了没有」，这条说的是「真的生效了没有」，
+    /// 结论性质不同，摆在新的一行更清楚。
+    private var verificationRow: some View {
+        HStack(spacing: 8) {
+            StatusPill(
+                icon: verifier.status.pillIcon,
+                text: verifier.status.pillText,
+                color: verifier.status.pillColor
+            )
+
+            Text(verificationSummary)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+
+            Button {
+                reverify()
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(AppLocalization.string("重新验证"))
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .foregroundStyle(verifier.isVerifying ? Color.secondary : accent)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(verifier.isVerifying)
+            .accessibilityLabel(AppLocalization.string("重新验证"))
+        }
+    }
+
+    /// 校验行右侧的一句人话。展开的完整说明留给横幅，这里只放最短的提示。
+    private var verificationSummary: String {
+        switch verifier.status {
+        case .idle:
+            return ""
+        case .verifying:
+            return AppLocalization.string("正在校验…")
+        case .effective(let date):
+            let formatter = DateFormatter()
+            formatter.dateFormat = "HH:mm"
+            return String(format: AppLocalization.string("已验证 %@"), formatter.string(from: date))
+        case .ineffective(.locationUnavailable):
+            return AppLocalization.string("定位服务或权限未开")
+        case .ineffective(.stillRealLocation):
+            return AppLocalization.string("关开定位服务再验证")
+        }
+    }
+
+    /// 手动再校验一次。
+    private func reverify() {
+        guard let pair = state.selection else { return }
+        startVerification(pair: pair)
+    }
+
+    /// 校验虚拟定位是否真的生效（开启后自动跑一次，「重新验证」也走这里）。
+    ///
+    /// 目标点取**与地图同一套坐标**：回读到的坐标和地图上画蓝点用的是同一
+    /// 来源（见 `goToRealLocation` 的说明），两套混着比会平白多出几百米。
+    private func startVerification(pair: CoordinateConverter.CoordinatePair) {
+        verifier.start(
+            target: pair.coordinate(for: state.mapCoordinateSystem),
+            provider: realLocation
+        )
     }
 
     /// 收藏夹入口。
@@ -847,6 +984,12 @@ struct MapHomeView: View {
         // 如果之前是开启状态，尝试恢复代理并把配置推回去。
         if state.isEnabled, let pair = state.selection {
             Task { await restoreActiveState(pair: pair) }
+            // 开着就顺手校验一次：重启后回到主界面，面板上直接给出「现在到底
+            // 生效没有」，而不是空着一个「未验证」。没拿到定位权限就不主动
+            // 发起——冷启动当场弹系统授权框太突兀。
+            if realLocation.isAuthorized {
+                startVerification(pair: pair)
+            }
         }
     }
 
@@ -1092,6 +1235,9 @@ struct MapHomeView: View {
                 } else {
                     showBanner(AppLocalization.string("虚拟定位已开启"), style: .info)
                     presentLocationRefreshPromptIfNeeded()
+                    // 开关亮了不等于生效：立刻回读一次确认真伪，结论摆在
+                    // 面板上（用户不用再去别的 App 里对照位置）。
+                    startVerification(pair: pair)
                 }
             } catch {
                 showBanner(error.localizedDescription, style: .error)
@@ -1107,6 +1253,7 @@ struct MapHomeView: View {
                 state.enable()
                 showBanner(AppLocalization.string("坐标已写入客户端"), style: .info)
                 presentLocationRefreshPromptIfNeeded()
+                startVerification(pair: pair)
             } else {
                 showBanner(AppLocalization.string("写入失败，请检查客户端模块是否生效"), style: .error)
             }
@@ -1125,6 +1272,10 @@ struct MapHomeView: View {
     }
 
     private func stopSpoofing() async {
+        // 关掉虚拟定位，校验结论也就作废了（不然面板上会挂着一个
+        // 绿色的「已生效」，而位置早就放开了）。
+        verifier.reset()
+
         switch runtimeMode.mode {
         case .localProxy:
             // 先关开关再停代理，避免关闭过程中的请求仍被改写。

@@ -512,19 +512,28 @@ def swift_block(source: str, declaration: str) -> str:
 
 
 def check_full_bleed_map() -> None:
-    """地图页必须是全面屏。
+    """地图页必须是全面屏，且底部面板要真贴到屏幕下沿。
 
     1.0.7 及以前地图层写的是 `.ignoresSafeArea(edges: .bottom)`，顶上那条
     安全区就空着，露出的是窗口底色——浅色模式下状态栏底下就是一整条白带，
     和下面的地图断开。用户要求「状态栏那里不要白色了，全面屏」。
 
-    两条约束必须同时成立：
-      A. 地图层忽略**全部**边（不能只写 `.bottom`）；
-      B. 覆盖层不许忽略安全区。
+    **1.0.12 起底边多了一条例外。** 底部面板改成了贴底 sheet（左右下三边
+    与屏幕边缘齐平，只有上沿两个角是圆的），而安全区是「下不去」的，
+    于是外层 ZStack 必须忽略下边安全区，面板才落得到屏幕物理下沿。
+    代价是覆盖层底部那一条也跟着下去了，所以面板还要把内容按安全区高度
+    垫回来，否则按钮会压在 Home 指示条上。
 
-    B 是 A 的前提：地图层放开之后，搜索框会不会顶到状态栏下面、底部面板
-    会不会压住 Home 指示条，全看覆盖层有没有守住安全区。只查 A 会漏掉
-    另一半——把搜索框顶上去，用户看到的还是坏的。
+    四条约束必须同时成立：
+
+      A. 地图层忽略**全部**边（不能只写 `.bottom`）；
+      B. 覆盖层自己不许忽略安全区（它只负责上边的搜索框/提示条/图层切换）；
+      C. 外层容器忽略**下边**安全区（只允许下边，顶边放开会让搜索框顶到刘海）；
+      D. 面板内容按安全区把下边垫回来。
+
+    C 和 D 是一对：只查 C 会得到一个按钮压在 Home 指示条上的面板，
+    只查 D 则面板根本贴不到底。B 是 A 的前提：地图层放开之后，搜索框会不会
+    顶到状态栏下面，全看覆盖层有没有守住安全区。
     """
     path = ROOT / "App" / "MapHomeView.swift"
     if not path.exists():
@@ -554,6 +563,28 @@ def check_full_bleed_map() -> None:
         fail(
             "overlayLayer 忽略了安全区，搜索框/底部面板会顶到状态栏或 Home 指示条下面"
         )
+
+    body = swift_block(source, "var body: some View")
+    if not body:
+        fail("MapHomeView 里找不到 body：检查脚本的定位字串已失效")
+    elif ".ignoresSafeArea(edges: .bottom)" not in body:
+        fail(
+            "外层容器没有忽略下边安全区，底部面板贴不到屏幕下沿"
+            "（1.0.12 起面板是贴底 sheet，见 bottomPanel 的说明）"
+        )
+    elif ".ignoresSafeArea(edges: .top)" in body:
+        fail("外层容器把顶边也放开了，搜索框会顶到刘海/状态栏下面去")
+
+    panel = swift_block(source, "private var bottomPanel: some View")
+    if not panel:
+        fail("MapHomeView 里找不到 bottomPanel：检查脚本的定位字串已失效")
+    elif "bottomSheetContentInset" not in panel:
+        fail(
+            "底部面板没有按安全区高度把内容垫回来，按钮会压在 Home 指示条上：\n"
+            "      期望 .padding(.bottom, bottomSheetContentInset)"
+        )
+    elif "private var bottomSheetContentInset: CGFloat" not in source:
+        fail("MapHomeView 里找不到 bottomSheetContentInset 的定义")
 
 
 # ---------------------------------------------------------------------------
