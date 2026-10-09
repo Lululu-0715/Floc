@@ -28,18 +28,56 @@ final class MapViewBridge: ObservableObject {
     /// `meters` 为 nil 时保持当前缩放级别（只是平移）；传值则同时缩放。
     /// 只有「恢复上次视野」这类场景才需要传值——「实时位置」故意不传，
     /// 免得用户刚看好的范围被一次跳转冲掉。
+    ///
+    /// - Parameter bottomInset: 屏幕**下方被别的东西挡住**的高度（pt），
+    ///   地图页传底部卡片那一块。传了它，指定的坐标会落在「挡住的那块**上方**
+    ///   可见区」的正中，而不是屏幕的几何中心 —— 后者会让目标点被卡片压掉一截，
+    ///   看着就是「没居中」。换算见 `visibleCenter(...)`。
     func center(on coordinate: CLLocationCoordinate2D,
                 animated: Bool = true,
-                meters: Double? = nil) {
+                meters: Double? = nil,
+                bottomInset: CGFloat = 0) {
         guard let mapView else { return }
-        let latitudinal = meters ?? mapView.region.span.latitudeDelta * 111_000
-        let longitudinal = meters ?? mapView.region.span.longitudeDelta * 111_000
+        let span = max(meters ?? mapView.region.span.latitudeDelta * 111_000, 200)
+        let center = Self.visibleCenter(
+            for: coordinate,
+            spanMeters: span,
+            bottomInset: bottomInset,
+            mapHeight: mapView.bounds.height
+        )
         let region = MKCoordinateRegion(
-            center: coordinate,
-            latitudinalMeters: max(latitudinal, 200),
-            longitudinalMeters: max(longitudinal, 200)
+            center: center,
+            latitudinalMeters: span,
+            longitudinalMeters: span
         )
         mapView.setRegion(region, animated: animated)
+    }
+
+    /// 把「目标点」换成**可见区正中**该放的那个坐标。
+    ///
+    /// `setRegion` 的 center 落在屏幕几何中心；下方被挡住 `bottomInset` 之后，
+    /// 可见区的中心在那之上 `bottomInset / 2` 个点。要让目标点落在那条线上，
+    /// 地图中心就得往**南**挪同样的一截（正北朝上时，屏幕上「往下」即纬度变小）。
+    ///
+    /// 一屏的高度就是 `spanMeters`，所以一个点合多少米是
+    /// `spanMeters / mapHeight`；再按纬度换算成度即可。
+    ///
+    /// 抽成纯函数是为了能单测：它不碰 MKMapView，只做这一条乘法。
+    static func visibleCenter(for target: CLLocationCoordinate2D,
+                              spanMeters: Double,
+                              bottomInset: CGFloat,
+                              mapHeight: CGFloat) -> CLLocationCoordinate2D {
+        guard bottomInset > 0, mapHeight > 0 else { return target }
+
+        // 与 `center(on:)` 里 degree ↔ meter 的换算同一个粗值。
+        let metersPerDegreeLatitude: Double = 111_000
+        let metersPerPoint = spanMeters / Double(mapHeight)
+        let shiftMeters = Double(bottomInset / 2) * metersPerPoint
+
+        return CLLocationCoordinate2D(
+            latitude: target.latitude - shiftMeters / metersPerDegreeLatitude,
+            longitude: target.longitude
+        )
     }
 }
 

@@ -247,6 +247,9 @@ def check_test_references() -> None:
         "FileManager", "Character", "Void", "UnsafeMutablePointer", "CDouble",
         "CInt", "MainActor", "Published", "Self", "AppLocalization",
         "CVarArg", "Notification", "Bundle", "Result", "Error",
+        # CoreGraphics 的 CGFloat：布局类断言（留边、圆角、帧尺寸）离不开它，
+        # 单测里出现 `CGFloat(0)` 这类构造不该被当成「引用了不存在的项目类型」。
+        "CGFloat",
     }
 
     # 只关心「测试显式声称要测的项目内类型」——即 @testable 导入后
@@ -600,10 +603,16 @@ def check_full_bleed_map() -> None:
         )
     elif "private var bottomPanelContentInset: CGFloat" not in source:
         fail("MapHomeView 里找不到 bottomPanelContentInset 的定义")
-    elif ".padding(.horizontal, 12)" not in panel or ".padding(.bottom, 12)" not in panel:
+    elif (
+        ".padding(.horizontal, GlassMetrics.mapPanelEdgeInset)" not in panel
+        or ".padding(.bottom, GlassMetrics.mapPanelEdgeInset)" not in panel
+    ):
         fail(
             "底部卡片没有四周留边 12pt（左右与下边各 12）：\n"
-            "      期望 .padding(.horizontal, 12) 与 .padding(.bottom, 12)"
+            "      期望 .padding(.horizontal, GlassMetrics.mapPanelEdgeInset)"
+            " 与 .padding(.bottom, GlassMetrics.mapPanelEdgeInset)\n"
+            "      留边取常量而不是就地写 12 —— 它就是同心圆角那条式子的另一半"
+            "（卡片圆角 = 屏幕圆角 − 留边），两处必须同步"
         )
 
 
@@ -756,11 +765,17 @@ def check_liquid_glass() -> None:
 # 10. 圆角档位
 # ---------------------------------------------------------------------------
 
-# 1.0.13 扩展后的七档，按值升序。`GlassMetrics` 是唯一真源，界面侧不许再写裸数字。
+# 圆角的**固定档**，按值升序。`GlassMetrics` 是唯一真源，界面侧不许再写裸数字。
 #
-# 特别注意最后两条不是一回事：`mapCornerRadius` 是「地图小浮层」（四周留边
-# 的浮块），`mapPanelCornerRadius` 是「地图底部大卡片」（左右贴屏幕边的大面）。
-# 两个值差一倍多，**不许合并成一个**，所以这里也分开登记。
+# 特别说明两条容易混的：`mapCornerRadius` 是「地图小浮层」（四周留边的浮块），
+# `mapPanelCornerRadius` 是「地图底部大卡片」（左右贴屏幕边的大面）。
+# 两个值差一倍多，**不许合并成一个**。
+#
+# **大卡片那一档不在这张表里**：1.0.14 起它不再是固定值，而是
+# `ScreenCornerRadius.value − mapPanelEdgeInset` —— 它要跟屏幕圆角同心，而屏幕
+# 圆角逐机型不同（16 Pro Max 62、15/16 55、XR 41.5），写死一个数只在一台机器
+# 上成立。1.0.13 写死 44 的后果就是「跟 16 Pro Max 的圆角不协调」。
+# 下面单独钉它的关系式、留边值与兜底链。
 CORNER_RADIUS_TIERS = {
     "inlineCornerRadius": "10",
     "cardCornerRadius": "16",
@@ -768,8 +783,18 @@ CORNER_RADIUS_TIERS = {
     "mapCornerRadius": "20",
     "buttonCornerRadius": "23",
     "heroCornerRadius": "28",
-    "mapPanelCornerRadius": "44",
 }
+
+# 大卡片到屏幕外沿的留边。同心圆角的另一半：卡片圆角 = 屏幕圆角 − 这个值。
+MAP_PANEL_EDGE_INSET = "12"
+
+# 大卡片内容留边的下限（内层圆角 = 卡片圆角 − 留边，太小文字就贴边了）。
+MAP_PANEL_MIN_CONTENT_INSET = "20"
+
+# 屏幕圆角：运行时读系统私有属性，读不到按硬件标识查表，表里也没有用这个众数值。
+SCREEN_CORNER_FILE = "Shared/ScreenCornerRadius.swift"
+SCREEN_CORNER_KEY = "_displayCornerRadius"
+SCREEN_CORNER_FALLBACK = "55"
 
 # 唯一允许出现裸数字 `cornerRadius:` 的文件（常量定义本身）。
 CORNER_ENTRY_FILE = "Shared/GlassCard.swift"
@@ -778,28 +803,36 @@ BARE_CORNER_RE = re.compile(r"cornerRadius\s*:\s*[0-9]")
 
 
 def check_corner_radius_ladder() -> None:
-    """圆角只有七档，且界面侧不许再写裸数字。
+    """圆角只有六个固定档 + 一个跟屏幕同心的派生值，界面侧不许写裸数字。
 
     收敛前全项目散着 11 个数值（4 / 9 / 10 / 12 / 13 / 14 / 15.5 / 16 /
     18 / 20 / 28），相邻两档差 1~2pt，肉眼分不出、代码里却在「改一处漏
-    一处」。1.0.12 收敛成四档，1.0.13 为地图页改版与设置 Sheet 补了三档。
-    这里锁五件事：
+    一处」。1.0.12 收敛成四档，1.0.13 为地图页改版与设置 Sheet 补到七档；
+    1.0.14 把最后一档（地图底部大卡片）**从固定值改成派生值** ——
+    写死一个数不可能跟所有机型的屏幕圆角同心。
+    这里锁八件事：
 
-      1. `GlassMetrics` 里七档常量齐全、值就是约定好的
-         10 / 16 / 18 / 20 / 23 / 28 / 44 —— 防止有人图省事就地改一个数，
+      1. `GlassMetrics` 里六个固定档常量齐全、值就是约定好的
+         10 / 16 / 18 / 20 / 23 / 28 —— 防止有人图省事就地改一个数，
          档位又裂开；
-      2. 七档**源码里实际写的值**两两不同 —— 「两个名字一个数」等于假档位，
+      2. 六档**源码里实际写的值**两两不同 —— 「两个名字一个数」等于假档位，
          不算一档；
       3. `GlassMetrics` 里不许冒出没登记的 `*CornerRadius` 常量 —— 加了
          新档就得连本检查一起改，别让档位偷偷繁殖；
-      4. 地图小浮层（`mapCornerRadius` = 20）与地图底部大卡片
-         （`mapPanelCornerRadius` = 44）必须各留各的值，**不许并成别名**；
-      5. `App/` 与 `Shared/` 下除 `GlassCard.swift` 外，任何 Swift 文件
-         里都不出现 `cornerRadius: <数字>`；
-      6. 地图页大卡片里的两个内层容器（主按钮、已选位置面板）必须走
-         `panelInnerCornerRadius`（= `GlassMetrics.concentric(44, 留边)`），
-         且留边够大（≥ 44 − 23）—— 内层是 46pt 按钮，圆角超过半高会被
-         系统夹回胶囊，同心就不成立了。
+      4. 大卡片圆角**必须是派生值**：`mapPanelCornerRadius` 只准写成
+         `ScreenCornerRadius.value − mapPanelEdgeInset` 这个关系式，
+         不许写死数字、也不许并回 `mapCornerRadius` 的别名
+         （1.0.13 就是写死 44，在 16 Pro Max 上跟屏幕圆角错开 6pt）；
+      5. 内容留边必须由同心关系推出（`max(卡片圆角 − 23, 20)`）——
+         内层是 46pt 按钮，圆角超过半高会被系统夹回胶囊；
+      6. 屏幕圆角的兜底链必须完整：运行时读私有属性 `_displayCornerRadius`、
+         读不到按硬件标识查表、表里也没有用 `fallback`，而且有下限 ——
+         少了任何一环，用户拿到的就是一个随手猜的圆角；
+      7. 地图页大卡片里的两个内层容器（主按钮、已选位置面板）必须走
+         `panelInnerCornerRadius`（= `GlassMetrics.concentric(卡片圆角, 留边)`），
+         而 `panelContentInset` 只做转发、不许写死；
+      8. `App/` 与 `Shared/` 下除 `GlassCard.swift` 外，任何 Swift 文件
+         里都不出现 `cornerRadius: <数字>`。
     """
     glass_path = ROOT / CORNER_ENTRY_FILE
     if not glass_path.exists():
@@ -855,53 +888,132 @@ def check_corner_radius_ladder() -> None:
             + " / ".join(sorted(registered - declared))
         )
 
-    # 反向守卫：大卡片与小浮层必须是两个独立的值。以前这里是「必须写成
-    # mapCornerRadius 的别名」，1.0.13 反过来 —— 44 与 20 差一倍多，
-    # 并回去这张大卡片就塌了。
+    # 大卡片圆角：必须是**派生值**。1.0.13 它是 `static let
+    # mapPanelCornerRadius: CGFloat = 44`，而 44 是按「屏幕圆角 55 − 留边 12」
+    # 算的 —— 55 只是 15/16 那一代的屏幕圆角，16 Pro Max 是 62，两条弧的圆心
+    # 因此错开 6pt。现在只准写成 `ScreenCornerRadius.value − mapPanelEdgeInset`。
+    if re.search(r"static\s+let\s+mapPanelCornerRadius\s*:\s*CGFloat\s*=", source):
+        fail(
+            f"{CORNER_ENTRY_FILE} 里的 `mapPanelCornerRadius` 又写死成固定档了 —— "
+            "它必须跟**屏幕圆角**同心：\n"
+            "      期望 static var mapPanelCornerRadius: CGFloat {"
+            " ScreenCornerRadius.value - mapPanelEdgeInset }\n"
+            "      写死一个数只在一台机器上成立"
+        )
+
+    panel_radius = swift_block(source, "static var mapPanelCornerRadius")
+    if not panel_radius:
+        fail(
+            f"{CORNER_ENTRY_FILE} 里找不到 `static var mapPanelCornerRadius` —— "
+            "大卡片的圆角是派生值（屏幕圆角 − 留边），不是一个固定档"
+        )
+    elif "ScreenCornerRadius.value" not in panel_radius:
+        fail(
+            "`mapPanelCornerRadius` 没有从 `ScreenCornerRadius.value` 推 —— "
+            "它得跟着屏幕圆角走，不然每台机器的圆心都对不上"
+        )
+    elif "mapPanelEdgeInset" not in panel_radius:
+        fail(
+            "`mapPanelCornerRadius` 没有减去 `mapPanelEdgeInset` —— 同心圆角 = "
+            "屏幕圆角 − 卡片到屏幕外沿的留边"
+        )
+
     if re.search(
-        r"static\s+let\s+mapPanelCornerRadius\s*:\s*CGFloat\s*=\s*"
+        r"static\s+var\s+mapPanelCornerRadius\s*:\s*CGFloat\s*\{\s*"
         r"mapCornerRadius\b",
         source,
     ):
         fail(
             f"{CORNER_ENTRY_FILE} 里的 `mapPanelCornerRadius` 又并回 "
-            "`mapCornerRadius` 的别名了 —— 地图底部大卡片（44）与地图小浮层"
-            "（20）是两个独立档，合并会让大卡片的圆角塌成浮层的圆角"
+            "`mapCornerRadius` 的别名了 —— 地图底部大卡片（跟屏幕同心）与地图"
+            "小浮层是两个独立的值，合并会让大卡片的圆角塌成浮层的圆角"
         )
 
+    if not re.search(
+        rf"static\s+let\s+mapPanelEdgeInset\s*:\s*CGFloat\s*=\s*{MAP_PANEL_EDGE_INSET}\b",
+        source,
+    ):
+        fail(
+            f"{CORNER_ENTRY_FILE} 里的 `mapPanelEdgeInset` 不是 "
+            f"{MAP_PANEL_EDGE_INSET} —— 它就是同心圆角的另一半（卡片圆角 = "
+            "屏幕圆角 − 留边），改它等于改所有机型的同心关系"
+        )
+
+    # 内容留边：由「内层跟卡片同心」反推，不能写死（卡片圆角逐机型不同）。
+    content_inset = swift_block(source, "static var mapPanelContentInset")
+    if not content_inset:
+        fail(
+            f"{CORNER_ENTRY_FILE} 里找不到 `static var mapPanelContentInset` —— "
+            "卡片内容四周的留边必须由同心关系推出来"
+        )
+    else:
+        flattened = re.sub(r"\s+", "", content_inset)
+        expected = (
+            "max(mapPanelCornerRadius-buttonCornerRadius,"
+            f"{MAP_PANEL_MIN_CONTENT_INSET})"
+        )
+        if expected not in flattened:
+            fail(
+                "`mapPanelContentInset` 不是「卡片圆角 − 主按钮圆角」：\n"
+                "      期望 max(mapPanelCornerRadius - buttonCornerRadius, "
+                f"{MAP_PANEL_MIN_CONTENT_INSET})\n"
+                "      内层圆角 = 卡片圆角 − 留边，超过 46pt 主按钮的半高 23 "
+                "会被系统夹回胶囊，两条弧的圆心就对不上了"
+            )
+
+    # 屏幕圆角的兜底链：运行时读私有属性 → 机型表 → fallback，且必须有下限。
+    screen_path = ROOT / SCREEN_CORNER_FILE
+    if not screen_path.exists():
+        fail(
+            f"找不到 {SCREEN_CORNER_FILE} —— 大卡片要跟屏幕同心，就得先知道"
+            "「这台机器的屏幕圆角是多少」"
+        )
+    else:
+        screen_source = screen_path.read_text(encoding="utf-8")
+        if SCREEN_CORNER_KEY not in screen_source:
+            fail(
+                f"{SCREEN_CORNER_FILE} 没有读 `{SCREEN_CORNER_KEY}` —— "
+                "屏幕圆角只能运行时问系统要，写死一张表一定会漏机型"
+            )
+        if "utsname" not in screen_source:
+            fail(
+                f"{SCREEN_CORNER_FILE} 没有机型兜底表（`utsname` + 硬件标识）—— "
+                "私有属性取不到时总得有个依据，不能随手猜"
+            )
+        if not re.search(
+            rf"static\s+let\s+fallback\s*:\s*CGFloat\s*=\s*{SCREEN_CORNER_FALLBACK}\b",
+            screen_source,
+        ):
+            fail(
+                f"{SCREEN_CORNER_FILE} 的兜底值不是 {SCREEN_CORNER_FALLBACK} —— "
+                "它是当前在售机型里出现最多的屏幕圆角，猜错的偏差最小"
+            )
+        if "static let minimum" not in screen_source:
+            fail(
+                f"{SCREEN_CORNER_FILE} 没有下限 —— 直角屏（SE）算出来的圆角是"
+                "负数，卡片会跟着塌掉"
+            )
+
     # 地图页大卡片里的两个内层容器必须跟卡片**同心**：圆角一律走
-    # `panelInnerCornerRadius`（= `GlassMetrics.concentric(44, 留边)`），
+    # `panelInnerCornerRadius`（= `GlassMetrics.concentric(卡片圆角, 留边)`），
     # 不许各挑一个档位。1.0.13 的第一版就是各挑一档 —— 主按钮是「46pt 胶囊」
-    # （`buttonCornerRadius` = 半高 23）却只离卡片边 14pt，同心要求 44 − 14 = 30，
-    # 两条弧的圆心错开 7pt，拐角那条缝一头宽一头窄，「已选位置」面板（20，差 10）
-    # 更明显。用户一眼就看出来「不跟面板同心」。
+    # 却只离卡片边 14pt，两条弧的圆心错开 7pt，拐角那条缝一头宽一头窄，
+    # 「已选位置」面板更明显。用户一眼就看出来「不跟面板同心」。
     map_path = ROOT / "App" / "MapHomeView.swift"
     if not map_path.exists():
         fail("缺少 App/MapHomeView.swift")
         return
     map_source = strip_strings_and_comments(map_path.read_text(encoding="utf-8"))
 
-    inset_match = re.search(
-        r"private\s+let\s+panelContentInset\s*:\s*CGFloat\s*=\s*([0-9.]+)",
+    if not re.search(
+        r"private\s+var\s+panelContentInset\s*:\s*CGFloat\s*\{\s*"
+        r"GlassMetrics\.mapPanelContentInset\s*\}",
         map_source,
-    )
-    if not inset_match:
+    ):
         fail(
-            "MapHomeView 里找不到 `panelContentInset` —— 卡片内容四边的留边"
-            "必须是一个共享常量，同心圆角是拿它算出来的"
-        )
-        return
-    inset = float(inset_match.group(1))
-    # 同心要求 内层圆角 = 44 − 留边，而 46pt 高的主按钮圆角不能超过半高 23
-    # （再多会被系统夹回胶囊，同心就名存实亡）。
-    limit = float(CORNER_RADIUS_TIERS["mapPanelCornerRadius"]) - float(
-        CORNER_RADIUS_TIERS["buttonCornerRadius"]
-    )
-    if inset < limit:
-        fail(
-            f"`panelContentInset` = {inset:g} 太小（同心要求 ≥ {limit:g}）：\n"
-            "      内层圆角 = mapPanelCornerRadius − 留边，不能超过 46pt 主按钮的"
-            "半高 23，否则会被系统夹回胶囊，两条弧的圆心就对不上了"
+            "MapHomeView 的 `panelContentInset` 不是转发 "
+            "`GlassMetrics.mapPanelContentInset` —— 卡片圆角跟着屏幕走之后，"
+            "内容留边也必须跟着算，不能就地写死一个数"
         )
 
     inner = swift_block(map_source, "private var panelInnerCornerRadius")

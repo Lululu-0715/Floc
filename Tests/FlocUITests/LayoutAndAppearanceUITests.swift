@@ -45,38 +45,59 @@ final class LayoutAndAppearanceUITests: XCTestCase {
         let realLocation = app.buttons["实时位置"]
         XCTAssertTrue(realLocation.exists, "找不到「实时位置」浮标")
 
-        // 主按钮是卡片里的最后一行、占满整行，所以它的左右边就是卡片的**内容区**；
-        // 反推卡片外沿要各加 24pt（卡片内边距，见 `MapHomeView.panelContentInset`
-        // —— 24 是被「同心圆角」倒推出来的：44 − 24 = 20 才不比按钮半高 23 大）。
-        let contentInset: CGFloat = 24
+        // 卡片自己的 frame。它是个只在 **Debug**（`UI_TEST_HOOKS`）下才挂上去的
+        // 可访问性容器，见 `MapHomeView.uiTestPanelProbe()`。
+        //
+        // 1.0.14 之前这里是**反推**的：从「卡片里那颗占满整行的主按钮」往外加
+        // 一圈「内容留边」。可那圈留边 = 卡片圆角 − 23、卡片圆角 = 屏幕圆角 − 12，
+        // 而测试进程读不到屏幕圆角（`UIScreen._displayCornerRadius` 在那边是 0，
+        // 退到 55 的兜底），于是 iPhone Air 上量出 19 而不是 12 —— 是量具错了。
+        // 改成直接量卡片，断言就跟那两行式子彻底解耦了。
+        let panel = app.otherElements["uiTestBottomPanel"]
+        XCTAssertTrue(panel.waitForExistence(timeout: 5),
+                      "拿不到底部卡片的 frame —— 卡片没有挂上可访问性探针"
+                      + "（`MapHomeView.uiTestPanelProbe()`）")
+        let card = panel.frame
         let edgeInset: CGFloat = 12
         let screen = window.frame
 
-        let panelLeft = start.frame.minX - contentInset
-        let panelRight = start.frame.maxX + contentInset
-        let rightGap = screen.width - panelRight
-
-        print("[DUMP] 屏幕=\(screen) 卡片左边留白=\(panelLeft) 右边留白=\(rightGap)")
+        print("[DUMP] 屏幕=\(screen) 卡片=\(card) 主按钮=\(start.frame)")
         attach(app, name: "10-悬浮的底部卡片")
 
-        XCTAssertEqual(panelLeft, edgeInset, accuracy: 1.5,
-                       "卡片左边没有留出 12pt（实际 \(panelLeft)pt）——它又贴回屏幕边了")
-        XCTAssertEqual(rightGap, edgeInset, accuracy: 1.5,
-                       "卡片右边没有留出 12pt（实际 \(rightGap)pt）——它又贴回屏幕边了")
+        // 四周留边 12pt：卡片是贴屏幕的**悬浮**大卡片，不是贴底的 sheet。
+        XCTAssertEqual(card.minX, edgeInset, accuracy: 1.5,
+                       "卡片左边没有留出 12pt（实际 \(card.minX)pt）——它又贴回屏幕边了")
+        XCTAssertEqual(screen.width - card.maxX, edgeInset, accuracy: 1.5,
+                       "卡片右边没有留出 12pt（实际 \(screen.width - card.maxX)pt）"
+                       + "——它又贴回屏幕边了")
+        XCTAssertEqual(screen.height - card.maxY, edgeInset, accuracy: 1.5,
+                       "卡片下边没有留出 12pt（实际 \(screen.height - card.maxY)pt）")
+
+        // 主按钮是卡片里的最后一行、占满整行，所以它的左右边就是卡片的**内容区**。
+        // 内容留边（= 卡片圆角 − 主按钮半高 23）不写死：它跟屏幕圆角走，
+        // 16 Pro Max 是 27、15/16 是 20。这里只钉「左右一样、且不小于下限 20」
+        // —— 「跟卡片同心」正是靠这个前提。
+        let insetFromCard = start.frame.minX - card.minX
+        XCTAssertGreaterThanOrEqual(insetFromCard, 19.5,
+                                    "卡片内容留边只有 \(insetFromCard)pt，"
+                                    + "比同心圆角要求的下限 20 还小")
+        XCTAssertEqual(card.maxX - start.frame.maxX, insetFromCard, accuracy: 1,
+                       "主按钮在卡片里没有左右居中（左 \(insetFromCard)pt / "
+                       + "右 \(card.maxX - start.frame.maxX)pt）")
 
         // 下边：主按钮与屏幕物理下沿之间隔着「卡片内容下边距 + 卡片下边距」。
-        // 内容下边距现在跟左右留边同值（24，同心圆角要求的），所以是 12 + 24 = 36；
-        // 只有 Home 指示条安全区更深时才会被顶上去。钉的还是「主按钮完全
-        // 躲开了 Home 指示条那 34pt」——被压住的话看着能点、实际点不到。
+        // 钉的是「主按钮完全躲开了 Home 指示条那 34pt」——被压住的话看着能点、
+        // 实际点不到。留边取下限 20 时下边距正好顶到 `安全区 − 12 = 22`，
+        // 也就是「刚好躲开」，所以这里是 ≥ 而不是 >。
         let gapBelowButton = screen.height - start.frame.maxY
-        print("[DUMP] 主按钮下方留白=\(gapBelowButton)")
-        XCTAssertGreaterThan(gapBelowButton, 34,
-                             "主按钮离屏幕下沿只有 \(gapBelowButton)pt，已经被 Home 指示条压住了")
+        XCTAssertGreaterThanOrEqual(gapBelowButton, 33.5,
+                                    "主按钮离屏幕下沿只有 \(gapBelowButton)pt，"
+                                    + "已经被 Home 指示条压住了")
 
-        // 两个浮标要在卡片**正上方**（不是右上角）。
-        XCTAssertLessThan(layer.frame.maxY, start.frame.minY,
+        // 两个浮标要在卡片**正上方**（不是右上角）—— 直接拿卡片的顶边比。
+        XCTAssertLessThan(layer.frame.maxY, card.minY,
                           "图层浮标没有落在底部卡片上方")
-        XCTAssertLessThan(realLocation.frame.maxY, start.frame.minY,
+        XCTAssertLessThan(realLocation.frame.maxY, card.minY,
                           "实时位置浮标没有落在底部卡片上方")
 
         // 而且贴右侧：浮标水平内边距 20 = 卡片留边 12 + 8。

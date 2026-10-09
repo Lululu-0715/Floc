@@ -477,23 +477,32 @@ python3 Tests/check_swift_sources.py
 - 出包口味的开关没有互相串味
 - 地图页的全面屏（`ignoresSafeArea` 只给地图层、不给浮层）
 - 液态玻璃 API 只待在 `Shared/GlassCard.swift` 的 `if #available(iOS 26, *)` 里
-- 圆角只剩 `GlassMetrics` 的七档，界面侧不许写裸数字（`cornerRadius: <数字>`）
+- 圆角只剩 `GlassMetrics` 的六个固定档 + 一个跟屏幕同心的派生值，
+  界面侧不许写裸数字（`cornerRadius: <数字>`）
 
-圆角七档（定义在 `Shared/GlassCard.swift`，界面侧一律引用常量）：
+圆角（定义在 `Shared/GlassCard.swift`，界面侧一律引用常量）：
 
 | 常量 | 值 | 用在哪 |
 |------|----|--------|
 | `inlineCornerRadius` | 10 | 标签、色板、图标底、日志徽标 |
 | `cardCornerRadius` | 16 | 卡片、分组容器、玻璃卡片 |
-| `menuCornerRadius` | 18 | 图层菜单、弹出式菜单 |
+| `menuCornerRadius` | 18 | 弹出式菜单（图层菜单改成竖胶囊后暂无调用点） |
 | `mapCornerRadius` | 20 | 地图**小浮层**（搜索框、图层切换、悬浮按钮） |
-| `buttonCornerRadius` | 23 | 主按钮胶囊（46pt 高按钮的半高） |
+| `buttonCornerRadius` | 23 | 46pt 主按钮的半高（内层圆角的上限） |
 | `heroCornerRadius` | 28 | 欢迎页大图标等 hero 容器 |
-| `mapPanelCornerRadius` | 44 | 地图**底部大卡片**（同心圆角 = 屏幕 55 − 留边 12 ≈ 43，取 44） |
+| `mapPanelCornerRadius` | **屏幕圆角 − 12** | 地图**底部大卡片**，不是固定档 |
 
-`mapCornerRadius` 与 `mapPanelCornerRadius` 是**两个独立档，不许合并**：
-前者是浮在地图上的一小块，后者是左右贴屏幕边的大面。检查脚本同时盯着
-「七档的值两两不同」和「`GlassMetrics` 里不许冒出没登记的 `*CornerRadius`」。
+最后一行是**派生值**：卡片要跟**屏幕**的圆角同心，而屏幕圆角逐机型不同
+（16 Pro Max 62、15/16 55、XR 41.5），所以 1.0.14 起由
+`ScreenCornerRadius.value − GlassMetrics.mapPanelEdgeInset` 算出来，
+内容留边也跟着走（`mapPanelContentInset` = 卡片圆角 − 23，下限 20），
+16 Pro Max 上是 **50 / 27 / 内层 23**。屏幕圆角的取法、兜底表与下限见
+`Shared/ScreenCornerRadius.swift`。
+
+`mapCornerRadius` 与 `mapPanelCornerRadius` **不许合并**：
+前者是浮在地图上的一小块，后者是贴屏幕边的大面。检查脚本同时盯着
+「固定档的值两两不同」「`GlassMetrics` 里不许冒出没登记的 `*CornerRadius`」
+「大卡片圆角必须是那条关系式，不许写死」。
 
 ### 第三方代理模块一致性检查
 

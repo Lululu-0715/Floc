@@ -8,8 +8,9 @@ import Foundation
 /// 刻意不做持续更新与后台采集——本应用的核心是把位置改掉，
 /// 长期订阅真实位置既没有用处，也会平白多要一份定位权限的使用记录。
 ///
-/// 注意：这里拿到的是 WGS-84 原始坐标，展示到地图上之前必须按当前
-/// 地图体系换算，否则国内会偏出几百米。
+/// **这里拿到的是 WGS-84 原始坐标**（GPS 原始值，境内也不会被换成 GCJ-02），
+/// 展示到地图上之前必须按当前地图体系换算，否则国内会偏出几百米。
+/// 换算成「双坐标」这一步统一走 `pair(fromDeviceLocation:)`，别在调用方各写一遍。
 @MainActor
 final class RealLocationProvider: NSObject, ObservableObject {
 
@@ -124,6 +125,26 @@ final class RealLocationProvider: NSObject, ObservableObject {
         let completion = pendingCompletion
         pendingCompletion = nil
         completion?(result)
+    }
+
+    // MARK: - 坐标体系
+
+    /// 把回读到的坐标装成「双坐标」对。
+    ///
+    /// **只按 WGS-84 解释**：`CLLocationManager` 给的从来是 GPS 原始值
+    /// （境内也不变 —— 被纠偏的是地图，见 `MapHomeView.goToRealLocation` 的
+    /// 说明与 `CoordinateConverter.mapSystem` 的注释），所以这里是
+    /// `CoordinatePair(wgs84…)`，**不是**按地区分流那一条。
+    ///
+    /// 抽成静态函数是为了能单测：这是「实时位置跳转偏 500 米」与
+    /// 「生效校验恒判未生效」两个 bug 的共同根因，值得钉一条回归。
+    static func pair(
+        fromDeviceLocation coordinate: CLLocationCoordinate2D
+    ) -> CoordinateConverter.CoordinatePair {
+        CoordinateConverter.CoordinatePair(
+            wgs84Latitude: coordinate.latitude,
+            wgs84Longitude: coordinate.longitude
+        )
     }
 }
 

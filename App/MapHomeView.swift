@@ -51,6 +51,13 @@ struct MapHomeView: View {
     /// 所以直接问窗口要，那个值不受 SwiftUI 的 ignore 影响。
     @State private var bottomSafeInset: CGFloat = 0
 
+    /// 底部卡片的总高（含卡片下边距 12pt），由卡片自己量出来（见 `bottomPanel`）。
+    ///
+    /// 「实时位置」「回到选点」这类跳转要把目标点摆在**卡片上方**那块可见区的
+    /// 正中，得先知道卡片挡住了多少 —— 否则地图会按屏幕几何中心居中，目标点
+    /// 被卡片压掉一截，看着就是「没居中」。
+    @State private var bottomPanelHeight: CGFloat = 0
+
     @State private var searchText = ""
     @State private var searchResults: [SearchResult] = []
     @State private var isSearching = false
@@ -117,6 +124,14 @@ struct MapHomeView: View {
 
     /// 量取搜索结果内容的实际高度。
     private struct SearchResultsHeightKey: PreferenceKey {
+        static var defaultValue: CGFloat = 0
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+            value = max(value, nextValue())
+        }
+    }
+
+    /// 量取底部卡片的总高度（含卡片下边距）。用途见 `bottomPanelHeight`。
+    private struct BottomPanelHeightKey: PreferenceKey {
         static var defaultValue: CGFloat = 0
         static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
             value = max(value, nextValue())
@@ -219,6 +234,10 @@ struct MapHomeView: View {
             state.persist()
             pushConfigurationToBackend()
         }
+        // 底部卡片自己量出来的高度：跳转居中要让出这一块（见 bottomPanelHeight）。
+        .onPreferenceChange(BottomPanelHeightKey.self) { height in
+            bottomPanelHeight = height
+        }
     }
 
     // MARK: - 地图层
@@ -304,31 +323,37 @@ struct MapHomeView: View {
     /// 位置：**贴右侧、压在底部卡片正上方**（不是右上角）。水平内边距 20
     /// = 卡片外边距 12 + 8，比卡片向右收一点，看起来是「卡片上方的浮标」
     /// 而不是跟卡片对齐的按钮。
+    ///
+    /// 图层菜单排在图层圆钮**前面**（也就是它上方）：这一列贴的是屏幕下沿，
+    /// 往上长不会挤动下面那颗按钮，也不会挤动底部卡片 —— 被压缩的只有上面
+    /// 那个 `Spacer`。所以展开动画看起来就是「从图层这颗圆钮里长出来」。
     private var mapFloatingControls: some View {
-        // 顶对齐：图层菜单从按钮**向左**长出来，它比按钮高，顶端对齐后展开的
-        // 起点正好贴着按钮上沿，看上去就是「从这颗按钮里弹出来的」。
-        HStack(alignment: .top, spacing: 10) {
-            Spacer(minLength: 0)
-
+        VStack(spacing: 10) {
             if showsLayerMenu {
                 layerMenu
-                    .transition(.opacity.combined(with: .move(edge: .trailing)))
             }
 
-            VStack(spacing: 10) {
-                layerButton
-                realLocationFloatingButton
-            }
+            layerButton
+            realLocationFloatingButton
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 12)
+        // **贴右侧**靠这一句：`overlayLayer` 是个居中对齐的 `VStack`，而这一列
+        // 只有 44pt 宽 —— 不像原来那个 `HStack` 里有 `Spacer(minLength: 0)`
+        // 把自己撑满整行。1.0.14 改成竖排时漏了这句，两颗圆钮就飘到了屏幕正中
+        // （界面测试量到「实时位置」右沿 232pt，应当在 400pt）。
+        .frame(maxWidth: .infinity, alignment: .trailing)
         .transition(.opacity)
     }
 
-    /// 图层浮标。点一下向左弹出菜单。
+    /// 图层浮标。点一下从它**上方**展开菜单。
     private var layerButton: some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.18)) { showsLayerMenu.toggle() }
+            // 用弹簧而不是 easeInOut：菜单是从这颗圆钮里"长"出来的，
+            // 收尾带一点回弹才像同一块玻璃被拉出来。
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+                showsLayerMenu.toggle()
+            }
         } label: {
             Image(systemName: "square.stack.3d.up")
                 .font(.system(size: 18, weight: .semibold))
@@ -342,48 +367,49 @@ struct MapHomeView: View {
         .accessibilityValue(mapType.displayName)
     }
 
-    /// 图层菜单：从图层按钮向左弹出的卡片。
+    /// 图层菜单：从图层圆钮**上方**长出来的竖胶囊，里面三个纯图标选项。
     ///
-    /// **不用系统 `Menu`**：它的圆角由系统定，给不了 `menuCornerRadius`，
-    /// 样式也不跟配色主题走。自绘一张卡片反而能和其他浮层是一套东西。
+    /// 1.0.13 初版是从按钮**左边**横向弹出的卡片（168pt 宽，每行「图标 + 文字
+    /// + 勾」）。用户的原话是「这样往左有点丑，我要的是点开他会往上展开一个
+    /// 胶囊然后选择」—— 方向改成向上（与按钮同一列，视觉上就是从这颗圆钮里
+    /// 抽出来），**文字全去掉**，只留图标；当前生效的那一颗用主题色 + 一层
+    /// 主题色淡底点亮，不然三个图标看不出选了哪个。
+    ///
+    /// **不用系统 `Menu`**：它的形状与圆角由系统定，给不了胶囊，样式也不跟
+    /// 配色主题走。自绘一颗竖胶囊反而能和其他浮层是一套东西。
     ///
     /// 收起方式有三种：再点一次图层按钮、选中某个图层、点地图（见 `handleMapTap`）。
     private var layerMenu: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 2) {
             ForEach(MapTypeOption.allCases) { option in
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                         mapType = option
                         showsLayerMenu = false
                     }
                 } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: option.systemImage)
-                            .font(.system(size: 15, weight: .medium))
-                            .frame(width: 22)
-
-                        Text(option.displayName)
-                            .font(.subheadline.weight(.medium))
-
-                        Spacer(minLength: 0)
-
-                        if mapType == option {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 13, weight: .semibold))
-                        }
-                    }
-                    .foregroundStyle(mapType == option ? theme.accent : Color.primary)
-                    .padding(.horizontal, 14)
-                    .frame(height: 44)
-                    .contentShape(Rectangle())
+                    Image(systemName: option.systemImage)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(mapType == option ? theme.accent : Color.primary)
+                        .frame(width: 44, height: 44)
+                        .background(
+                            Circle().fill(mapType == option
+                                          ? theme.accent.opacity(0.18)
+                                          : Color.clear)
+                        )
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(option.displayName)
                 .accessibilityAddTraits(mapType == option ? [.isSelected] : [])
             }
         }
-        .frame(width: 168)
-        .mapGlassSurface(cornerRadius: GlassMetrics.menuCornerRadius)
+        .padding(.vertical, 6)
+        .mapGlassCapsule(nested: false)
+        // 以**下沿**为锚点缩放：展开时像从图层圆钮里往上抽出来的。
+        .transition(
+            .scale(scale: 0.35, anchor: .bottom).combined(with: .opacity)
+        )
     }
 
     /// 「实时位置」浮标：纯图标圆钮，与图层浮标**同款**（玻璃底 + 主色图标）。
@@ -601,29 +627,46 @@ struct MapHomeView: View {
         // **悬浮大卡片**（对齐参考图里的 Apple 地图），所以走 `mapGlassSurface()`
         // 而不是只圆上沿的 `mapGlassSheet()`。
         .mapGlassSurface(cornerRadius: GlassMetrics.mapPanelCornerRadius)
-        .padding(.horizontal, 12)
-        .padding(.bottom, 12)
+        // 界面测试要量这张卡片的 frame（Debug 下才挂得上，见 `uiTestPanelProbe`）。
+        .uiTestPanelProbe()
+        // 留边取 `mapPanelEdgeInset` 而不是就地写 12：这个值就是同心圆角那条
+        // 式子的另一半（卡片圆角 = 屏幕圆角 − 留边），两处必须同步。
+        .padding(.horizontal, GlassMetrics.mapPanelEdgeInset)
+        .padding(.bottom, GlassMetrics.mapPanelEdgeInset)
+        // 顺手量一下卡片的总高（含下面那 12pt 留边）：「实时位置」跳转要把目标点
+        // 摆在这块**上方**那块可见区的正中，得先知道它挡住了多少
+        // （见 `MapViewBridge.visibleCenter`）。
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: BottomPanelHeightKey.self,
+                    value: proxy.size.height
+                )
+            }
+        )
     }
 
     /// 卡片内容四周的留边。
     ///
-    /// **24 是算出来的，不是随手定的**：卡片里那两个容器（主按钮、已选位置
-    /// 面板）的圆角都要跟卡片**同心**，即 44 − 留边；而主按钮高 46pt，
+    /// **它是算出来的，不是随手定的**：卡片里那两个容器（主按钮、已选位置
+    /// 面板）的圆角都要跟卡片**同心**，即 `卡片圆角 − 留边`；而主按钮高 46pt，
     /// 圆角超过半高 23 就没意义了（系统会把它夹回胶囊），于是
     ///
-    ///     留边 ≥ mapPanelCornerRadius − 23 = 21
+    ///     留边 ≥ mapPanelCornerRadius − 23
     ///
-    /// 原来左右留 14 / 下面留 28（避 Home 指示条）—— 先不说 14 根本不够，
-    /// 四边还各不相同，同一圈缝从侧面绕到拐角就变宽，所以怎么摆都不像同心。
-    /// 取 24 同时满足两件事：≥ 21，且 ≥ 22（= 指示条安全区 34 − 卡片留边 12）。
-    private let panelContentInset: CGFloat = 24
+    /// 1.0.13 这里是写死的 24（配写死的卡片圆角 44）。**卡片圆角从 1.0.14 起
+    /// 跟着屏幕走**（见 `GlassMetrics.mapPanelCornerRadius`），留边也就跟着
+    /// 逐机型变 —— 16 Pro Max：屏幕 62 → 卡片 50 → 留边 27 → 内层 23；
+    /// 15/16：55 → 43 → 20（下限）→ 内层 23。推导与下限都在
+    /// `GlassMetrics.mapPanelContentInset` 里，这里只做转发。
+    private var panelContentInset: CGFloat { GlassMetrics.mapPanelContentInset }
 
-    /// 卡片**里层**容器的圆角：跟大卡片同心（44 − 24 = 20）。
+    /// 卡片**里层**容器的圆角：跟大卡片同心（卡片圆角 − 留边）。
     ///
     /// 主按钮和「已选位置」面板共用它 —— 两者都贴着卡片的拐角，各挑一个档位
-    /// 就会各偏一个圆心。注意 20 恰好等于 `mapCornerRadius`，但**不是**那一档：
-    /// 那一档是「浮在地图上的小块」，这里是「跟卡片同心推出来的值」，改留边
-    /// 它会跟着变，所以别换成常量。
+    /// 就会各偏一个圆心。16 Pro Max 上算出来正好 23，也就是主按钮的半高
+    /// （两条弧相切）；**不是** `buttonCornerRadius` 那一档：
+    /// 这个值跟着屏幕圆角变，那一档是写死的 23。
     private var panelInnerCornerRadius: CGFloat {
         GlassMetrics.concentric(outer: GlassMetrics.mapPanelCornerRadius,
                                 inset: panelContentInset)
@@ -636,7 +679,7 @@ struct MapHomeView: View {
     /// 留边还深**时才往上让 —— 那时按钮会被指示条压住（看着能点、实际点不到），
     /// 宁可牺牲一点同心。当前所有带指示条的机型都够不到这条分支。
     private var bottomPanelContentInset: CGFloat {
-        max(panelContentInset, bottomSafeInset - 12)
+        max(panelContentInset, bottomSafeInset - GlassMetrics.mapPanelEdgeInset)
     }
 
     /// 已选位置卡片：左边地名与两行坐标，右边竖排两个入口。
@@ -881,11 +924,15 @@ struct MapHomeView: View {
 
     /// 校验虚拟定位是否真的生效（开启后自动跑一次，「重新验证」也走这里）。
     ///
-    /// 目标点取**与地图同一套坐标**：回读到的坐标和地图上画蓝点用的是同一
-    /// 来源（见 `goToRealLocation` 的说明），两套混着比会平白多出几百米。
+    /// 目标点取**WGS-84**：回读走的是 `CLLocationManager`，它给的从来是 GPS
+    /// 原始值（境内也不变，纠偏发生在地图侧 —— 见 `goToRealLocation` 的说明），
+    /// 而写进定位服务的也正是选点的 WGS-84（`pair.wgs84`），两边同源才能直接比。
+    ///
+    /// 1.0.13 这里取的是**地图体系**的坐标（境内 GCJ-02），跟回读值整整差一个
+    /// 500 米的 GCJ 偏移，校验因此会恒定判「未生效」。
     private func startVerification(pair: CoordinateConverter.CoordinatePair) {
         verifier.start(
-            target: pair.coordinate(for: state.mapCoordinateSystem),
+            target: pair.wgs84.coordinate,
             provider: realLocation
         )
     }
@@ -1017,6 +1064,9 @@ struct MapHomeView: View {
     }
 
     /// 回到当前选中的虚拟位置。
+    ///
+    /// 也要让出底部卡片（`bottomInset`）：选点标记才是这一屏的主角，
+    /// 被卡片压住一半就等于没回到。
     private func centerOnSelection() {
         guard let pair = state.selection else {
             showBanner(AppLocalization.string("请先在地图上选择位置"), style: .warning)
@@ -1024,42 +1074,36 @@ struct MapHomeView: View {
         }
         mapBridge.center(
             on: pair.coordinate(for: state.mapCoordinateSystem),
-            meters: MapLocationState.defaultViewportMeters
+            meters: MapLocationState.defaultViewportMeters,
+            bottomInset: bottomPanelHeight
         )
         showBanner(AppLocalization.string("已回到选点"), style: .info)
     }
 
     /// 读取设备真实位置并把地图移过去。
     ///
-    /// **坐标体系是这里最容易错的一处。** `CLLocationManager` 在国内给回的
-    /// 坐标已经是 GCJ-02，而地图上的蓝点就是拿同一个坐标画出来的——两者
-    /// 本来就对得上。早先这里一律按 WGS-84 解释、再换算成地图体系去居中，
-    /// 相当于又加了一次 500 米左右的偏移，表现就是「点了实时位置，准心
-    /// 不在屏幕中间，跑偏了」。
+    /// **坐标体系是这里最容易错的一处 —— 1.0.12 和 1.0.13 各错了一次，方向还相反**：
     ///
-    /// 正确做法：把回调坐标当成**当前地图体系**的坐标，交给 `CoordinatePair`
-    /// 去补另一套。这样居中用的坐标与蓝点完全一致。
+    ///   · `CLLocationManager` 回的**从来是 WGS-84**（GPS 原始值），境内也不变。
+    ///     被纠偏的是**地图**：Apple 中国的底图是高德的 GCJ-02 数据，于是
+    ///     `MKMapView` 的坐标空间（标注坐标、`convert`、`setRegion` 的中心）
+    ///     在国内是 GCJ-02，系统的蓝点由地图框架纠偏后画出来。
+    ///   · 所以回读值要按 **WGS-84** 解释，再由 `CoordinatePair` 补出 GCJ-02
+    ///     拿去居中 —— 这样居中的坐标和蓝点画出来的位置才是同一处。
+    ///     1.0.13 把它当成 GCJ-02 用（等于又叠了一次 500 米偏移），
+    ///     用户的原话是「点了实时位置，位置还是有偏差，准心不在中间」。
+    ///
+    /// 「准心在不在中间」还有一半是**底部卡片**的事：地图默认按屏幕几何
+    /// 中心居中，而卡片占掉下面一大块，目标点会被压向卡片。所以这里把卡片的
+    /// 高度交给 `MapViewBridge.center`，让它按**可见区**居中（见
+    /// `MapViewBridge.visibleCenter`）。
     private func goToRealLocation() {
         realLocation.requestOnce { result in
             switch result {
             case .success(let coordinate):
-                // 与地图点选同一条判据：境内按 GCJ-02 解释，境外按 WGS-84。
-                let pair: CoordinateConverter.CoordinatePair
-                switch CoordinateConverter.mapSystem(
-                    latitude: coordinate.latitude,
-                    longitude: coordinate.longitude
-                ) {
-                case .gcj02:
-                    pair = CoordinateConverter.CoordinatePair(
-                        gcj02Latitude: coordinate.latitude,
-                        gcj02Longitude: coordinate.longitude
-                    )
-                case .wgs84:
-                    pair = CoordinateConverter.CoordinatePair(
-                        wgs84Latitude: coordinate.latitude,
-                        wgs84Longitude: coordinate.longitude
-                    )
-                }
+                // 只按 WGS-84 解释，**不**按地区分流 —— 分流那条判据
+                // （`mapSystem`）管的是「从地图上取到的坐标怎么读」，两者不同源。
+                let pair = RealLocationProvider.pair(fromDeviceLocation: coordinate)
 
                 // 缩小到街道尺度再居中。
                 //
@@ -1074,7 +1118,8 @@ struct MapHomeView: View {
                 // 还有 200 米的下限，所以缩得比 200 米更近的视野不会被动拉远。
                 mapBridge.center(
                     on: pair.coordinate(for: state.mapCoordinateSystem),
-                    meters: MapLocationState.defaultViewportMeters
+                    meters: MapLocationState.defaultViewportMeters,
+                    bottomInset: bottomPanelHeight
                 )
                 showBanner(AppLocalization.string("已定位到当前真实位置"), style: .info)
 
@@ -1840,3 +1885,40 @@ private struct StatusPill: View {
         .foregroundStyle(color)
     }
 }
+
+// MARK: - 界面测试探针
+
+#if UI_TEST_HOOKS
+private extension View {
+
+    /// 给界面测试量**底部大卡片** frame 用的可访问性探针。
+    ///
+    /// 卡片本身**不在可访问性树里** —— SwiftUI 会把纯布局容器摊平成 `Other`，
+    /// 于是 `LayoutAndAppearanceUITests` 只能从「卡片里那颗占满整行的主按钮」
+    /// 往外反推卡片外沿。反推要用的「内容留边」= 卡片圆角 − 23、卡片圆角 =
+    /// 屏幕圆角 − 12，而**测试进程读不到屏幕圆角**：`UIScreen` 的
+    /// `_displayCornerRadius` 在那边取到 0，会退到 55 的兜底，算出来比 App 里
+    /// 的真值（实测 iPhone Air 是 62）小 7pt —— 断言于是量出 19 而不是 12，
+    /// 是量具错了，不是卡片错了。
+    ///
+    /// 与其在测试里复刻那两行式子（还得复刻一整套兜底与下限），不如让卡片
+    /// 自己报出 frame：这样断言就是「卡片左沿 = 12」，式子怎么改都不会再骗人。
+    ///
+    /// 修饰器要挂在卡片**外层留边之前**，报出来的 frame 才是卡片本体。
+    /// `children: .contain` 只把这一块包成一个容器，里面的按钮**照旧各自**
+    /// 可点、可查（不影响其它用例）。
+    ///
+    /// 只在 **Debug** 编译（`UI_TEST_HOOKS` 编译条件，见 `project.yml`）；
+    /// Release 产物里走 `#else` 那个恒等变换，可访问性树一个节点都不多。
+    func uiTestPanelProbe() -> some View {
+        accessibilityElement(children: .contain)
+            .accessibilityIdentifier("uiTestBottomPanel")
+    }
+}
+#else
+private extension View {
+
+    /// 非 Debug 构建：恒等变换（说明见上面的 `#if` 分支）。
+    func uiTestPanelProbe() -> some View { self }
+}
+#endif

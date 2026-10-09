@@ -129,20 +129,47 @@ App 启动时会把当前位置自动选成选点，蓝点就落在约 `(0.5, 0.
 
 ## 二·九、底部卡片尺寸怎么量
 
-`LayoutAndAppearanceUITests.testBottomPanelFloatsWith12ptInset`：卡片本身没有
-可访问性元素，只能从**卡片里那颗占满整行的主按钮**反推 ——
+`LayoutAndAppearanceUITests.testBottomPanelFloatsWith12ptInset`：卡片本身不在
+可访问性树里（SwiftUI 把纯布局容器摊平成 `Other`），所以它**自己挂了一个
+Debug 专供的可访问性容器**：
 
-```
-卡片左沿 = 主按钮.minX - 24（卡片内边距 panelContentInset）
-卡片右沿 = 主按钮.maxX + 24
+```swift
+// App/MapHomeView.swift（#if UI_TEST_HOOKS）
+.mapGlassSurface(cornerRadius: GlassMetrics.mapPanelCornerRadius)
+.uiTestPanelProbe()          // accessibilityElement(children: .contain) + identifier
+.padding(.horizontal, GlassMetrics.mapPanelEdgeInset)
 ```
 
-期望左右各留 12pt。内边距是 24 而不是 14，是因为主按钮与「已选位置」面板的圆角
-要跟卡片**同心**（44 − 留边），而 46pt 高按钮的圆角不能大于半高 23 ——
-倒推出来留边 ≥ 21（`MapHomeView` 里有完整推导）。下边不直接量卡片底（够不着），
-改成钉「主按钮完全躲开 Home 指示条那 34pt」：`屏幕高 - 主按钮.maxY > 34`
-（现在实测 36，= 卡片下边距 12 + 内容下边距 24）。
-浮标的位置（卡片正上方、贴右侧）同理用 `图层` / `实时位置` 两颗按钮的 frame 断言。
+探针挂在**外层留边之前**，所以它报出来的 frame 就是卡片本体：
+
+```swift
+let card = app.otherElements["uiTestBottomPanel"].frame
+XCTAssertEqual(card.minX, 12, accuracy: 1.5)                       // 左
+XCTAssertEqual(screen.width - card.maxX, 12, accuracy: 1.5)        // 右
+XCTAssertEqual(screen.height - card.maxY, 12, accuracy: 1.5)       // 下
+```
+
+`children: .contain` 只是把这一块包成容器，里面的按钮照旧各自可点可查。
+Release 产物里这个修饰器是**恒等变换**（`#else` 分支），可访问性树一个节点都不多。
+
+**1.0.14 之前这里是「反推」的，而且推错了。** 当时只能从「卡片里那颗占满
+整行的主按钮」往外加一圈「内容留边」，那圈留边 = 卡片圆角 − 23、卡片圆角 =
+屏幕圆角 − 12。而**测试进程读不到屏幕圆角**：`UIScreen._displayCornerRadius`
+在那里取到 0，会退到 55 的兜底（App 侧同机型读到的是 62），算出来比真值小
+7pt —— iPhone Air 上量出 `19` 而不是 `12`，是**量具**错了，不是卡片错了。
+所以在测试里复刻 App 的式子这条路是走不通的，改成直接量卡片。
+
+主按钮仍拿来找「内容留边左右是否一致」：卡片内容留边 = 卡片圆角 − 23，跟屏幕
+圆角走，16 Pro Max 是 27、15/16 是 20，所以只钉 `≥ 20（下限）` 与「左右相等」
+—— 这两条正是「跟卡片同心」的前提。下边不直接量（已由上面的 `card.maxY` 钉死），
+另钉一条「主按钮完全躲开 Home 指示条那 34pt」：`屏幕高 - 主按钮.maxY ≥ 34`
+（= 卡片下边距 12 + 内容下边距；留边取下限 20 时正好顶到安全区 − 12 那条线）。
+浮标的位置（卡片正上方、贴右侧）同理用 `图层` / `实时位置` 两颗按钮的 frame
+与 `card.minY` 断言。
+
+图层菜单那条（`MapControlsUITests.testLayerButtonOpensMenuAndSwitchesMapType`）
+还按 frame 钉了**形态**：三个选项都在图层浮标**上方**、竖排一列 —— 1.0.14 之前
+是向左弹出的横向卡片，用户嫌「往左有点丑」。
 
 这条也顺带钉住了**安全区高度必须读对**：`bottomPanelContentInset` 读成 0 时
 （SwiftUI 的 `GeometryReader` 在 ignore 过安全区的视图里恒返回 0，

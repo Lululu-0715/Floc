@@ -50,7 +50,10 @@ final class MapControlsUITests: XCTestCase {
         try requireMainScreen(app)
 
         let settings = app.buttons["设置"]
-        XCTAssertTrue(settings.isHittable, "「设置」按钮存在但不可点（被别的视图盖住了）")
+        // `requireMainScreen` 只等「存在」，而按钮刚出现的那几帧还可能被启动动画
+        // 压着（`isHittable` 一时为假）。实测整轮跑的时候这条会偶发失败、
+        // 单独重跑必过 —— 属于模拟器时序，不能拿它判红。
+        XCTAssertTrue(waitForHittable(settings), "「设置」按钮存在但不可点（被别的视图盖住了）")
         settings.tap()
 
         XCTAssertTrue(
@@ -146,14 +149,15 @@ final class MapControlsUITests: XCTestCase {
                            "点「开启虚拟定位」（置灰）穿透到了地图，产生了选点")
         }
 
-        // 2) 面板左侧的内边距（14pt，任何一行都在它右边），是最典型的「玻璃空白处」。
+        // 2) 面板左侧的内边距（二十几 pt，任何一行都在它右边），是最典型的
+        //    「玻璃空白处」。
         start.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5))
             .withOffset(CGVector(dx: -7, dy: 0))
             .tap()
         Thread.sleep(forTimeInterval: 1.0)
         XCTAssertEqual(coordinateLabel(app), before, "点面板左侧留白穿透到了地图")
 
-        // 3) 动作按钮下方的那条内边距（面板底边与按钮之间还有 14pt）。
+        // 3) 动作按钮下方的那条内边距（面板底边与按钮之间还有二十几 pt）。
         start.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 1))
             .withOffset(CGVector(dx: 0, dy: 6))
             .tap()
@@ -209,11 +213,12 @@ final class MapControlsUITests: XCTestCase {
         attach(app, name: "06-地图点击后")
     }
 
-    /// 图层浮标点得动 → 向左弹出菜单 → 选一项就收起并且当前图层跟着变。
+    /// 图层浮标点得动 → 向上弹出竖胶囊菜单 → 选一项就收起并且当前图层跟着变。
     ///
     /// 1.0.12 及以前图层切换是右下角竖排三个方块按钮，点一下就换，没有菜单。
-    /// 1.0.13 改成一颗圆浮标 + 自绘菜单（菜单圆角走 `menuCornerRadius`），
-    /// 这条把「弹得出、收得回、选得中」三件事一起钉住。
+    /// 1.0.13 初版是一颗圆浮标 + **向左**弹出的横向卡片（图标 + 文字 + 勾），
+    /// 用户嫌「这样往左有点丑」，1.0.14 改成**从图层圆钮上方长出来的竖胶囊、
+    /// 三个纯图标选项**。这条把「弹得出、弹在上方、收得回、选得中」一起钉住。
     func testLayerButtonOpensMenuAndSwitchesMapType() throws {
         let app = XCUIApplication()
         app.launch()
@@ -223,7 +228,8 @@ final class MapControlsUITests: XCTestCase {
         XCTAssertTrue(layer.waitForExistence(timeout: 10), "找不到「图层」浮标")
         XCTAssertTrue(layer.isHittable, "「图层」浮标存在但不可点（被别的视图盖住了）")
 
-        // 没点之前菜单不该在。三个选项都是菜单里的按钮，用的是图层名做标签。
+        // 没点之前菜单不该在。三个选项都是菜单里的按钮，用的是图层名做标签
+        // （界面上没有文字，纯图标 —— 标签只给可访问性用）。
         XCTAssertFalse(app.buttons["卫星"].exists, "还没点「图层」，菜单就已经展开了")
         let before = layer.value as? String
         print("[DUMP] 图层浮标 value=\(before ?? "（空）") frame=\(layer.frame)")
@@ -236,11 +242,27 @@ final class MapControlsUITests: XCTestCase {
             print("[DUMP] 第一次点「图层」没有弹出菜单，补点一次")
             layer.tap()
         }
-        XCTAssertTrue(app.buttons["卫星"].waitForExistence(timeout: 5),
+        let satellite = app.buttons["卫星"]
+        let standard = app.buttons["标准"]
+        let hybrid = app.buttons["混合"]
+        XCTAssertTrue(satellite.waitForExistence(timeout: 5),
                       "点了「图层」浮标没有弹出菜单")
+        XCTAssertTrue(standard.exists && hybrid.exists,
+                      "菜单里应当有「标准 / 卫星 / 混合」三项")
+        print("[DUMP] 图层浮标=\(layer.frame) 菜单三项="
+              + "\(standard.frame) / \(satellite.frame) / \(hybrid.frame)")
+
+        // 方向与形态：整列长在图层浮标**上方**（用户要的「往上展开」），
+        // 而且是竖排的一列（横向中心对齐）—— 横向卡片是上一版的样子。
+        XCTAssertLessThan(hybrid.frame.maxY, layer.frame.minY,
+                          "菜单没有长在图层浮标上方（还往左或往下弹）")
+        XCTAssertLessThan(standard.frame.minY, satellite.frame.minY, "菜单项不是竖排的")
+        XCTAssertLessThan(satellite.frame.minY, hybrid.frame.minY, "菜单项不是竖排的")
+        XCTAssertEqual(standard.frame.midX, satellite.frame.midX, accuracy: 2,
+                       "三个选项不在同一列上（不是竖胶囊）")
         attach(app, name: "07-图层菜单")
 
-        app.buttons["卫星"].tap()
+        satellite.tap()
         XCTAssertTrue(app.buttons["卫星"].waitForNonExistence(timeout: 5),
                       "选完图层菜单没有收起")
 
@@ -306,6 +328,23 @@ final class MapControlsUITests: XCTestCase {
         guard app.buttons["设置"].waitForExistence(timeout: 30) else {
             throw XCTSkip("App 停在引导流程里，测试前需要先跳过引导（见 Tests/README-ui-tests.md）")
         }
+    }
+
+    /// 等元素真的可点（最多 3 秒）。
+    ///
+    /// 「存在」不等于「可点」：App 刚 `launch()` 完的那几帧里，按钮已经在
+    /// 可访问性树上了，但启动动画 / 首次布局还没落定，`isHittable` 会一时为假。
+    /// 整轮跑的时候机器更忙，这个窗口更长 —— 直接断言就会偶发失败。
+    private func waitForHittable(_ element: XCUIElement,
+                                 timeout: TimeInterval = 3) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if element.isHittable { return true }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        print("[DUMP] 等不到可点：\(element) frame=\(element.frame) "
+              + "exists=\(element.exists) hittable=\(element.isHittable)")
+        return false
     }
 
     private func attach(_ app: XCUIApplication, name: String) {

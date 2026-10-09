@@ -86,8 +86,11 @@ final class SpoofEffectVerifier: ObservableObject {
     /// 开始一轮校验。
     ///
     /// - Parameters:
-    ///   - target: 目标点（**与地图同一套坐标**，即 `CoordinatePair.coordinate(for:)`
-    ///     的返回值）。回读到的坐标与地图上画蓝点用的坐标同源，两者才能直接比。
+    ///   - target: 目标点，必须与回读值**同源** —— 回读走 `CLLocationManager`，
+    ///     它给的从来是 WGS-84（境内也不变，纠偏发生在地图侧），所以这里要传
+    ///     选点的 `wgs84` 表示（`CoordinatePair.wgs84.coordinate`），
+    ///     而不是地图体系的那一套。传错会整整差一个 GCJ 偏移（约 500 米），
+    ///     校验就恒定报「未生效」（1.0.13 的现场）。
     ///   - provider: 回读用的定位封装。每轮都会 `forceFresh`，避免拿缓存里的旧位置。
     ///   - attempts: 最多探几次。用户去系统设置里关开定位服务、再切回来的时间
     ///     通常十几秒，所以默认给到 10 次 × 3 秒 ≈ 30 秒。
