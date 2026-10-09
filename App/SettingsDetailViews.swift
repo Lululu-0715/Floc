@@ -254,11 +254,11 @@ struct ColorThemeSwatch: View {
     let palette: ThemePalette
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 9, style: .continuous)
+        RoundedRectangle(cornerRadius: GlassMetrics.inlineCornerRadius, style: .continuous)
             .fill(swatchFill)
             .frame(width: 32, height: 32)
             .overlay(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                RoundedRectangle(cornerRadius: GlassMetrics.inlineCornerRadius, style: .continuous)
                     .stroke(Color.primary.opacity(0.08), lineWidth: 1)
             )
     }
@@ -282,7 +282,7 @@ struct ColorThemePreview: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: GlassMetrics.cardCornerRadius, style: .continuous)
                 .fill(palette.isSystem
                       // 不能用 `Color.blue.gradient`：那个 shape style 是
                       // iOS 16 才有的，最低版本是 15.0，编译直接报错。
@@ -304,7 +304,7 @@ struct ColorThemePreview: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
                 .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: GlassMetrics.inlineCornerRadius, style: .continuous)
                         .fill(Color.white.opacity(0.22))
                 )
 
@@ -324,13 +324,13 @@ struct ColorThemePreview: View {
             }
             .padding(12)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: GlassMetrics.cardCornerRadius, style: .continuous)
                     .fill(Color.black.opacity(0.12))
             )
             .padding(12)
         }
         .frame(height: 148)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: GlassMetrics.cardCornerRadius, style: .continuous))
         .overlay(
             Text(palette.displayName)
                 .font(.system(size: 11, weight: .semibold))
@@ -945,7 +945,7 @@ struct AboutFlocView: View {
                         .interpolation(.high)
                         .scaledToFit()
                         .frame(width: 68, height: 68)
-                        .clipShape(RoundedRectangle(cornerRadius: 15.5, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: GlassMetrics.cardCornerRadius, style: .continuous))
 
                     Text("Floc")
                         .font(.title3.bold())

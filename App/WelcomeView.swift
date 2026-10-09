@@ -142,7 +142,7 @@ struct WelcomeView: View {
     /// （用 `solidGradient` 只取前两色，第三色是收尾的浅色，
     /// 铺上去会把白色图标吃掉）。
     private func iconTile(_ systemImage: String) -> some View {
-        RoundedRectangle(cornerRadius: 28, style: .continuous)
+        RoundedRectangle(cornerRadius: GlassMetrics.heroCornerRadius, style: .continuous)
             .fill(
                 theme.isThemed
                     ? theme.palette.solidGradient

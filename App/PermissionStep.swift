@@ -81,7 +81,7 @@ struct PermissionStep: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: GlassMetrics.cardCornerRadius))
     }
 }
 
@@ -103,7 +103,7 @@ struct PermissionRow: View {
                 .foregroundStyle(isGranted ? Color.green : Color.orange)
                 .background(
                     (isGranted ? Color.green : Color.orange).opacity(0.12),
-                    in: RoundedRectangle(cornerRadius: 9)
+                    in: RoundedRectangle(cornerRadius: GlassMetrics.inlineCornerRadius)
                 )
 
             VStack(alignment: .leading, spacing: 5) {
@@ -135,7 +135,7 @@ struct PermissionRow: View {
             }
         }
         .padding(16)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: GlassMetrics.cardCornerRadius))
     }
 }
 

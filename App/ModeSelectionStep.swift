@@ -27,7 +27,7 @@ struct ModeSelectionStep: View {
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+                .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: GlassMetrics.inlineCornerRadius))
             }
         }
     }
@@ -50,7 +50,7 @@ private struct ModeCard: View {
                     .foregroundStyle(isSelected ? Color.white : accent)
                     .background(
                         isSelected ? accent : accent.opacity(0.12),
-                        in: RoundedRectangle(cornerRadius: 9)
+                        in: RoundedRectangle(cornerRadius: GlassMetrics.inlineCornerRadius)
                     )
 
                 VStack(alignment: .leading, spacing: 6) {
@@ -71,11 +71,11 @@ private struct ModeCard: View {
             }
             .padding(16)
             .background(
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(cornerRadius: GlassMetrics.cardCornerRadius)
                     .fill(Color(.secondarySystemGroupedBackground))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(cornerRadius: GlassMetrics.cardCornerRadius)
                     .stroke(isSelected ? accent : Color.clear, lineWidth: 2)
             )
         }

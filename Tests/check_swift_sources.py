@@ -733,6 +733,87 @@ def check_liquid_glass() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 10. 圆角档位
+# ---------------------------------------------------------------------------
+
+# 1.0.12 收敛后的四档。`GlassMetrics` 是唯一真源，界面侧不许再写裸数字。
+CORNER_RADIUS_TIERS = {
+    "inlineCornerRadius": "10",
+    "cardCornerRadius": "16",
+    "mapCornerRadius": "20",
+    "heroCornerRadius": "28",
+}
+
+# 唯一允许出现裸数字 `cornerRadius:` 的文件（常量定义本身）。
+CORNER_ENTRY_FILE = "Shared/GlassCard.swift"
+
+BARE_CORNER_RE = re.compile(r"cornerRadius\s*:\s*[0-9]")
+
+
+def check_corner_radius_ladder() -> None:
+    """圆角只剩四档，且界面侧不许再写裸数字。
+
+    收敛前全项目散着 11 个数值（4 / 9 / 10 / 12 / 13 / 14 / 15.5 / 16 /
+    18 / 20 / 28），相邻两档差 1~2pt，肉眼分不出、代码里却在「改一处漏
+    一处」。这里锁三件事：
+
+      1. `GlassMetrics` 里四档常量齐全、值就是约定好的 10 / 16 / 20 / 28
+         —— 防止有人图省事就地改一个数，档位又裂开；
+      2. `App/` 与 `Shared/` 下除 `GlassCard.swift` 外，任何 Swift 文件
+         里都不出现 `cornerRadius: <数字>`；
+      3. `mapPanelCornerRadius` 必须挂在 `mapCornerRadius` 上（两个名字、
+         一个值）。面板与浮层将来要拆开，只改定义那一行就够。
+    """
+    glass_path = ROOT / CORNER_ENTRY_FILE
+    if not glass_path.exists():
+        fail(f"找不到 {CORNER_ENTRY_FILE}")
+        return
+
+    source = glass_path.read_text(encoding="utf-8")
+
+    for name, value in CORNER_RADIUS_TIERS.items():
+        pattern = re.compile(
+            rf"static\s+let\s+{name}\s*:\s*CGFloat\s*=\s*{value}\b"
+        )
+        if not pattern.search(source):
+            fail(
+                f"{CORNER_ENTRY_FILE} 里的 `{name}` 不是 {value}：四档圆角是"
+                "这个项目的设计约定，要改档位得连本检查一起改"
+            )
+
+    if not re.search(
+        r"static\s+let\s+mapPanelCornerRadius\s*:\s*CGFloat\s*=\s*"
+        r"mapCornerRadius\b",
+        source,
+    ):
+        fail(
+            f"{CORNER_ENTRY_FILE} 里的 `mapPanelCornerRadius` 不再是 "
+            "`mapCornerRadius` 的别名 —— 面板与浮层的圆角会各自漂移"
+        )
+
+    scanned = 0
+    for path in sorted(
+        list((ROOT / "App").rglob("*.swift"))
+        + list((ROOT / "Shared").rglob("*.swift"))
+    ):
+        rel = path.relative_to(ROOT).as_posix()
+        if rel == CORNER_ENTRY_FILE:
+            continue
+        scanned += 1
+        for index, line in enumerate(
+            path.read_text(encoding="utf-8").splitlines()
+        ):
+            if BARE_CORNER_RE.search(line):
+                fail(
+                    f"{rel}:{index + 1} 用了裸数字圆角，应改走 GlassMetrics：\n"
+                    f"      {line.strip()}"
+                )
+
+    if scanned == 0:
+        fail("没扫到任何界面文件：检查脚本的路径定位已失效")
+
+
+# ---------------------------------------------------------------------------
 # 主流程
 # ---------------------------------------------------------------------------
 
@@ -746,34 +827,37 @@ def main() -> int:
         + list((ROOT / "Tests").rglob("*.swift"))
     )
 
-    print(f"\n[1/9] 括号配平（{len(swift_files)} 个 Swift 文件）")
+    print(f"\n[1/10] 括号配平（{len(swift_files)} 个 Swift 文件）")
     for path in swift_files:
         check_balance(path, path.read_text(encoding="utf-8"))
     print(f"      已检查 {len(swift_files)} 个文件")
 
-    print("\n[2/9] 桥接头与 Go 导出对齐")
+    print("\n[2/10] 桥接头与 Go 导出对齐")
     check_bridging_header()
 
-    print("\n[3/9] 测试类型引用")
+    print("\n[3/10] 测试类型引用")
     check_test_references()
 
-    print("\n[4/9] project.yml 源路径")
+    print("\n[4/10] project.yml 源路径")
     check_project_sources()
 
-    print("\n[5/9] 资源完整性")
+    print("\n[5/10] 资源完整性")
     check_resources()
 
-    print("\n[6/9] 系统设置跳转")
+    print("\n[6/10] 系统设置跳转")
     check_settings_navigator()
 
-    print("\n[7/9] 出包口味")
+    print("\n[7/10] 出包口味")
     check_build_flavors()
 
-    print("\n[8/9] 地图页全面屏")
+    print("\n[8/10] 地图页全面屏")
     check_full_bleed_map()
 
-    print("\n[9/9] 液态玻璃可用性")
+    print("\n[9/10] 液态玻璃可用性")
     check_liquid_glass()
+
+    print("\n[10/10] 圆角档位")
+    check_corner_radius_ladder()
 
     print("\n" + "=" * 60)
 

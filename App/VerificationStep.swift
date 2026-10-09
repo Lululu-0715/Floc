@@ -72,7 +72,7 @@ struct VerificationStep: View {
             Spacer(minLength: 0)
         }
         .padding(16)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: GlassMetrics.cardCornerRadius))
     }
 
     private var resultList: some View {
@@ -106,7 +106,7 @@ struct VerificationStep: View {
                 }
             }
         }
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: GlassMetrics.cardCornerRadius))
     }
 
     private var actionRow: some View {

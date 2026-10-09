@@ -466,13 +466,18 @@ python3 Tests/check_localization.py
 python3 Tests/check_swift_sources.py
 ```
 
-在没有 Xcode 的环境（比如 CI 容器）里做力所能及的校验：
+在没有 Xcode 的环境（比如 CI 容器）里做力所能及的校验，共 10 小项：
 
-- 38 个 Swift 文件的括号 / 引号配平
+- `App/`、`Shared/`、`Tests/` 下全部 Swift 文件的括号 / 引号配平
 - 桥接头声明与 Go 的 `//export` 函数逐一对齐（少一个就是链接错误）
 - 测试中引用的类型确实存在（捕捉拼写错误）
 - `project.yml` 引用的源目录存在
 - 资源文件与三语言目录齐全
+- 跳系统设置的 specifier 只出自 `Shared/SystemSettingsNavigator.swift`
+- 出包口味的开关没有互相串味
+- 地图页的全面屏（`ignoresSafeArea` 只给地图层、不给浮层）
+- 液态玻璃 API 只待在 `Shared/GlassCard.swift` 的 `if #available(iOS 26, *)` 里
+- 圆角只剩 `GlassMetrics` 的四档，界面侧不许写裸数字
 
 ### 第三方代理模块一致性检查
 

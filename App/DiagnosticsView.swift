@@ -302,7 +302,7 @@ private struct LogRow: View {
                     .font(.caption2.weight(.bold))
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
-                    .background(color.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
+                    .background(color.opacity(0.15), in: RoundedRectangle(cornerRadius: GlassMetrics.inlineCornerRadius))
                     .foregroundStyle(color)
 
                 Text("\(entry.source)/\(entry.category)")

@@ -66,7 +66,7 @@ struct ProxySetupStep: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: GlassMetrics.cardCornerRadius))
 
             HStack(spacing: 10) {
                 Button {
@@ -157,7 +157,7 @@ struct ProxySetupStep: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: GlassMetrics.cardCornerRadius))
 
             StatusCard(
                 title: AppLocalization.string("模块连接"),
@@ -185,7 +185,7 @@ struct ProxySetupStep: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: GlassMetrics.cardCornerRadius))
 
             Button {
                 if thirdParty.copyModuleURLToPasteboard() {
@@ -265,7 +265,7 @@ struct StatusCard: View {
                 .frame(width: 9, height: 9)
         }
         .padding(16)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: GlassMetrics.cardCornerRadius))
     }
 }
 
@@ -318,7 +318,7 @@ struct InlineAlert: View {
                 Spacer(minLength: 0)
             }
             .padding(12)
-            .background(style.color.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+            .background(style.color.opacity(0.1), in: RoundedRectangle(cornerRadius: GlassMetrics.inlineCornerRadius))
 
         case .mapBanner:
             VStack(spacing: 6) {

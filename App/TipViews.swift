@@ -121,7 +121,7 @@ struct UsageGuideView: View {
 
     private var header: some View {
         HStack(spacing: 14) {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
+            RoundedRectangle(cornerRadius: GlassMetrics.cardCornerRadius, style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: [Color.blue, Color.cyan],
@@ -168,7 +168,7 @@ struct UsageGuideView: View {
         .padding(14)
         .background(
             Color(.secondarySystemGroupedBackground),
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            in: RoundedRectangle(cornerRadius: GlassMetrics.cardCornerRadius, style: .continuous)
         )
     }
 
@@ -184,7 +184,7 @@ struct UsageGuideView: View {
         .padding(14)
         .background(
             Color.orange.opacity(0.10),
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            in: RoundedRectangle(cornerRadius: GlassMetrics.cardCornerRadius, style: .continuous)
         )
     }
 }
@@ -201,7 +201,7 @@ struct TipDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 14) {
-                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    RoundedRectangle(cornerRadius: GlassMetrics.cardCornerRadius, style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: [Color.blue, Color.cyan],
