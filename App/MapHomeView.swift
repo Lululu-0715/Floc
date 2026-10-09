@@ -386,12 +386,16 @@ struct MapHomeView: View {
         .mapGlassSurface(cornerRadius: GlassMetrics.menuCornerRadius)
     }
 
-    /// 「实时位置」浮标：纯图标、蓝色实心圆。
+    /// 「实时位置」浮标：纯图标圆钮，与图层浮标**同款**（玻璃底 + 主色图标）。
     ///
     /// 点一下把地图跳到设备当前真实位置，并**把视野收进到街道尺度**
     /// （`MapLocationState.defaultViewportMeters`）。
     /// 长按回到已选点——选点才是这个应用的主角，所以「回到选点」比
     /// 「回到真实位置」更次级，放在长按上。
+    ///
+    /// 1.0.13 初版这里是**蓝底白图标**的实心圆，本意是用「全屏唯一的实心按钮」
+    /// 拉开层次；实际看起来那颗蓝跟其余玻璃圆钮不是一套东西，右侧一列两粒
+    /// 就它扎眼。改成同款玻璃圆钮，靠图标（准星 = 「把我放到我这儿」）区分。
     private var realLocationFloatingButton: some View {
         Button {
             goToRealLocation()
@@ -400,17 +404,15 @@ struct MapHomeView: View {
                 if realLocation.isLocating {
                     ProgressView()
                         .controlSize(.small)
-                        .tint(.white)
+                        .tint(theme.accent)
                 } else {
-                    Image(systemName: "location.fill")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.white)
+                    Image(systemName: "location.viewfinder")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Color.primary)
                 }
             }
             .frame(width: 44, height: 44)
-            // 实心蓝圆：这是这一屏唯一的「实心」按钮，为的是跟其余玻璃圆钮
-            // 拉开层次 —— 它做的是「把地图挪到我这儿」，是个即时动作。
-            .background(Circle().fill(Color.blue))
+            .mapGlassCapsule(nested: false)
             .contentShape(Circle())
         }
         .glassPressEffect(scale: 0.9)
