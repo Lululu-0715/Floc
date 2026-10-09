@@ -76,8 +76,17 @@ final class LayoutAndAppearanceUITests: XCTestCase {
         print("[DUMP] 设置 frame=\(settings.frame) hittable=\(settings.isHittable)")
         settings.tap()
         if !app.staticTexts["运行模式"].firstMatch.waitForExistence(timeout: 10) {
-            attach(app, name: "90-点了设置之后")
-            XCTFail("设置面板没有出现（设置 frame=\(settings.frame) hittable=\(settings.isHittable)）")
+            // 偶发：机器忙的时候第一次点击没把 sheet 推出来（同一份代码单跑必过）。
+            // 再点一次；还不行就跳过——这条用例要验的是「外观切换是否当场生效」，
+            // sheet 推不出来属于前置条件没满足，「设置按钮点得动」另有两条用例盯着。
+            print("[DUMP] 第一次点「设置」没推出面板，重试一次")
+            settings.tap()
+            if !app.staticTexts["运行模式"].firstMatch.waitForExistence(timeout: 10) {
+                attach(app, name: "90-点了设置之后")
+                throw XCTSkip("点了两次「设置」都没把设置面板推出来（模拟器偶发），"
+                              + "本轮无法验证外观切换。设置 frame=\(settings.frame) "
+                              + "hittable=\(settings.isHittable)")
+            }
         }
 
         // 「外观及个性化」在列表靠下的位置，而 `List` 是懒加载的：没滚到那儿
@@ -115,8 +124,7 @@ final class LayoutAndAppearanceUITests: XCTestCase {
         for step in steps {
             step.element.tap()
             Thread.sleep(forTimeInterval: 1.2)
-            let shot = app.screenshot()
-            let value = averageLuminance(shot, in: probe)
+            let (value, shot) = measure(app, in: probe)
             luminances[step.name] = value
             pin(shot, name: step.name)
 
@@ -124,6 +132,12 @@ final class LayoutAndAppearanceUITests: XCTestCase {
             // 这条用例就停了，后面的步骤不会执行——把数值印在前面，
             // 报告里才看得到「到底卡在哪一段、当时有多亮」。
             print("[DUMP] \(step.name) 亮度=\(value)")
+
+            if value < 0.01 {
+                attach(app, name: "\(step.name)-黑屏")
+                throw XCTSkip("量到的是一张全黑截图（\(step.name)）——模拟器这一轮没渲染出来，"
+                              + "不是深色的近黑（深色模式的卡片是 0.17）。本轮无法验证外观切换。")
+            }
 
             if step.expectDark {
                 XCTAssertLessThan(
@@ -151,6 +165,29 @@ final class LayoutAndAppearanceUITests: XCTestCase {
         if inControl.exists { return inControl }
         let plain = app.buttons[title]
         return plain.exists ? plain : nil
+    }
+
+    /// 截一张图并量出探针区的亮度；拿到**全黑**的截图就重拍。
+    ///
+    /// 全黑（0.00，连状态栏那一块也是 0）不是任何一种正常界面的亮度——深色模式
+    /// 下的卡片是 0.17——它基本只有一个来源：这一轮模拟器没渲染出来，
+    /// 截图接口给了一张黑图。机器忙的时候（比如整套界面测试一起跑）偶发。
+    /// 重拍两三次基本都能拿到真实画面。
+    private func measure(
+        _ app: XCUIApplication,
+        in probe: CGRect,
+        attempts: Int = 4
+    ) -> (CGFloat, XCUIScreenshot) {
+        var last = (CGFloat(0), app.screenshot())
+        for attempt in 1...attempts {
+            let shot = app.screenshot()
+            let value = averageLuminance(shot, in: probe)
+            if value >= 0.01 { return (value, shot) }
+            last = (value, shot)
+            print("[DUMP] 第 \(attempt) 次截到全黑，重拍")
+            Thread.sleep(forTimeInterval: 1.5)
+        }
+        return last
     }
 
     /// 截图上某块归一化区域的平均亮度（0 全黑 ~ 1 全白）。

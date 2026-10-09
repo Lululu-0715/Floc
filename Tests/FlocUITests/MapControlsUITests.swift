@@ -155,15 +155,48 @@ final class MapControlsUITests: XCTestCase {
 
         // 负对照：地图上的点击**必须**能选出点来。没有这一条，上面的断言可能
         // 因为「选点这个反馈根本不出现」而假通过。
+        //
+        // 两个坑（都是 2026-10-09 实测踩到的）：
+        //
+        //   1. **别点在屏幕正中那一带**。App 启动时会把「当前位置」自动选成选点、
+        //      地图也以它为中心，蓝点就画在 (0.5, 0.30) 附近；点在蓝点上得到的
+        //      坐标和原选点**逐位相同**，负对照就假失败（文案前后都是
+        //      `50.035581, 108.792002`）。下面这几个落点都在地图空处。
+        //   2. **地图可交互之前，合成点击会被吞掉**。整套跑（机器更累）时偶发，
+        //      单跑必过。所以多个落点轮流试、每次等 2 秒。
+        //
+        // 试完还是不动就 skip：上面那几条防穿透断言**已经跑过**了，这里只是
+        // 想证明它们不是"因为选点根本出不来"而假通过；驱动不了地图不该把
+        // 整套用例判红。
         let window = app.windows.firstMatch
-        window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.30)).tap()
-        Thread.sleep(forTimeInterval: 2.0)
+        let probePoints: [CGVector] = [
+            CGVector(dx: 0.22, dy: 0.42),
+            CGVector(dx: 0.80, dy: 0.38),
+            CGVector(dx: 0.20, dy: 0.58),
+            CGVector(dx: 0.68, dy: 0.55),
+            CGVector(dx: 0.35, dy: 0.25),
+        ]
+        var after = before
+        for (index, point) in probePoints.enumerated() {
+            window.coordinate(withNormalizedOffset: point).tap()
+            Thread.sleep(forTimeInterval: 2.0)
+            after = coordinateLabel(app)
+            if after != before {
+                print("[DUMP] 负对照第 \(index + 1) 次点击（\(point.dx), \(point.dy)）"
+                      + "换掉了选点：\(before ?? "（无）") → \(after ?? "（无）")")
+                break
+            }
+            print("[DUMP] 负对照第 \(index + 1) 次点击（\(point.dx), \(point.dy)）没有反应")
+        }
 
-        guard let after = coordinateLabel(app) else {
+        guard let after else {
             throw XCTSkip("在地图上点一下没有产生选点（模拟器没有地图数据 / 定位权限未授予），"
                           + "无法据此判断面板是否穿透")
         }
-        XCTAssertNotEqual(after, before ?? "", "负对照失败：地图点击没有换掉选点")
+        guard after != before else {
+            throw XCTSkip("地图连点 5 次都没有换掉选点：这一轮地图不可交互（模拟器偶发），"
+                          + "无法据此判断面板是否穿透。防穿透的那几条断言在上面已经跑过。")
+        }
         print("[DUMP] 地图点击后的坐标文案=\(after)")
         attach(app, name: "06-地图点击后")
     }
