@@ -125,19 +125,19 @@ index 24f7ed0..e66da9c 100644
          environmentChecks = results
          reload()
 diff --git a/App/MapHomeView.swift b/App/MapHomeView.swift
-index d3a8c4d..7459522 100644
+index 8e52fe2..bd1f5f7 100644
 --- a/App/MapHomeView.swift
 +++ b/App/MapHomeView.swift
-@@ -15,8 +15,6 @@ struct MapHomeView: View {
+@@ -18,8 +18,6 @@ struct MapHomeView: View {
  
      @ObservedObject var setup: SetupCoordinator
      @ObservedObject private var proxy = ProxyManager.shared
 -    @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
 -    @ObservedObject private var runtimeMode = RuntimeModeStore.shared
      @ObservedObject private var remoteConfiguration = AppRemoteConfigurationStore.shared
-     #if !PURE_BUILD
-     @ObservedObject private var license = LicenseManager.shared
-@@ -528,38 +526,24 @@ struct MapHomeView: View {
+     /// 配色主题。主按钮的强调色、玻璃的染色都从这里取。
+     @ObservedObject private var theme = ThemeStore.shared
+@@ -554,38 +552,24 @@ struct MapHomeView: View {
      private var statusRow: some View {
          HStack(spacing: 8) {
              StatusPill(
@@ -189,7 +189,7 @@ index d3a8c4d..7459522 100644
                  )
              }
  
-@@ -800,9 +784,7 @@ struct MapHomeView: View {
+@@ -833,9 +817,7 @@ struct MapHomeView: View {
  
          // 进入主界面就刷新一次环境状态，让用户立刻看到还差什么。
          Task {
@@ -200,7 +200,7 @@ index d3a8c4d..7459522 100644
                  await proxy.verifyCertificateTrust()
                  await proxy.verifyWiFiProxy()
              }
-@@ -838,32 +820,23 @@ struct MapHomeView: View {
+@@ -871,32 +853,23 @@ struct MapHomeView: View {
      /// 注意 MapLocationState 初始化时会把 isEnabled 置为 false，
      /// 这里处理的是「同一次运行中从设置页返回」这种情况。
      private func restoreActiveState(pair: CoordinateConverter.CoordinatePair) async {
@@ -248,7 +248,7 @@ index d3a8c4d..7459522 100644
          }
      }
  
-@@ -883,7 +856,7 @@ struct MapHomeView: View {
+@@ -916,7 +889,7 @@ struct MapHomeView: View {
              // 进后台前的最后一次自救。音频一旦被别的应用抢走，播放停掉，
              // 进程随后就被系统挂起——那一刻之后我们再也跑不了任何代码，
              // 所以「检查播放是否还活着」只能放在这里。
@@ -257,7 +257,7 @@ index d3a8c4d..7459522 100644
              BackgroundKeepAlive.shared.resumeIfNeeded()
  
          case .active:
-@@ -904,7 +877,7 @@ struct MapHomeView: View {
+@@ -937,7 +910,7 @@ struct MapHomeView: View {
      /// 变成 `.stopped`，所以这里必须实际探一次代理是否还活着，不能只看状态。
      /// 保活同理——`isAlive` 问的是播放器，而不是我们记的布尔标志。
      private func recoverAfterForeground() {
@@ -266,7 +266,7 @@ index d3a8c4d..7459522 100644
  
          if !BackgroundKeepAlive.shared.isAlive {
              RuntimeLogger.warn("APP", "KeepAlive", "回前台时保活已失效，重新拉起")
-@@ -919,7 +892,7 @@ struct MapHomeView: View {
+@@ -952,7 +925,7 @@ struct MapHomeView: View {
              proxy.stop()
  
              // 停掉之后 `status` 变成 `.stopped`，`restoreActiveState` 会把它重新拉起来。
@@ -275,7 +275,7 @@ index d3a8c4d..7459522 100644
              await restoreActiveState(pair: pair)
  
              await proxy.verifyWiFiProxy()
-@@ -1010,63 +983,46 @@ struct MapHomeView: View {
+@@ -1053,63 +1026,46 @@ struct MapHomeView: View {
      #endif
  
      private func startSpoofing(pair: CoordinateConverter.CoordinatePair) async {
@@ -373,7 +373,7 @@ index d3a8c4d..7459522 100644
          }
      }
  
-@@ -1082,29 +1038,21 @@ struct MapHomeView: View {
+@@ -1125,29 +1081,21 @@ struct MapHomeView: View {
      }
  
      private func stopSpoofing() async {
@@ -417,10 +417,10 @@ index d3a8c4d..7459522 100644
              latitude: pair?.wgs84.latitude ?? 0,
 diff --git a/App/ModeSelectionStep.swift b/App/ModeSelectionStep.swift
 deleted file mode 100644
-index d08b659..0000000
+index 384a027..0000000
 --- a/App/ModeSelectionStep.swift
 +++ /dev/null
-@@ -1,82 +0,0 @@
+@@ -1,84 +0,0 @@
 -import SwiftUI
 -
 -/// 引导第一步：选择运行模式。
@@ -462,15 +462,17 @@ index d08b659..0000000
 -    let isSelected: Bool
 -    let action: () -> Void
 -
+-    @Environment(\.themeAccent) private var accent
+-
 -    var body: some View {
 -        Button(action: action) {
 -            HStack(alignment: .top, spacing: 14) {
 -                Image(systemName: mode.systemImage)
 -                    .font(.title2)
 -                    .frame(width: 36, height: 36)
--                    .foregroundStyle(isSelected ? Color.white : Color.accentColor)
+-                    .foregroundStyle(isSelected ? Color.white : accent)
 -                    .background(
--                        isSelected ? Color.accentColor : Color.accentColor.opacity(0.12),
+-                        isSelected ? accent : accent.opacity(0.12),
 -                        in: RoundedRectangle(cornerRadius: 9)
 -                    )
 -
@@ -488,7 +490,7 @@ index d08b659..0000000
 -
 -                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
 -                    .font(.title3)
--                    .foregroundStyle(isSelected ? Color.accentColor : Color(.tertiaryLabel))
+-                    .foregroundStyle(isSelected ? accent : Color(.tertiaryLabel))
 -            }
 -            .padding(16)
 -            .background(
@@ -497,17 +499,17 @@ index d08b659..0000000
 -            )
 -            .overlay(
 -                RoundedRectangle(cornerRadius: 14)
--                    .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+-                    .stroke(isSelected ? accent : Color.clear, lineWidth: 2)
 -            )
 -        }
 -        .buttonStyle(.plain)
 -    }
 -}
 diff --git a/App/ProxySetupStep.swift b/App/ProxySetupStep.swift
-index 284db0b..a23a07f 100644
+index 09bbc91..18482a4 100644
 --- a/App/ProxySetupStep.swift
 +++ b/App/ProxySetupStep.swift
-@@ -1,37 +1,17 @@
+@@ -1,11 +1,12 @@
  import SwiftUI
  
 -/// 引导第三步：按所选模式配置代理环境。
@@ -520,7 +522,9 @@ index 284db0b..a23a07f 100644
      @ObservedObject private var proxy = ProxyManager.shared
 -    @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
  
-     @State private var isStarting = false
+     /// 主题强调色。
+     @Environment(\.themeAccent) private var accent
+@@ -14,27 +15,6 @@ struct ProxySetupStep: View {
      @State private var errorMessage: String?
  
      var body: some View {
@@ -548,7 +552,7 @@ index 284db0b..a23a07f 100644
          VStack(alignment: .leading, spacing: 18) {
              StatusCard(
                  title: AppLocalization.string("代理服务"),
-@@ -112,6 +92,14 @@ struct ProxySetupStep: View {
+@@ -115,6 +95,14 @@ struct ProxySetupStep: View {
                  .disabled(isStarting)
              }
          }
@@ -563,7 +567,7 @@ index 284db0b..a23a07f 100644
      }
  
      private func startLocalProxy() async {
-@@ -134,103 +122,6 @@ struct ProxySetupStep: View {
+@@ -137,103 +125,6 @@ struct ProxySetupStep: View {
              ])
          }
      }
@@ -605,8 +609,8 @@ index 284db0b..a23a07f 100644
 -                        Text("\(index + 1)")
 -                            .font(.caption.weight(.bold))
 -                            .frame(width: 20, height: 20)
--                            .background(Color.accentColor.opacity(0.15), in: Circle())
--                            .foregroundStyle(Color.accentColor)
+-                            .background(accent.opacity(0.15), in: Circle())
+-                            .foregroundStyle(accent)
 -                        Text(instruction)
 -                            .font(.subheadline)
 -                            .fixedSize(horizontal: false, vertical: true)
@@ -667,7 +671,7 @@ index 284db0b..a23a07f 100644
  }
  
  /// 状态卡片。
-@@ -339,47 +230,3 @@ struct InlineAlert: View {
+@@ -342,49 +233,3 @@ struct InlineAlert: View {
          }
      }
  }
@@ -679,11 +683,13 @@ index 284db0b..a23a07f 100644
 -    let isSelected: Bool
 -    let action: () -> Void
 -
+-    @Environment(\.themeAccent) private var accent
+-
 -    var body: some View {
 -        Button(action: action) {
 -            HStack(spacing: 12) {
 -                Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
--                    .foregroundStyle(isSelected ? Color.accentColor : Color(.tertiaryLabel))
+-                    .foregroundStyle(isSelected ? accent : Color(.tertiaryLabel))
 -
 -                VStack(alignment: .leading, spacing: 3) {
 -                    Text(client.displayName)
@@ -716,7 +722,7 @@ index 284db0b..a23a07f 100644
 -    }
 -}
 diff --git a/App/SettingsDetailViews.swift b/App/SettingsDetailViews.swift
-index 57e536f..df93dfc 100644
+index a13d866..60f0fdb 100644
 --- a/App/SettingsDetailViews.swift
 +++ b/App/SettingsDetailViews.swift
 @@ -7,67 +7,6 @@ import SwiftUI
@@ -787,7 +793,7 @@ index 57e536f..df93dfc 100644
  // MARK: - 语言
  
  /// 界面语言选择。
-@@ -180,7 +119,6 @@ struct SimulationSettingsView: View {
+@@ -354,7 +293,6 @@ struct SimulationSettingsView: View {
      @ObservedObject var state: MapLocationState
  
      @ObservedObject private var proxy = ProxyManager.shared
@@ -795,7 +801,7 @@ index 57e536f..df93dfc 100644
  
      @State private var selfCheckResult: String?
  
-@@ -233,9 +171,7 @@ struct SimulationSettingsView: View {
+@@ -407,9 +345,7 @@ struct SimulationSettingsView: View {
              } header: {
                  SettingsSectionHeader(title: AppLocalization.string("定位模拟"))
              } footer: {
@@ -806,7 +812,7 @@ index 57e536f..df93dfc 100644
              }
  
              Section {
-@@ -276,221 +212,6 @@ struct SimulationSettingsView: View {
+@@ -450,221 +386,6 @@ struct SimulationSettingsView: View {
      }
  }
  
@@ -1028,7 +1034,7 @@ index 57e536f..df93dfc 100644
  // MARK: - 证书与环境
  
  /// 证书信任、Wi-Fi 代理与跳转。
-@@ -952,7 +673,6 @@ struct UserGuideView: View {
+@@ -1126,7 +847,6 @@ struct UserGuideView: View {
              (AppLocalization.string("失效说明"), .disableSpoofing),
              (AppLocalization.string("关闭 WiFi 代理"), .disableWiFiProxy),
              (TipKind.certificateTrust.settingsLabel, .certificateTrust),
@@ -1037,7 +1043,7 @@ index 57e536f..df93dfc 100644
      }
  }
 diff --git a/App/SettingsView.swift b/App/SettingsView.swift
-index b9a730c..f5954fb 100644
+index c80efd9..751b663 100644
 --- a/App/SettingsView.swift
 +++ b/App/SettingsView.swift
 @@ -6,7 +6,7 @@ import SwiftUI
@@ -1057,8 +1063,8 @@ index b9a730c..f5954fb 100644
 -    @ObservedObject private var runtimeMode = RuntimeModeStore.shared
      @ObservedObject private var remoteConfiguration = AppRemoteConfigurationStore.shared
      @ObservedObject private var appearance = AppearanceStore.shared
-     @ObservedObject private var fontScale = FontScaleStore.shared
-@@ -51,7 +49,6 @@ struct SettingsView: View {
+     @ObservedObject private var theme = ThemeStore.shared
+@@ -52,7 +50,6 @@ struct SettingsView: View {
                  #if !PURE_BUILD
                  accountSection
                  #endif
@@ -1066,7 +1072,7 @@ index b9a730c..f5954fb 100644
                  connectionSection
                  appearanceSection
                  aboutSection
-@@ -197,62 +194,26 @@ struct SettingsView: View {
+@@ -198,62 +195,26 @@ struct SettingsView: View {
      }
      #endif
  
@@ -1142,7 +1148,7 @@ index b9a730c..f5954fb 100644
              }
  
              SettingsStatusRow(
-@@ -404,16 +365,4 @@ struct SettingsView: View {
+@@ -413,16 +374,4 @@ struct SettingsView: View {
              ))
          }
      }
@@ -1266,7 +1272,7 @@ index ad4e930..23d05bd 100644
      }
  }
 diff --git a/App/SetupFlowView.swift b/App/SetupFlowView.swift
-index e733dd1..8e00fa9 100644
+index dd3d072..b884c8c 100644
 --- a/App/SetupFlowView.swift
 +++ b/App/SetupFlowView.swift
 @@ -2,13 +2,12 @@ import SwiftUI
@@ -1282,9 +1288,9 @@ index e733dd1..8e00fa9 100644
      @ObservedObject private var proxy = ProxyManager.shared
 -    @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
  
-     @State private var locationPermissionRequested = false
-     @State private var isVerifying = false
-@@ -28,9 +27,6 @@ struct SetupFlowView: View {
+     @Environment(\.themeAccent) private var accent
+ 
+@@ -30,9 +29,6 @@ struct SetupFlowView: View {
                      header
  
                      switch setup.currentStep {
@@ -1294,7 +1300,7 @@ index e733dd1..8e00fa9 100644
                      case .permissionRequest:
                          PermissionStep(
                              setup: setup,
-@@ -120,14 +116,10 @@ struct SetupFlowView: View {
+@@ -123,14 +119,10 @@ struct SetupFlowView: View {
  
      private var stepDescription: String {
          switch setup.currentStep {
@@ -1311,7 +1317,7 @@ index e733dd1..8e00fa9 100644
          case .verification:
              return AppLocalization.string("运行完整检测，确认每个环节都通了再开始使用。")
          }
-@@ -137,7 +129,7 @@ struct SetupFlowView: View {
+@@ -140,7 +132,7 @@ struct SetupFlowView: View {
  
      private var bottomBar: some View {
          HStack(spacing: 12) {
@@ -1320,7 +1326,7 @@ index e733dd1..8e00fa9 100644
                  Button {
                      setup.goBack()
                  } label: {
-@@ -162,7 +154,7 @@ struct SetupFlowView: View {
+@@ -165,7 +157,7 @@ struct SetupFlowView: View {
                  .padding(.vertical, 14)
              }
              .buttonStyle(.borderedProminent)
@@ -1329,7 +1335,7 @@ index e733dd1..8e00fa9 100644
          }
          .padding(.horizontal, 20)
          .padding(.vertical, 12)
-@@ -171,7 +163,6 @@ struct SetupFlowView: View {
+@@ -174,7 +166,6 @@ struct SetupFlowView: View {
  
      private var primaryButtonTitle: String {
          switch setup.currentStep {
@@ -1337,7 +1343,7 @@ index e733dd1..8e00fa9 100644
          case .permissionRequest: return AppLocalization.string("下一步")
          case .proxySetup: return AppLocalization.string("开始检测")
          case .verification: return AppLocalization.string("完成")
-@@ -208,99 +199,63 @@ struct SetupFlowView: View {
+@@ -211,99 +202,63 @@ struct SetupFlowView: View {
              detail: selfCheck
          ))
  
@@ -1483,7 +1489,7 @@ index e733dd1..8e00fa9 100644
  
          report = collected
 diff --git a/App/TipViews.swift b/App/TipViews.swift
-index 83e3f0c..6fcb170 100644
+index 2932520..5b2e75d 100644
 --- a/App/TipViews.swift
 +++ b/App/TipViews.swift
 @@ -13,7 +13,6 @@ enum TipKind {
@@ -1529,7 +1535,7 @@ index 83e3f0c..6fcb170 100644
      }
  }
 diff --git a/Resources/en.lproj/Localizable.strings b/Resources/en.lproj/Localizable.strings
-index 2a02cf7..44caed4 100644
+index 6e2bc30..26430eb 100644
 --- a/Resources/en.lproj/Localizable.strings
 +++ b/Resources/en.lproj/Localizable.strings
 @@ -24,16 +24,11 @@
@@ -1704,7 +1710,7 @@ index 458a1e9..7d8cfb0 100644
 +  "_note": "应用启动时拉取本文件，用于「不发版也能改行为」。blockedFromSystemVersion 写 \"27.0\" 这样的版本号，命中时界面会给兼容性警示；announcement 挂一条公告，announcementExpiresAt 到期后自动不再展示。三项都可以留空。1.0.8 起只剩应用内代理，原来的 moduleBaseURL 与 scriptVersion 已随第三方模式一起删除。"
  }
 diff --git a/Resources/zh-Hans.lproj/Localizable.strings b/Resources/zh-Hans.lproj/Localizable.strings
-index 3336239..7df608a 100644
+index ac98807..f21a9cb 100644
 --- a/Resources/zh-Hans.lproj/Localizable.strings
 +++ b/Resources/zh-Hans.lproj/Localizable.strings
 @@ -24,16 +24,11 @@
@@ -1866,7 +1872,7 @@ index 3336239..7df608a 100644
  "这里会显示作者的邮箱与公众号。发布前请在 Shared/AppContact.swift 里补上，否则用户想购买时找不到入口。" = "这里会显示作者的邮箱与公众号。发布前请在 Shared/AppContact.swift 里补上，否则用户想购买时找不到入口。";
  
 diff --git a/Resources/zh-Hant.lproj/Localizable.strings b/Resources/zh-Hant.lproj/Localizable.strings
-index ec1d015..6601dd0 100644
+index 0dcadcd..a4c6f2d 100644
 --- a/Resources/zh-Hant.lproj/Localizable.strings
 +++ b/Resources/zh-Hant.lproj/Localizable.strings
 @@ -24,16 +24,11 @@
