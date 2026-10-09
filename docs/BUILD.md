@@ -477,7 +477,23 @@ python3 Tests/check_swift_sources.py
 - 出包口味的开关没有互相串味
 - 地图页的全面屏（`ignoresSafeArea` 只给地图层、不给浮层）
 - 液态玻璃 API 只待在 `Shared/GlassCard.swift` 的 `if #available(iOS 26, *)` 里
-- 圆角只剩 `GlassMetrics` 的四档，界面侧不许写裸数字
+- 圆角只剩 `GlassMetrics` 的七档，界面侧不许写裸数字（`cornerRadius: <数字>`）
+
+圆角七档（定义在 `Shared/GlassCard.swift`，界面侧一律引用常量）：
+
+| 常量 | 值 | 用在哪 |
+|------|----|--------|
+| `inlineCornerRadius` | 10 | 标签、色板、图标底、日志徽标 |
+| `cardCornerRadius` | 16 | 卡片、分组容器、玻璃卡片 |
+| `menuCornerRadius` | 18 | 图层菜单、弹出式菜单 |
+| `mapCornerRadius` | 20 | 地图**小浮层**（搜索框、图层切换、悬浮按钮） |
+| `buttonCornerRadius` | 23 | 主按钮胶囊（46pt 高按钮的半高） |
+| `heroCornerRadius` | 28 | 欢迎页大图标等 hero 容器 |
+| `mapPanelCornerRadius` | 44 | 地图**底部大卡片**（同心圆角 = 屏幕 55 − 留边 12 ≈ 43，取 44） |
+
+`mapCornerRadius` 与 `mapPanelCornerRadius` 是**两个独立档，不许合并**：
+前者是浮在地图上的一小块，后者是左右贴屏幕边的大面。检查脚本同时盯着
+「七档的值两两不同」和「`GlassMetrics` 里不许冒出没登记的 `*CornerRadius`」。
 
 ### 第三方代理模块一致性检查
 

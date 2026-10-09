@@ -736,12 +736,19 @@ def check_liquid_glass() -> None:
 # 10. 圆角档位
 # ---------------------------------------------------------------------------
 
-# 1.0.12 收敛后的四档。`GlassMetrics` 是唯一真源，界面侧不许再写裸数字。
+# 1.0.13 扩展后的七档，按值升序。`GlassMetrics` 是唯一真源，界面侧不许再写裸数字。
+#
+# 特别注意最后两条不是一回事：`mapCornerRadius` 是「地图小浮层」（四周留边
+# 的浮块），`mapPanelCornerRadius` 是「地图底部大卡片」（左右贴屏幕边的大面）。
+# 两个值差一倍多，**不许合并成一个**，所以这里也分开登记。
 CORNER_RADIUS_TIERS = {
     "inlineCornerRadius": "10",
     "cardCornerRadius": "16",
+    "menuCornerRadius": "18",
     "mapCornerRadius": "20",
+    "buttonCornerRadius": "23",
     "heroCornerRadius": "28",
+    "mapPanelCornerRadius": "44",
 }
 
 # 唯一允许出现裸数字 `cornerRadius:` 的文件（常量定义本身）。
@@ -751,18 +758,24 @@ BARE_CORNER_RE = re.compile(r"cornerRadius\s*:\s*[0-9]")
 
 
 def check_corner_radius_ladder() -> None:
-    """圆角只剩四档，且界面侧不许再写裸数字。
+    """圆角只有七档，且界面侧不许再写裸数字。
 
     收敛前全项目散着 11 个数值（4 / 9 / 10 / 12 / 13 / 14 / 15.5 / 16 /
     18 / 20 / 28），相邻两档差 1~2pt，肉眼分不出、代码里却在「改一处漏
-    一处」。这里锁三件事：
+    一处」。1.0.12 收敛成四档，1.0.13 为地图页改版与设置 Sheet 补了三档。
+    这里锁五件事：
 
-      1. `GlassMetrics` 里四档常量齐全、值就是约定好的 10 / 16 / 20 / 28
-         —— 防止有人图省事就地改一个数，档位又裂开；
-      2. `App/` 与 `Shared/` 下除 `GlassCard.swift` 外，任何 Swift 文件
-         里都不出现 `cornerRadius: <数字>`；
-      3. `mapPanelCornerRadius` 必须挂在 `mapCornerRadius` 上（两个名字、
-         一个值）。面板与浮层将来要拆开，只改定义那一行就够。
+      1. `GlassMetrics` 里七档常量齐全、值就是约定好的
+         10 / 16 / 18 / 20 / 23 / 28 / 44 —— 防止有人图省事就地改一个数，
+         档位又裂开；
+      2. 七档**源码里实际写的值**两两不同 —— 「两个名字一个数」等于假档位，
+         不算一档；
+      3. `GlassMetrics` 里不许冒出没登记的 `*CornerRadius` 常量 —— 加了
+         新档就得连本检查一起改，别让档位偷偷繁殖；
+      4. 地图小浮层（`mapCornerRadius` = 20）与地图底部大卡片
+         （`mapPanelCornerRadius` = 44）必须各留各的值，**不许并成别名**；
+      5. `App/` 与 `Shared/` 下除 `GlassCard.swift` 外，任何 Swift 文件
+         里都不出现 `cornerRadius: <数字>`。
     """
     glass_path = ROOT / CORNER_ENTRY_FILE
     if not glass_path.exists():
@@ -777,18 +790,59 @@ def check_corner_radius_ladder() -> None:
         )
         if not pattern.search(source):
             fail(
-                f"{CORNER_ENTRY_FILE} 里的 `{name}` 不是 {value}：四档圆角是"
+                f"{CORNER_ENTRY_FILE} 里的 `{name}` 不是 {value}：七档圆角是"
                 "这个项目的设计约定，要改档位得连本检查一起改"
             )
 
-    if not re.search(
+    # 七档必须是七个**不同**的值。这里读的是源码里实际写的数（不是登记表），
+    # 因为「两个名字一个数」= 假档位：那说明这两个语义其实是一档，要么给
+    # 独立的值、要么合并回一档，别占两个名字。
+    observed = dict(
+        re.findall(
+            r"static\s+let\s+(\w+CornerRadius)\s*:\s*CGFloat\s*=\s*([0-9][0-9.]*)",
+            source,
+        )
+    )
+    numbers = list(observed.values())
+    duplicated = sorted({v for v in numbers if numbers.count(v) > 1})
+    if duplicated:
+        fail(
+            f"{CORNER_ENTRY_FILE} 里有两条圆角档位用了同一个值："
+            + " / ".join(duplicated)
+            + " —— 两个名字一个数等于假档位，请给独立的值或合并档位"
+            "（`mapCornerRadius` 与 `mapPanelCornerRadius` 尤其必须分开）"
+        )
+
+    # 登记表必须与 GlassCard.swift 里真实存在的常量**完全一致**：
+    # 少了 = 有人加了新档没登记；多了 = 常量被删了检查还留着。
+    declared = set(
+        re.findall(r"static\s+let\s+(\w+CornerRadius)\s*:\s*CGFloat\s*=", source)
+    )
+    registered = set(CORNER_RADIUS_TIERS)
+    if declared - registered:
+        fail(
+            "GlassMetrics 里有没登记的圆角档位："
+            + " / ".join(sorted(declared - registered))
+            + " —— 请在 CORNER_RADIUS_TIERS 里登记它的值，别让档位偷偷繁殖"
+        )
+    if registered - declared:
+        fail(
+            "CORNER_RADIUS_TIERS 里登记了不存在的圆角档位："
+            + " / ".join(sorted(registered - declared))
+        )
+
+    # 反向守卫：大卡片与小浮层必须是两个独立的值。以前这里是「必须写成
+    # mapCornerRadius 的别名」，1.0.13 反过来 —— 44 与 20 差一倍多，
+    # 并回去这张大卡片就塌了。
+    if re.search(
         r"static\s+let\s+mapPanelCornerRadius\s*:\s*CGFloat\s*=\s*"
         r"mapCornerRadius\b",
         source,
     ):
         fail(
-            f"{CORNER_ENTRY_FILE} 里的 `mapPanelCornerRadius` 不再是 "
-            "`mapCornerRadius` 的别名 —— 面板与浮层的圆角会各自漂移"
+            f"{CORNER_ENTRY_FILE} 里的 `mapPanelCornerRadius` 又并回 "
+            "`mapCornerRadius` 的别名了 —— 地图底部大卡片（44）与地图小浮层"
+            "（20）是两个独立档，合并会让大卡片的圆角塌成浮层的圆角"
         )
 
     scanned = 0
