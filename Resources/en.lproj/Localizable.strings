@@ -434,10 +434,10 @@
 "主题会改变应用的强调色与页面配色，地图上的浮层会跟着染上主题色。选「跟随系统」即恢复默认的蓝色。" = "The theme changes the accent color and page tint of the app, and the map overlays pick it up too. Choose \"Follow system\" to go back to the default blue.";
 
 // Virtual location verification
-"未验证" = "Not verified";
+// `未验证` / `已生效` are already defined above for the connection-status
+// pills (certificate trust, Wi-Fi proxy) — reused here, not redefined.
 "验证中" = "Verifying";
 "正在校验…" = "Checking…";
-"已生效" = "In effect";
 "未生效" = "Not in effect";
 "重新验证" = "Verify again";
 "已验证 %@" = "Verified %@";
