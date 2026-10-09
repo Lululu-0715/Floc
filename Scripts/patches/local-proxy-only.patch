@@ -125,10 +125,10 @@ index 63c5722..d825f6c 100644
          environmentChecks = results
          reload()
 diff --git a/App/MapHomeView.swift b/App/MapHomeView.swift
-index 025de23..e6ed297 100644
+index 9a867fa..f0a1925 100644
 --- a/App/MapHomeView.swift
 +++ b/App/MapHomeView.swift
-@@ -18,8 +18,6 @@ struct MapHomeView: View {
+@@ -19,8 +19,6 @@ struct MapHomeView: View {
  
      @ObservedObject var setup: SetupCoordinator
      @ObservedObject private var proxy = ProxyManager.shared
@@ -137,7 +137,7 @@ index 025de23..e6ed297 100644
      @ObservedObject private var remoteConfiguration = AppRemoteConfigurationStore.shared
      /// 配色主题。主按钮的强调色、玻璃的染色都从这里取。
      @ObservedObject private var theme = ThemeStore.shared
-@@ -615,38 +613,24 @@ struct MapHomeView: View {
+@@ -738,38 +736,24 @@ struct MapHomeView: View {
      private var statusRow: some View {
          HStack(spacing: 8) {
              StatusPill(
@@ -189,7 +189,7 @@ index 025de23..e6ed297 100644
                  )
              }
  
-@@ -970,9 +954,7 @@ struct MapHomeView: View {
+@@ -1071,9 +1055,7 @@ struct MapHomeView: View {
  
          // 进入主界面就刷新一次环境状态，让用户立刻看到还差什么。
          Task {
@@ -200,7 +200,7 @@ index 025de23..e6ed297 100644
                  await proxy.verifyCertificateTrust()
                  await proxy.verifyWiFiProxy()
              }
-@@ -1014,32 +996,23 @@ struct MapHomeView: View {
+@@ -1142,32 +1124,23 @@ struct MapHomeView: View {
      /// 注意 MapLocationState 初始化时会把 isEnabled 置为 false，
      /// 这里处理的是「同一次运行中从设置页返回」这种情况。
      private func restoreActiveState(pair: CoordinateConverter.CoordinatePair) async {
@@ -248,7 +248,7 @@ index 025de23..e6ed297 100644
          }
      }
  
-@@ -1059,7 +1032,7 @@ struct MapHomeView: View {
+@@ -1187,7 +1160,7 @@ struct MapHomeView: View {
              // 进后台前的最后一次自救。音频一旦被别的应用抢走，播放停掉，
              // 进程随后就被系统挂起——那一刻之后我们再也跑不了任何代码，
              // 所以「检查播放是否还活着」只能放在这里。
@@ -257,7 +257,7 @@ index 025de23..e6ed297 100644
              BackgroundKeepAlive.shared.resumeIfNeeded()
  
          case .active:
-@@ -1080,7 +1053,7 @@ struct MapHomeView: View {
+@@ -1229,7 +1202,7 @@ struct MapHomeView: View {
      /// 变成 `.stopped`，所以这里必须实际探一次代理是否还活着，不能只看状态。
      /// 保活同理——`isAlive` 问的是播放器，而不是我们记的布尔标志。
      private func recoverAfterForeground() {
@@ -266,7 +266,7 @@ index 025de23..e6ed297 100644
  
          if !BackgroundKeepAlive.shared.isAlive {
              RuntimeLogger.warn("APP", "KeepAlive", "回前台时保活已失效，重新拉起")
-@@ -1095,7 +1068,7 @@ struct MapHomeView: View {
+@@ -1244,7 +1217,7 @@ struct MapHomeView: View {
              proxy.stop()
  
              // 停掉之后 `status` 变成 `.stopped`，`restoreActiveState` 会把它重新拉起来。
@@ -275,7 +275,7 @@ index 025de23..e6ed297 100644
              await restoreActiveState(pair: pair)
  
              await proxy.verifyWiFiProxy()
-@@ -1196,67 +1169,49 @@ struct MapHomeView: View {
+@@ -1350,67 +1323,49 @@ struct MapHomeView: View {
      #endif
  
      private func startSpoofing(pair: CoordinateConverter.CoordinatePair) async {
@@ -317,7 +317,7 @@ index 025de23..e6ed297 100644
 -                    showBanner(AppLocalization.string("Wi-Fi 代理未生效，请检查代理配置"), style: .error)
 -                } else {
 -                    showBanner(AppLocalization.string("虚拟定位已开启"), style: .info)
--                    presentLocationRefreshPromptIfNeeded()
+-                    presentGuideIfNeeded()
 -                    // 开关亮了不等于生效：立刻回读一次确认真伪，结论摆在
 -                    // 面板上（用户不用再去别的 App 里对照位置）。
 -                    startVerification(pair: pair)
@@ -367,7 +367,7 @@ index 025de23..e6ed297 100644
 +                showBanner(AppLocalization.string("Wi-Fi 代理未生效，请检查代理配置"), style: .error)
 +            } else {
 +                showBanner(AppLocalization.string("虚拟定位已开启"), style: .info)
-                 presentLocationRefreshPromptIfNeeded()
+                 presentGuideIfNeeded()
 +                // 开关亮了不等于生效：立刻回读一次确认真伪，结论摆在
 +                // 面板上（用户不用再去别的 App 里对照位置）。
                  startVerification(pair: pair)
@@ -379,7 +379,7 @@ index 025de23..e6ed297 100644
          }
      }
  
-@@ -1276,29 +1231,21 @@ struct MapHomeView: View {
+@@ -1433,29 +1388,21 @@ struct MapHomeView: View {
          // 绿色的「已生效」，而位置早就放开了）。
          verifier.reset()
  
@@ -1541,7 +1541,7 @@ index 17cd364..8095486 100644
      }
  }
 diff --git a/Resources/en.lproj/Localizable.strings b/Resources/en.lproj/Localizable.strings
-index 0f20016..e447d78 100644
+index 05e11ef..f1e0d94 100644
 --- a/Resources/en.lproj/Localizable.strings
 +++ b/Resources/en.lproj/Localizable.strings
 @@ -24,16 +24,11 @@
@@ -1682,7 +1682,7 @@ index 0f20016..e447d78 100644
  "调整后立即生效，只影响本应用，不会改动系统的显示设置。" = "Takes effect immediately and only affects this app; it does not change system display settings.";
  "精度 %@ 米" = "%@ m accuracy";
  "版本信息" = "Version info";
-@@ -401,19 +350,6 @@
+@@ -397,19 +346,6 @@
  "%ld 天" = "%ld d";
  "%ld 小时" = "%ld h";
  "公众号" = "Official account";
@@ -1716,7 +1716,7 @@ index 458a1e9..7d8cfb0 100644
 +  "_note": "应用启动时拉取本文件，用于「不发版也能改行为」。blockedFromSystemVersion 写 \"27.0\" 这样的版本号，命中时界面会给兼容性警示；announcement 挂一条公告，announcementExpiresAt 到期后自动不再展示。三项都可以留空。1.0.8 起只剩应用内代理，原来的 moduleBaseURL 与 scriptVersion 已随第三方模式一起删除。"
  }
 diff --git a/Resources/zh-Hans.lproj/Localizable.strings b/Resources/zh-Hans.lproj/Localizable.strings
-index e65b1f9..9ab2ace 100644
+index c474dca..706685c 100644
 --- a/Resources/zh-Hans.lproj/Localizable.strings
 +++ b/Resources/zh-Hans.lproj/Localizable.strings
 @@ -24,16 +24,11 @@
@@ -1857,7 +1857,7 @@ index e65b1f9..9ab2ace 100644
  "调整后立即生效，只影响本应用，不会改动系统的显示设置。" = "调整后立即生效，只影响本应用，不会改动系统的显示设置。";
  "精度 %@ 米" = "精度 %@ 米";
  "版本信息" = "版本信息";
-@@ -401,19 +350,6 @@
+@@ -397,19 +346,6 @@
  "%ld 天" = "%ld 天";
  "%ld 小时" = "%ld 小时";
  "公众号" = "公众号";
@@ -1878,7 +1878,7 @@ index e65b1f9..9ab2ace 100644
  "这里会显示作者的邮箱与公众号。发布前请在 Shared/AppContact.swift 里补上，否则用户想购买时找不到入口。" = "这里会显示作者的邮箱与公众号。发布前请在 Shared/AppContact.swift 里补上，否则用户想购买时找不到入口。";
  
 diff --git a/Resources/zh-Hant.lproj/Localizable.strings b/Resources/zh-Hant.lproj/Localizable.strings
-index f782639..78677f8 100644
+index 0e4e705..27d5cc7 100644
 --- a/Resources/zh-Hant.lproj/Localizable.strings
 +++ b/Resources/zh-Hant.lproj/Localizable.strings
 @@ -24,16 +24,11 @@
@@ -2019,7 +2019,7 @@ index f782639..78677f8 100644
  "调整后立即生效，只影响本应用，不会改动系统的显示设置。" = "調整後立即生效，只影響本應用，不會改動系統的顯示設定。";
  "精度 %@ 米" = "精度 %@ 公尺";
  "版本信息" = "版本資訊";
-@@ -401,19 +350,6 @@
+@@ -397,19 +346,6 @@
  "%ld 天" = "%ld 天";
  "%ld 小时" = "%ld 小時";
  "公众号" = "公眾號";
