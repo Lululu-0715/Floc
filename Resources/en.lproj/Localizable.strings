@@ -369,10 +369,6 @@
 "手动代理" = "Manual proxy";
 "打开 Wi-Fi 代理设置" = "Open Wi-Fi proxy settings";
 "iOS 不提供直接跳到「配置代理」那一屏的接口，只能先到无线局域网列表再点两下。" = "iOS offers no API to jump straight to the Configure Proxy screen — you can only land on the Wi-Fi list and tap two more times.";
-"让位置立刻刷新" = "Make the location refresh now";
-"打开定位服务设置" = "Open Location Services settings";
-"我知道了" = "Got it";
-"如果地图还显示原来的位置：打开「设置 → 隐私与安全性 → 定位服务」，把总开关关掉，等 5–10 秒再打开。一次不行就多试几次，定位缓存需要被踢掉才会重新取坐标。" = "If the map still shows your old position: open Settings → Privacy & Security → Location Services, turn the master switch off, wait 5–10 seconds, then turn it back on. Try a few times if it does not take — the location cache has to be flushed before a new fix is requested.";
 "停顿 5–10 秒后重新打开。定位服务会重新查询当前坐标，这时拿到的就是改写后的位置。一次没生效就重复关开 2–3 次，定位缓存不会每次都乖乖吐出来。" = "Wait 5–10 seconds before switching it back on. Location Services re-queries your position, and this time it receives the rewritten coordinate. If it does not take, toggle it 2–3 more times — the cache does not always let go on the first try.";
 "要恢复真实位置时，先关掉虚拟定位，再重复第 2、3 步；同样可能需要多试几次才会刷回真实位置。" = "To restore your real location, turn spoofing off first, then repeat steps 2 and 3; it may likewise take a few tries before the real position comes back.";
 "测试卡密" = "Test license code";
@@ -448,3 +444,10 @@
 "虚拟定位已生效，系统当前的位置就是选点位置" = "The virtual location is in effect — the system's current location is the selected point";
 "读不到本机定位：请确认系统「定位服务」和本 App 的定位权限都已打开" = "Cannot read this device's location: make sure Location Services and this app's location permission are both on";
 "还没生效：请到「设置 → 隐私与安全性 → 定位服务」关一下再打开，然后点「重新验证」" = "Not in effect yet: turn Location Services off and on again in Settings → Privacy & Security → Location Services, then tap Verify again";
+"图层" = "Layers";
+"去设置" = "Open Settings";
+"不再提示" = "Don't show again";
+"打开「设置 → 隐私与安全性 → 定位服务」" = "Open Settings → Privacy & Security → Location Services";
+"把定位服务总开关关掉，等 5 秒以上" = "Turn the Location Services switch off and wait at least 5 seconds";
+"再打开总开关，回到本应用" = "Turn it back on, then return to this app";
+"定位服务把上一次的坐标缓存在系统里，关开一次才会重新取。一次不行就多试几次。" = "Location Services caches the previous fix, so it only re-reads after you toggle it. If once is not enough, try again a few times.";

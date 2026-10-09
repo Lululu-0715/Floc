@@ -29,6 +29,20 @@ settings:
       # "module 'Floc' was not compiled for testing"。
       # 只影响 Debug；Release 不开，不会影响出包。
       ENABLE_TESTABILITY: "YES"
+      # 界面测试用的注入口（`MapHomeView.applyUITestLaunchArguments`）靠这个
+      # 编译条件进门，`#if UI_TEST_HOOKS` 里的代码只进 Debug 构建，
+      # 出包产物里根本不存在（Release 不定义）。
+      #
+      # **为什么不用标准的 `DEBUG`**：本工程的 `#Preview`（ContentView /
+      # SpoofGuideOverlay）是包在 `#if DEBUG` 里的，而 `#Preview` 宏要靠
+      # `swift-plugin-server` 展开。在受限环境（沙箱 / CI）里插件进程起不来，
+      # 一开 `DEBUG` 就会报
+      #   external macro implementation type 'PreviewsMacros.SwiftUIView'
+      #   could not be found ... swift-plugin-server produced malformed response
+      # 于是**每一次 Debug 编译都失败**（出包走 Release，不受影响）。
+      # 也就是说：这个工程里 `DEBUG` 一直没定义过，`#Preview` 其实从来没展开过。
+      # 用一个只服务于界面测试的条件，既能拿到注入口，又不碰 `#Preview` 那摊。
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: UI_TEST_HOOKS
 
 targets:
   Floc:

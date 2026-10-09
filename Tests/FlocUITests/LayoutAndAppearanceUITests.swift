@@ -2,10 +2,12 @@ import XCTest
 
 /// 版式与外观的界面测试。
 ///
-/// 两个用例都对应 1.0.11 的真实反馈：
+/// 两个用例都对应真实的用户反馈：
 ///
-///   1. **底部面板要贴底三面齐平**（对齐 Apple 地图）——1.0.11 是左右各留
-///      16pt、下边守在安全区里的悬浮卡片。
+///   1. **底部卡片四周留边 12pt 的悬浮卡片**——1.0.11 是左右各留 16pt、下边
+///      守在安全区里的悬浮卡片，1.0.12 改成贴底 sheet，1.0.13 又按参考图改回
+///      悬浮卡片（左右底各 12pt、四角全圆）。这条路线来回走过两次，所以
+///      上下两条边都钉死在用例里。
 ///   2. **设置页里改外观档位要立刻生效**——用户的原话是「改深色了再改浅色
 ///      就回不去了，只能退出设置页面再进去」。设置页是 sheet（独立的呈现
 ///      上下文），根节点那份 `.preferredColorScheme` 盖不到它，所以这里
@@ -19,49 +21,66 @@ final class LayoutAndAppearanceUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    // MARK: - 底部面板贴底
+    // MARK: - 底部卡片：四周留边 12pt
 
-    /// 面板左、右两边要贴到屏幕边缘（原来各留 16pt），并且铺到安全区里。
-    func testBottomPanelIsFlushWithScreenEdges() throws {
+    /// 卡片左右各留 12pt、下沿不贴屏幕，两个浮标在卡片正上方。
+    ///
+    /// 「点击不穿透」由 `MapControlsUITests.testBottomPanelDoesNotLeakTapsToMap`
+    /// 盯着，这条只管尺寸与位置。
+    func testBottomPanelFloatsWith12ptInset() throws {
         let app = XCUIApplication()
         app.launch()
         try requireMainScreen(app)
 
-        // 先在地图上点出一个选点，让面板展开成完整形态。
+        // 先在地图上点出一个选点，让卡片展开成完整形态。
         let window = app.windows.firstMatch
         window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.30)).tap()
         Thread.sleep(forTimeInterval: 2.0)
 
         let start = app.buttons["开启虚拟定位"]
         XCTAssertTrue(start.waitForExistence(timeout: 10), "找不到「开启虚拟定位」按钮")
-        let realLocation = app.buttons["实时位置"]
-        XCTAssertTrue(realLocation.exists, "找不到「实时位置」按钮")
 
-        // 面板内侧留白。左右两侧都是它，所以能从两个按钮反推出面板的两条边。
-        let inset: CGFloat = 14
+        let layer = app.buttons["图层"]
+        XCTAssertTrue(layer.waitForExistence(timeout: 10), "找不到「图层」浮标")
+        let realLocation = app.buttons["实时位置"]
+        XCTAssertTrue(realLocation.exists, "找不到「实时位置」浮标")
+
+        // 主按钮是卡片里的最后一行、占满整行，所以它的左右边就是卡片的**内容区**；
+        // 反推卡片外沿要各加 14pt（卡片内边距）。
+        let contentInset: CGFloat = 14
+        let edgeInset: CGFloat = 12
         let screen = window.frame
 
-        let panelLeft = start.frame.minX - inset
-        let panelRight = realLocation.frame.maxX + inset
+        let panelLeft = start.frame.minX - contentInset
+        let panelRight = start.frame.maxX + contentInset
+        let rightGap = screen.width - panelRight
 
-        print("[DUMP] 屏幕=\(screen) 面板左边=\(panelLeft) 右边=\(panelRight)")
-        attach(app, name: "10-贴边后的底部面板")
+        print("[DUMP] 屏幕=\(screen) 卡片左边留白=\(panelLeft) 右边留白=\(rightGap)")
+        attach(app, name: "10-悬浮的底部卡片")
 
-        XCTAssertEqual(panelLeft, 0, accuracy: 1.5,
-                       "面板左边没有贴到屏幕左边（还留着 \(panelLeft)pt）")
-        XCTAssertEqual(panelRight, screen.width, accuracy: 1.5,
-                       "面板右边没有贴到屏幕右边（还留着 \(screen.width - panelRight)pt）")
+        XCTAssertEqual(panelLeft, edgeInset, accuracy: 1.5,
+                       "卡片左边没有留出 12pt（实际 \(panelLeft)pt）——它又贴回屏幕边了")
+        XCTAssertEqual(rightGap, edgeInset, accuracy: 1.5,
+                       "卡片右边没有留出 12pt（实际 \(rightGap)pt）——它又贴回屏幕边了")
 
-        // 面板要铺进底部安全区（Home 指示条那一条）。这里用「点一下会不会穿透
-        // 到地图」来验证：按钮下方 18pt 的位置在旧实现里已经在面板之外了，
-        // 一戳就是一个选点。
-        let before = coordinateLabel(app)
-        start.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 1))
-            .withOffset(CGVector(dx: 0, dy: 18))
-            .tap()
-        Thread.sleep(forTimeInterval: 1.0)
-        XCTAssertEqual(coordinateLabel(app), before,
-                       "面板下方的安全区没有被面板盖住，点击穿透到地图产生了选点")
+        // 下边：主按钮与屏幕物理下沿之间隔着「卡片内容下边距 + 卡片下边距」，
+        // 其中第一份至少 14、有 Home 指示条时更大。这里钉的是「主按钮完全
+        // 躲开了 Home 指示条那 34pt」——被压住的话看着能点、实际点不到。
+        let gapBelowButton = screen.height - start.frame.maxY
+        print("[DUMP] 主按钮下方留白=\(gapBelowButton)")
+        XCTAssertGreaterThan(gapBelowButton, 34,
+                             "主按钮离屏幕下沿只有 \(gapBelowButton)pt，已经被 Home 指示条压住了")
+
+        // 两个浮标要在卡片**正上方**（不是右上角）。
+        XCTAssertLessThan(layer.frame.maxY, start.frame.minY,
+                          "图层浮标没有落在底部卡片上方")
+        XCTAssertLessThan(realLocation.frame.maxY, start.frame.minY,
+                          "实时位置浮标没有落在底部卡片上方")
+
+        // 而且贴右侧：浮标水平内边距 20 = 卡片留边 12 + 8。
+        XCTAssertEqual(realLocation.frame.maxX, screen.width - 20, accuracy: 4,
+                       "实时位置浮标没有贴右侧（右沿 \(realLocation.frame.maxX)，"
+                       + "期望 \(screen.width - 20)）")
     }
 
     // MARK: - 外观档位即时生效
@@ -226,14 +245,7 @@ final class LayoutAndAppearanceUITests: XCTestCase {
         return (0.299 * r + 0.587 * g + 0.114 * b) / 255
     }
 
-    /// 面板上那两行坐标文案。没有选点时返回 nil。
-    private func coordinateLabel(_ app: XCUIApplication) -> String? {
-        let predicate = NSPredicate(format: "label BEGINSWITH %@", "GCJ-02")
-        let element = app.staticTexts.matching(predicate).firstMatch
-        guard element.exists else { return nil }
-        return element.label
-    }
-
+    /// 主界面上必须有「设置」按钮，否则说明 App 停在引导流程里。
     private func requireMainScreen(_ app: XCUIApplication) throws {
         guard app.buttons["设置"].waitForExistence(timeout: 30) else {
             throw XCTSkip("App 停在引导流程里，测试前需要先跳过引导（见 Tests/README-ui-tests.md）")

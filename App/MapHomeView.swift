@@ -1,6 +1,7 @@
 import CoreLocation
 import MapKit
 import SwiftUI
+import UIKit
 
 /// 地图主界面。
 ///
@@ -37,9 +38,17 @@ struct MapHomeView: View {
 
     /// 屏幕下沿的安全区高度（Home 指示条那一条）。
     ///
-    /// 底部面板要铺到屏幕**物理**下沿（贴底，见 `bottomPanel`），而覆盖层
-    /// 整体是守在安全区里的，所以需要知道这条有多高，才能把面板往下顶出去
-    /// 对应的距离、再把内容重新垫回来。
+    /// 底部卡片要距屏幕**物理**下沿 12pt（见 `bottomPanel`），而安全区是
+    /// 「下不去」的，所以需要知道这条有多高，才能把卡片内容重新垫回指示条
+    /// 上方（`bottomPanelContentInset`）。
+    ///
+    /// **不能靠 SwiftUI 的 `GeometryReader` 读**：外层 ZStack 为了量到屏幕
+    /// 下沿整体忽略了下边安全区，而一个视图**一旦忽略安全区，它量到的
+    /// `proxy.safeAreaInsets` 就报 0**（安全区已经被自己吃掉了）。
+    /// 1.0.12 那版就踩在这里 —— 面板贴底时读数恒为 0，被 `max(14, ·)` 兜住，
+    /// 看不出问题；1.0.13 改成悬浮卡片后主按钮离下沿只剩 26pt，正好压在
+    /// Home 指示条上，界面测试（`LayoutAndAppearanceUITests`）才把它抓出来。
+    /// 所以直接问窗口要，那个值不受 SwiftUI 的 ignore 影响。
     @State private var bottomSafeInset: CGFloat = 0
 
     @State private var searchText = ""
@@ -66,13 +75,18 @@ struct MapHomeView: View {
     @State private var banner: BannerMessage?
     @State private var bannerDismissTask: Task<Void, Never>?
 
-    /// 「去把定位服务关一下再打开」的提示。
+    /// 「开启虚拟定位成功之后，去把定位服务关一下再打开」这条引导。
     ///
-    /// 每次启动最多弹一次：定位服务有自己的一层缓存，第一次开启虚拟定位
-    /// 基本都要踢一下才会刷新，但每开一次弹一次就成骚扰了。想再看的话
-    /// 设置 → 关于 → 用户指南里有完整步骤。
-    @State private var showLocationRefreshPrompt = false
-    @State private var didShowLocationRefreshPrompt = false
+    /// **跨启动持久化**：用户点过「不再提示」就永远不再弹（见 `SpoofGuideStore`）。
+    /// 1.0.11 及以前这件事用两个 `@State` 记，而 `@State` 的生命周期就是视图
+    /// ——冷启动必然归零，于是每次打开 App 都弹一遍。
+    @ObservedObject private var guide = SpoofGuideStore.shared
+
+    /// 引导卡片是否正在显示。
+    @State private var showsGuide = false
+
+    /// 图层菜单是否展开。点图层按钮开合；点地图、选完图层、或搜索结果出来时收起。
+    @State private var showsLayerMenu = false
 
     @State private var geocodeTask: Task<Void, Never>?
     @State private var coordinateSystemProbeTask: Task<Void, Never>?
@@ -113,33 +127,41 @@ struct MapHomeView: View {
         ZStack(alignment: .top) {
             mapLayer
             overlayLayer
+            // 「开启成功后去关一下定位服务」的引导。放在最上层，自带遮罩。
+            if showsGuide {
+                SpoofGuideOverlay(
+                    onOpenSettings: {
+                        guide.noteOpenSettings()
+                        SystemSettingsNavigator.openLocationServices()
+                        // 跳过去之后就把本层收掉，别让用户从系统设置回来时
+                        // 还被一张遮罩挡着；但**不写持久化**，下次开启还会提醒。
+                        withAnimation(.easeInOut(duration: 0.2)) { showsGuide = false }
+                    },
+                    onDismissForever: {
+                        guide.dismissForever()
+                        withAnimation(.easeInOut(duration: 0.2)) { showsGuide = false }
+                    }
+                )
+                .zIndex(1)
+                .transition(.opacity)
+            }
         }
-        // 底部面板要**贴到屏幕物理下沿**（对齐 Apple 地图的 sheet），而安全区
-        // 是"下不去"的：覆盖层守在安全区里，面板的下沿就只能停在指示条上面。
+        // 底部卡片要**距屏幕物理下沿 12pt**（1.0.13 起从「贴底 sheet」改回
+        // 悬浮卡片，四周留边、四角圆角，见 `bottomPanel`），而安全区是
+        // "下不去"的：覆盖层守在安全区里，卡片的下沿就只能停在指示条上面。
         //
-        // 所以让这一层整体忽略**下边**的安全区，面板才落得到屏幕边缘；
-        // 顶边不动（搜索框不能顶到刘海下面去）。面板自己再把这条留白垫回来，
-        // 见 `bottomSheetContentInset`。
+        // 所以让这一层整体忽略**下边**的安全区，卡片才量得到屏幕物理下沿；
+        // 顶边不动（搜索框不能顶到刘海下面去）。卡片自己再把这条留白垫回来，
+        // 见 `bottomPanelContentInset`。
         //
         // 曾经试过「面板自己用负 padding 往下顶」：玻璃确实画到了屏幕边缘，
         // 但**命中区没有跟着出去**（负 padding 只影响绘制、不扩父视图的命中
         // 范围），结果面板最下面那一条点下去会穿透成地图选点。界面测试
         // `LayoutAndAppearanceUITests` 里有一条专门盯这个。
         .ignoresSafeArea(edges: .bottom)
-        // 量一次屏幕下沿的安全区高度，供底部面板把内容垫回指示条上方。
-        //
-        // 这个 GeometryReader 只是**读数**（内容是 `Color.clear`，不吃触摸），
-        // 并且自己忽略安全区——不忽略的话它量到的是安全区**内部**的高度，
-        // 下沿那条永远是 0。覆盖层该守的安全区照守，这里只是把数字取出来。
-        .background(
-            GeometryReader { proxy in
-                Color.clear
-                    .onAppear { bottomSafeInset = proxy.safeAreaInsets.bottom }
-                    .onChange(of: proxy.safeAreaInsets.bottom) { bottomSafeInset = $0 }
-            }
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-        )
+        // 安全区高度在 `handleAppear` / `handleScenePhase` 里问窗口要
+        // （见 `refreshBottomSafeInset`），**不能用 GeometryReader 量**：
+        // 上面这行 `ignoresSafeArea` 一加，视图自己量到的下边安全区恒为 0。
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .settings:
@@ -162,14 +184,6 @@ struct MapHomeView: View {
             Button(AppLocalization.string("保存")) { saveFavorite() }
         } message: {
             Text(AppLocalization.string("为当前选点取一个便于识别的名字。"))
-        }
-        .alert(AppLocalization.string("让位置立刻刷新"), isPresented: $showLocationRefreshPrompt) {
-            Button(AppLocalization.string("打开定位服务设置")) {
-                SystemSettingsNavigator.openLocationServices()
-            }
-            Button(AppLocalization.string("我知道了"), role: .cancel) {}
-        } message: {
-            Text(AppLocalization.string("如果地图还显示原来的位置：打开「设置 → 隐私与安全性 → 定位服务」，把总开关关掉，等 5–10 秒再打开。一次不行就多试几次，定位缓存需要被踢掉才会重新取坐标。"))
         }
         .onAppear(perform: handleAppear)
         .onDisappear(perform: handleDisappear)
@@ -234,9 +248,9 @@ struct MapHomeView: View {
         // ZStack 里的覆盖层不受兄弟节点影响，仍然按安全区排布，所以搜索框
         // 不会顶到刘海或状态栏下面去。
         //
-        // 底边是唯一的例外：外层 ZStack 为了「底部面板贴屏幕下沿」忽略了
-        // 下边安全区（见 `body`），代价是覆盖层底部那一条也一起下去了——
-        // 面板自己用 `bottomSheetContentInset` 把内容垫回 Home 指示条上方，
+        // 底边是唯一的例外：外层 ZStack 为了「底部卡片距屏幕物理下沿 12pt」
+        // 忽略了下边安全区（见 `body`），代价是覆盖层底部那一条也一起下去了
+        // ——卡片自己用 `bottomPanelContentInset` 把内容垫回 Home 指示条上方，
         // 其余覆盖层都在上边，不受影响。
         .ignoresSafeArea()
     }
@@ -263,55 +277,149 @@ struct MapHomeView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
             }
-            // 搜索结果展开时就收起图层切换，避免两个浮层挤在一起。
-            if searchResults.isEmpty {
-                HStack(alignment: .top) {
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 10)
-                .transition(.opacity)
-            }
             Spacer()
-            // 图层/地球/显示器三连放在地图右下角、底部面板上方。
-            // 放右下是因为这三个按钮是「看图」用的，和底部面板的操作区
-            // 分开摆放，右手单手够得着，也不会压住左下角的地图内容。
+            // 图层与「实时位置」两个圆浮标：贴右侧、压在底部卡片**正上方**。
+            //
+            // 1.0.12 及以前它们都在底部面板里（图层是右下角竖排三连、实时位置
+            // 是主按钮右边的小胶囊）。挪出来是因为面板里那两处把主按钮挤窄了，
+            // 而「换个图层看看」「跳到我的真实位置」都是看图时的动作，跟面板里
+            // 「选点 / 收藏 / 开关虚拟定位」不是一类事，分开摆更像地图应用。
+            //
+            // 搜索结果展开时收起，避免两个浮层叠在一起。
             if searchResults.isEmpty {
-                HStack {
-                    Spacer(minLength: 0)
-                    mapTypeSwitcher
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 10)
-                .transition(.opacity)
+                mapFloatingControls
             }
             bottomPanel
         }
         .animation(.easeInOut(duration: 0.2), value: banner)
     }
 
-    /// 地图右下角的玻璃图层切换（竖排）。
+    /// 地图右下角、底部卡片上方的两个圆浮标。
     ///
-    /// 竖排是有意的：横排时三个图标占满一行，会和上方的地图内容抢横向空间；
-    /// 竖排后每个按钮 36×34，热区够大又不压地图。
-    /// 圆角与材质全部走 `mapGlassSurface()`，和地图页其他浮层保持一致。
-    private var mapTypeSwitcher: some View {
-        VStack(spacing: 2) {
-            ForEach(MapTypeOption.allCases) { option in
-                GlassSegmentButton(
-                    systemImage: option.systemImage,
-                    accessibilityLabel: option.displayName,
-                    isSelected: mapType == option,
-                    itemSize: CGSize(width: 36, height: 34)
-                ) {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        mapType = option
-                    }
-                }
+    /// 「圆钮」是这一版地图页的统一语言：顶部的设置、这里的图层与实时位置，
+    /// 都是 44×44 的正圆（`mapGlassCapsule()` 套在正方形上就是个圆）。
+    /// 1.0.12 及以前这里是竖排三个扁方块按钮、顶部又是一个圆角方形齿轮，
+    /// 两套形状混在一起，看着不像一家人。
+    ///
+    /// 位置：**贴右侧、压在底部卡片正上方**（不是右上角）。水平内边距 20
+    /// = 卡片外边距 12 + 8，比卡片向右收一点，看起来是「卡片上方的浮标」
+    /// 而不是跟卡片对齐的按钮。
+    private var mapFloatingControls: some View {
+        // 顶对齐：图层菜单从按钮**向左**长出来，它比按钮高，顶端对齐后展开的
+        // 起点正好贴着按钮上沿，看上去就是「从这颗按钮里弹出来的」。
+        HStack(alignment: .top, spacing: 10) {
+            Spacer(minLength: 0)
+
+            if showsLayerMenu {
+                layerMenu
+                    .transition(.opacity.combined(with: .move(edge: .trailing)))
+            }
+
+            VStack(spacing: 10) {
+                layerButton
+                realLocationFloatingButton
             }
         }
-        .padding(4)
-        .mapGlassSurface()
+        .padding(.horizontal, 20)
+        .padding(.bottom, 12)
+        .transition(.opacity)
+    }
+
+    /// 图层浮标。点一下向左弹出菜单。
+    private var layerButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.18)) { showsLayerMenu.toggle() }
+        } label: {
+            Image(systemName: "square.stack.3d.up")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(showsLayerMenu ? theme.accent : Color.primary)
+                .frame(width: 44, height: 44)
+                .mapGlassCapsule(nested: false)
+                .contentShape(Circle())
+        }
+        .glassPressEffect(scale: 0.9)
+        .accessibilityLabel(AppLocalization.string("图层"))
+        .accessibilityValue(mapType.displayName)
+    }
+
+    /// 图层菜单：从图层按钮向左弹出的卡片。
+    ///
+    /// **不用系统 `Menu`**：它的圆角由系统定，给不了 `menuCornerRadius`，
+    /// 样式也不跟配色主题走。自绘一张卡片反而能和其他浮层是一套东西。
+    ///
+    /// 收起方式有三种：再点一次图层按钮、选中某个图层、点地图（见 `handleMapTap`）。
+    private var layerMenu: some View {
+        VStack(spacing: 0) {
+            ForEach(MapTypeOption.allCases) { option in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        mapType = option
+                        showsLayerMenu = false
+                    }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: option.systemImage)
+                            .font(.system(size: 15, weight: .medium))
+                            .frame(width: 22)
+
+                        Text(option.displayName)
+                            .font(.subheadline.weight(.medium))
+
+                        Spacer(minLength: 0)
+
+                        if mapType == option {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                    }
+                    .foregroundStyle(mapType == option ? theme.accent : Color.primary)
+                    .padding(.horizontal, 14)
+                    .frame(height: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(option.displayName)
+                .accessibilityAddTraits(mapType == option ? [.isSelected] : [])
+            }
+        }
+        .frame(width: 168)
+        .mapGlassSurface(cornerRadius: GlassMetrics.menuCornerRadius)
+    }
+
+    /// 「实时位置」浮标：纯图标、蓝色实心圆。
+    ///
+    /// 点一下把地图跳到设备当前真实位置，并**把视野收进到街道尺度**
+    /// （`MapLocationState.defaultViewportMeters`）。
+    /// 长按回到已选点——选点才是这个应用的主角，所以「回到选点」比
+    /// 「回到真实位置」更次级，放在长按上。
+    private var realLocationFloatingButton: some View {
+        Button {
+            goToRealLocation()
+        } label: {
+            Group {
+                if realLocation.isLocating {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                } else {
+                    Image(systemName: "location.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+            }
+            .frame(width: 44, height: 44)
+            // 实心蓝圆：这是这一屏唯一的「实心」按钮，为的是跟其余玻璃圆钮
+            // 拉开层次 —— 它做的是「把地图挪到我这儿」，是个即时动作。
+            .background(Circle().fill(Color.blue))
+            .contentShape(Circle())
+        }
+        .glassPressEffect(scale: 0.9)
+        .disabled(realLocation.isLocating)
+        .accessibilityLabel(AppLocalization.string("实时位置"))
+        .accessibilityHint(AppLocalization.string("长按回到已选点"))
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.5).onEnded { _ in centerOnSelection() }
+        )
     }
 
     private var topBar: some View {
@@ -355,9 +463,12 @@ struct MapHomeView: View {
                 // 都比它矮。给一个 minHeight 之后，「有没有 X」都不会改变行高，
                 // 搜索栏不会在开始输入的一瞬间跳一下。
                 .frame(minHeight: 30)
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 16)
                 .padding(.vertical, 6)
-                .mapGlassSurface()
+                // 胶囊 + 不嵌套：这是直接浮在地图上的独立浮层（不是玻璃面板
+                // 内部的元素），传 `nested: false` 才会拿到真正的玻璃。
+                // 1.0.13 起地图页顶部统一「搜索胶囊 + 设置圆钮」。
+                .mapGlassCapsule(nested: false)
 
                 Button {
                     activeSheet = .settings
@@ -369,11 +480,14 @@ struct MapHomeView: View {
                         // 差别，但用户反馈「设置很难点进去」——近两年机型的边缘手势
                         // 会把最外侧十几像素吃掉，宁可多给两像素。
                         .frame(width: 44, height: 44)
-                        .mapGlassSurface()
+                        // **正圆**：1.0.13 起地图页的浮层统一用「圆钮」语言
+                        // （图层、实时位置也是正圆）。以前这里是个 20pt 圆角的
+                        // 方形，跟旁边那几颗圆钮并排时一眼就能看出不是一套。
+                        // `mapGlassCapsule()` 套在 44×44 的正方形上画出来就是圆。
+                        .mapGlassCapsule(nested: false)
                         // 玻璃本身没有 hit area，图标那点像素才是热区；
                         // 显式给整块定形，避免「点边角没反应」。
-                        .contentShape(RoundedRectangle(cornerRadius: GlassMetrics.mapCornerRadius,
-                                                       style: .continuous))
+                        .contentShape(Circle())
                 }
                 // 按下缩一下再弹回：玻璃有 `.interactive()`，内容也跟着动，
                 // 点下去才有「按到了」的感觉。
@@ -469,28 +583,34 @@ struct MapHomeView: View {
                 favoritesRow
             }
 
+            // 状态类信息（运行模式 / 证书 / Wi-Fi 代理 / 生效校验）摆在主按钮
+            // **上方**，主按钮压在最下面 —— 它是这一屏唯一的行动点，用户明确
+            // 要求「开启虚拟定位还是弄到最下面」。
             statusRow
             if state.isEnabled {
                 verificationRow
             }
-            actionButtons
+            primaryActionButton
         }
         .padding(.horizontal, 14)
         .padding(.top, 14)
-        // 内容一侧把安全区垫回来：这一层整体已经忽略了下边安全区（见 `body`），
-        // 面板是铺到屏幕物理下沿的，但文字和按钮不能压在 Home 指示条上。
-        .padding(.bottom, bottomSheetContentInset)
-        // 只圆上沿两个角：下沿是直角，铺到屏幕边缘才不会切出缺口。
-        .mapGlassSheet()
+        .padding(.bottom, bottomPanelContentInset)
+        // **四角全圆**、四周留边 12：1.0.13 起这张面板从「贴底 sheet」改回
+        // **悬浮大卡片**（对齐参考图里的 Apple 地图），所以走 `mapGlassSurface()`
+        // 而不是只圆上沿的 `mapGlassSheet()`。
+        .mapGlassSurface(cornerRadius: GlassMetrics.mapPanelCornerRadius)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 12)
     }
 
-    /// 底部面板内容与屏幕物理下沿之间的留白。
+    /// 卡片内容与卡片下沿之间的留白。
     ///
-    /// 有 Home 指示条的机型（`bottomSafeInset` = 34）取它 +8：指示条本身只占
-    /// 底下 5pt 左右、居中在那一带里，多留 8pt 让按钮和它拉开一点。
-    /// 老机型没有指示条，也要留一条，否则按钮会贴着屏幕下沿。
-    private var bottomSheetContentInset: CGFloat {
-        max(bottomSafeInset, 12) + 8
+    /// 卡片本身距屏幕物理下沿只有 12pt，而 Home 指示条占的是底下那 34pt 的
+    /// 安全区 —— 两者重叠 22pt，所以内容侧要把这段补回来，否则最下面那颗
+    /// 主按钮会被指示条压住（看着能点、实际点不到）。
+    /// 老机型没有指示条（`bottomSafeInset` = 0），固定留 14pt 即可。
+    private var bottomPanelContentInset: CGFloat {
+        max(14, bottomSafeInset - 12 + 6)
     }
 
     /// 已选位置卡片：左边地名与两行坐标，右边竖排两个入口。
@@ -575,6 +695,9 @@ struct MapHomeView: View {
             }
 
             if state.selection != nil {
+                // 两颗圆钮上下排开，**共同撑满左边「地址 + 两行坐标」的高度**：
+                // 30 + 6 + 30 = 66，正好和那三行的总高（约 61~66）相当，
+                // 卡片不会一边高一边矮。
                 VStack(spacing: 6) {
                     favoritesCircle(size: 30)
                     diagnosticsCircle(size: 30)
@@ -803,47 +926,56 @@ struct MapHomeView: View {
         .accessibilityLabel(accessibilityLabel)
     }
 
-    /// 底部两个动作按钮。
+    /// 底部唯一的主按钮：**占满整行**、实心强调色、46pt 高。
     ///
-    /// 两个都走 `mapGlassSurface()`，与上方的搜索框、设置按钮是同一套外观，
-    /// 而且**各自独立成卡片**（原来是「实心主按钮 + 淡蓝小按钮」拼在一行，
-    /// 和地图页其他浮层看起来不是一套东西）。
+    /// 1.0.12 及以前它是「实心主按钮 + 实时位置小胶囊」并排，各占一半宽；
+    /// 实时位置挪到右侧浮标之后这里只剩它一个，于是改成整行。
     ///
-    /// 层级改由**颜色**区分而不是面积：主按钮用强调色/红色，实时位置用
-    /// 次级灰。这样两者长得一样，轻重仍然分得清。
-    /// 高度固定 44pt——iOS 的最小可靠点击高度，够用且不臃肿。
-    private var actionButtons: some View {
-        HStack(spacing: 10) {
-            Button {
-                toggleSpoofing()
-            } label: {
-                HStack(spacing: 7) {
-                    if state.isBusy {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: state.isEnabled ? "stop.circle.fill" : "location.fill")
-                            .font(.system(size: 15, weight: .semibold))
-                    }
-                    Text(state.isEnabled
-                         ? AppLocalization.string("停止虚拟定位")
-                         : AppLocalization.string("开启虚拟定位"))
-                        .font(.system(size: 17, weight: .semibold))
-                        .lineLimit(1)
+    /// 换成「实心 + 白字」是有意的：面板里其余元素都是玻璃，只有它是
+    /// 「按下去就做事」的那一颗，用实心度把主次分开。
+    ///
+    /// 圆角取 `buttonCornerRadius`（正是 46 的一半），把「按钮高度 → 圆角」
+    /// 这个隐含依赖写成了常量。
+    private var primaryActionButton: some View {
+        Button {
+            toggleSpoofing()
+        } label: {
+            HStack(spacing: 7) {
+                if state.isBusy {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                } else {
+                    Image(systemName: state.isEnabled ? "stop.circle.fill" : "location.fill")
+                        .font(.system(size: 15, weight: .semibold))
                 }
-                .foregroundStyle(spoofButtonTint)
-                .frame(maxWidth: .infinity)
-                .frame(height: 44)
-                .mapGlassCapsule()
-                .contentShape(Capsule(style: .continuous))
+                Text(state.isEnabled
+                     ? AppLocalization.string("停止虚拟定位")
+                     : AppLocalization.string("开启虚拟定位"))
+                    .font(.system(size: 17, weight: .semibold))
+                    .lineLimit(1)
             }
-            .glassPressEffect(scale: 0.95)
-            .disabled(state.selection == nil || state.isBusy)
-            .accessibilityLabel(state.isEnabled
-                                ? AppLocalization.string("停止虚拟定位")
-                                : AppLocalization.string("开启虚拟定位"))
-
-            realLocationButton
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 46)
+            .background(
+                RoundedRectangle(cornerRadius: GlassMetrics.buttonCornerRadius,
+                                 style: .continuous)
+                    .fill(spoofButtonTint)
+            )
+            .contentShape(
+                RoundedRectangle(cornerRadius: GlassMetrics.buttonCornerRadius,
+                                 style: .continuous)
+            )
         }
+        .glassPressEffect(scale: 0.97)
+        .disabled(state.selection == nil || state.isBusy)
+        // 未选点时按钮是灰的（点了也没用），再压一点不透明度让「不可用」
+        // 一眼看得出来 —— 白字压在灰底上对比本来就不高。
+        .opacity(state.selection == nil ? 0.6 : 1)
+        .accessibilityLabel(state.isEnabled
+                            ? AppLocalization.string("停止虚拟定位")
+                            : AppLocalization.string("开启虚拟定位"))
     }
 
     /// 主按钮的着色：未选点时置灰（点了也没用），开启后用红色表示「再点就是关」。
@@ -853,40 +985,6 @@ struct MapHomeView: View {
     private var spoofButtonTint: Color {
         guard state.selection != nil else { return .secondary }
         return state.isEnabled ? .red : theme.accent
-    }
-
-    /// 「实时位置」按钮。
-    ///
-    /// 点一下把地图跳到设备当前真实位置，并**把视野收进到街道尺度**
-    /// （`MapLocationState.defaultViewportMeters`）。
-    /// 长按回到已选点——选点才是这个应用的主角，所以「回到选点」比
-    /// 「回到真实位置」更次级，放在长按上。
-    private var realLocationButton: some View {
-        Button {
-            goToRealLocation()
-        } label: {
-            VStack(spacing: 1) {
-                if realLocation.isLocating {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Image(systemName: "location.viewfinder")
-                        .font(.system(size: 15, weight: .semibold))
-                }
-                Text(AppLocalization.string("实时位置"))
-                    .font(.system(size: 10, weight: .medium))
-            }
-            .foregroundStyle(theme.accent)
-            .frame(width: 62, height: 44)
-            .mapGlassCapsule()
-            .contentShape(Capsule(style: .continuous))
-        }
-        .glassPressEffect(scale: 0.95)
-        .disabled(realLocation.isLocating)
-        .accessibilityLabel(AppLocalization.string("实时位置"))
-        .accessibilityHint(AppLocalization.string("长按回到已选点"))
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.5).onEnded { _ in centerOnSelection() }
-        )
     }
 
     /// 回到当前选中的虚拟位置。
@@ -964,6 +1062,9 @@ struct MapHomeView: View {
         restoreLastSelection()
         RuntimeLogger.info("APP", "Home", "主界面已显示")
 
+        // 底部卡片要靠这个值把内容垫回 Home 指示条上方（见底部相关注释）。
+        refreshBottomSafeInset()
+
         // 主动读一次接入方式。网络路径没变化时监听不会回调，不主动拉的话
         // 冷启动后状态会一直停在「未知」，蜂窝下的拦截就不会生效。
         proxy.refreshNetworkTransport()
@@ -991,7 +1092,34 @@ struct MapHomeView: View {
                 startVerification(pair: pair)
             }
         }
+
+        #if UI_TEST_HOOKS
+        applyUITestLaunchArguments()
+        #endif
     }
+
+    #if UI_TEST_HOOKS
+    /// 界面测试用的注入入口。
+    ///
+    /// 引导弹窗只在「开启虚拟定位成功」之后才弹，而模拟器上开虚拟定位要
+    /// Wi-Fi 代理 + 证书信任，端到端跑不起来（会先弹「证书尚未被信任」）。
+    /// 所以给界面测试留两个启动参数，让它能把弹窗稳定调出来 —— 不然这条
+    /// 用例只能常年 `XCTSkip`，等于没测。
+    ///
+    /// 只在 **Debug** 编译（`UI_TEST_HOOKS` 编译条件，见 `project.yml`），
+    /// Release/出包产物里这段代码根本不存在。
+    /// 两个参数的分工见 `Tests/README-ui-tests.md`。
+    private func applyUITestLaunchArguments() {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-uiTestResetGuideAndShow") {
+            guide.reset()
+            withAnimation(nil) { showsGuide = true }
+            RuntimeLogger.info("APP", "SpoofGuide", "界面测试注入：重置并显示引导")
+        } else if arguments.contains("-uiTestShowGuideIfNeeded") {
+            presentGuideIfNeeded()
+        }
+    }
+    #endif
 
     private func handleDisappear() {
         searchTask?.cancel()
@@ -1063,10 +1191,31 @@ struct MapHomeView: View {
             BackgroundKeepAlive.shared.resumeIfNeeded()
 
         case .active:
+            // 回前台顺手校准一次安全区（读数走窗口，见 refreshBottomSafeInset）。
+            refreshBottomSafeInset()
             recoverAfterForeground()
 
         default:
             break
+        }
+    }
+
+    /// 读一次屏幕下沿的安全区高度（Home 指示条那一条）。
+    ///
+    /// 问**窗口**要，不问 SwiftUI：外层 ZStack 为了让底部卡片量到屏幕物理
+    /// 下沿，整体忽略了下边安全区，而视图一旦忽略安全区，自己量到的
+    /// `proxy.safeAreaInsets` 就是 0（详见 `bottomSafeInset` 的说明）。
+    ///
+    /// 本工程只支持竖屏（`Info.plist` 里只有 `UIInterfaceOrientationPortrait`），
+    /// 这个值读完就稳定；仍然在每次回前台时重读一遍，覆盖分屏/外接屏之类
+    /// 尺寸变化的极端情况。
+    private func refreshBottomSafeInset() {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let windows = scenes.flatMap(\.windows)
+        guard let window = windows.first(where: { $0.isKeyWindow }) ?? windows.first else { return }
+        let inset = window.safeAreaInsets.bottom
+        if bottomSafeInset != inset {
+            bottomSafeInset = inset
         }
     }
 
@@ -1108,6 +1257,11 @@ struct MapHomeView: View {
     // MARK: - 交互
 
     private func handleMapTap(_ coordinate: CLLocationCoordinate2D) {
+        // 点地图先收起图层菜单：菜单是浮在地图上的临时浮层，点别处就算取消。
+        if showsLayerMenu {
+            withAnimation(.easeInOut(duration: 0.15)) { showsLayerMenu = false }
+        }
+
         // 按「点落在哪个区域」解释这枚坐标，**不按探测出来的体系**。
         //
         // 境内的地图数据一定是 GCJ-02，境外一定是 WGS-84，而换算在境外是
@@ -1234,7 +1388,7 @@ struct MapHomeView: View {
                     showBanner(AppLocalization.string("Wi-Fi 代理未生效，请检查代理配置"), style: .error)
                 } else {
                     showBanner(AppLocalization.string("虚拟定位已开启"), style: .info)
-                    presentLocationRefreshPromptIfNeeded()
+                    presentGuideIfNeeded()
                     // 开关亮了不等于生效：立刻回读一次确认真伪，结论摆在
                     // 面板上（用户不用再去别的 App 里对照位置）。
                     startVerification(pair: pair)
@@ -1252,7 +1406,7 @@ struct MapHomeView: View {
             if success {
                 state.enable()
                 showBanner(AppLocalization.string("坐标已写入客户端"), style: .info)
-                presentLocationRefreshPromptIfNeeded()
+                presentGuideIfNeeded()
                 startVerification(pair: pair)
             } else {
                 showBanner(AppLocalization.string("写入失败，请检查客户端模块是否生效"), style: .error)
@@ -1260,15 +1414,18 @@ struct MapHomeView: View {
         }
     }
 
-    /// 开启成功后提示一次「去关一下定位服务再打开」。
+    /// 开启成功后弹一次「去把定位服务关一下再打开」的引导。
     ///
     /// 定位服务把上一次的坐标缓存在系统进程里，刚开启虚拟定位时地图
     /// 往往还是旧位置。关掉总开关再打开会强制重新查询，这一步不做的话
     /// 用户很容易以为功能没生效。
-    private func presentLocationRefreshPromptIfNeeded() {
-        guard !didShowLocationRefreshPrompt else { return }
-        didShowLocationRefreshPrompt = true
-        showLocationRefreshPrompt = true
+    ///
+    /// 只在**开启成功之后**弹（关闭时不弹）。还弹不弹由 `SpoofGuideStore`
+    /// 决定 —— 用户点过「不再提示」就永远不再弹，这件事与定位服务当前
+    /// 开着还是关着**无关**。
+    private func presentGuideIfNeeded() {
+        guard guide.shouldPresent else { return }
+        withAnimation(.easeInOut(duration: 0.2)) { showsGuide = true }
     }
 
     private func stopSpoofing() async {
@@ -1346,6 +1503,12 @@ struct MapHomeView: View {
     private func scheduleSearch(for text: String) {
         searchTask?.cancel()
         searchError = nil
+
+        // 搜索结果一出来，右下角那两个浮标（连同展开的图层菜单）就会被收起
+        // ——菜单的状态得跟着归零，否则结果清空后它会自己冒出来。
+        if showsLayerMenu {
+            withAnimation(.easeInOut(duration: 0.15)) { showsLayerMenu = false }
+        }
 
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 2 else {

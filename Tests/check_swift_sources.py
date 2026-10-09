@@ -518,21 +518,25 @@ def check_full_bleed_map() -> None:
     安全区就空着，露出的是窗口底色——浅色模式下状态栏底下就是一整条白带，
     和下面的地图断开。用户要求「状态栏那里不要白色了，全面屏」。
 
-    **1.0.12 起底边多了一条例外。** 底部面板改成了贴底 sheet（左右下三边
-    与屏幕边缘齐平，只有上沿两个角是圆的），而安全区是「下不去」的，
-    于是外层 ZStack 必须忽略下边安全区，面板才落得到屏幕物理下沿。
-    代价是覆盖层底部那一条也跟着下去了，所以面板还要把内容按安全区高度
-    垫回来，否则按钮会压在 Home 指示条上。
+    **1.0.12 起底边多了一条例外，1.0.13 又把它改了方向。** 底部面板不再是
+    「贴底 sheet」（左右下三边与屏幕边缘齐平、只圆上沿），而是**四周留边
+    12pt 的悬浮大卡片**（四角全圆，对齐参考图里的 Apple 地图）。但底边这条
+    例外**必须保留** —— 卡片要量到屏幕物理下沿才落得住那 12pt 留边，而安全区
+    是「下不去」的，所以外层 ZStack 仍要忽略下边安全区。代价是覆盖层底部
+    那一条也跟着下去了，卡片要把内容按安全区高度垫回来，否则最下面那颗
+    主按钮会被 Home 指示条压住（看着能点、实际点不到）。
 
-    四条约束必须同时成立：
+    五条约束必须同时成立：
 
       A. 地图层忽略**全部**边（不能只写 `.bottom`）；
-      B. 覆盖层自己不许忽略安全区（它只负责上边的搜索框/提示条/图层切换）；
+      B. 覆盖层自己不许忽略安全区（它只负责上边的搜索框/提示条/浮标）；
       C. 外层容器忽略**下边**安全区（只允许下边，顶边放开会让搜索框顶到刘海）；
-      D. 面板内容按安全区把下边垫回来。
+      D. 底部卡片走 `mapPanelCornerRadius`，且**不许**再用贴底 sheet 那套
+         `bottomSheetContentInset`；
+      E. 卡片四周留边 12pt（左右与下边各 12）。
 
-    C 和 D 是一对：只查 C 会得到一个按钮压在 Home 指示条上的面板，
-    只查 D 则面板根本贴不到底。B 是 A 的前提：地图层放开之后，搜索框会不会
+    C 和 D 是一对：只查 C 会得到一张按钮被指示条压住的卡片，只查 D 则卡片
+    根本够不着屏幕下沿。B 是 A 的前提：地图层放开之后，搜索框会不会
     顶到状态栏下面，全看覆盖层有没有守住安全区。
     """
     path = ROOT / "App" / "MapHomeView.swift"
@@ -578,13 +582,29 @@ def check_full_bleed_map() -> None:
     panel = swift_block(source, "private var bottomPanel: some View")
     if not panel:
         fail("MapHomeView 里找不到 bottomPanel：检查脚本的定位字串已失效")
-    elif "bottomSheetContentInset" not in panel:
+    elif "GlassMetrics.mapPanelCornerRadius" not in panel:
         fail(
-            "底部面板没有按安全区高度把内容垫回来，按钮会压在 Home 指示条上：\n"
-            "      期望 .padding(.bottom, bottomSheetContentInset)"
+            "底部卡片没有用 mapPanelCornerRadius —— 它现在是四周留边的大卡片：\n"
+            "      期望 .mapGlassSurface(cornerRadius: GlassMetrics.mapPanelCornerRadius)"
         )
-    elif "private var bottomSheetContentInset: CGFloat" not in source:
-        fail("MapHomeView 里找不到 bottomSheetContentInset 的定义")
+    elif "bottomSheetContentInset" in panel:
+        fail(
+            "底部卡片又用回贴底 sheet 的 bottomSheetContentInset：\n"
+            "      1.0.13 起它是四周留边 12pt 的悬浮卡片，内容侧垫的是"
+            " bottomPanelContentInset"
+        )
+    elif "bottomPanelContentInset" not in panel:
+        fail(
+            "底部卡片没有按安全区高度把内容垫回来，主按钮会被 Home 指示条压住：\n"
+            "      期望 .padding(.bottom, bottomPanelContentInset)"
+        )
+    elif "private var bottomPanelContentInset: CGFloat" not in source:
+        fail("MapHomeView 里找不到 bottomPanelContentInset 的定义")
+    elif ".padding(.horizontal, 12)" not in panel or ".padding(.bottom, 12)" not in panel:
+        fail(
+            "底部卡片没有四周留边 12pt（左右与下边各 12）：\n"
+            "      期望 .padding(.horizontal, 12) 与 .padding(.bottom, 12)"
+        )
 
 
 # ---------------------------------------------------------------------------

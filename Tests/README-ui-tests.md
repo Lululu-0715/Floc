@@ -96,6 +96,56 @@ App 启动时会把当前位置自动选成选点，蓝点就落在约 `(0.5, 0.
 同理，推 sheet 这类操作也可能比等待慢：`LayoutAndAppearanceUITests` 里点
 「设置」第一次没推出就重点一次，两次都不行才 `XCTSkip`。
 
+## 二·八、跑不通的功能，用 DEBUG 启动参数注入
+
+引导弹窗只在「开启虚拟定位成功」之后才弹，而模拟器上开虚拟定位要 Wi-Fi 代理
+加上证书信任，会先弹「证书尚未被信任」，端到端跑不起来。硬测的结果就是这条
+用例常年 `XCTSkip`，等于没测。
+
+所以 `MapHomeView` 里留了**只在 `#if UI_TEST_HOOKS` 编译**的注入口
+（`applyUITestLaunchArguments`），两个启动参数分工不同：
+
+| 参数 | 行为 | 谁在用 |
+|---|---|---|
+| `-uiTestResetGuideAndShow` | 先把「不再提示」开关**重置**，再显示弹窗 | 每条用例的第一段 |
+| `-uiTestShowGuideIfNeeded` | **不重置**，按持久化状态决定弹不弹 | 验证「重启后不再弹」 |
+
+两个是分开的，就是为了能在一轮里把「弹出来 → 点不再提示 → 重启不再弹」
+串起来测：第二段如果也用第一个参数，重置会把 `false` 又写回 `true`，
+永远测不出持久化。用例见
+`MapControlsUITests.testSpoofGuideShowsAndRemembersDismissal`。
+
+**前提：Debug 配置要定义 `UI_TEST_HOOKS` 编译条件**（`project.yml` 的
+`settings.configs.Debug.SWIFT_ACTIVE_COMPILATION_CONDITIONS`）。XcodeGen 不会
+像 Xcode 新建工程模板那样自动补编译条件，缺了它 `#if` 里的代码**静默编不进去、
+编译还不报错** —— 表现就是「启动参数传了但弹窗没出来」。1.0.13 之前这个条件
+一直是缺的，注入用例因此必然失败。
+
+**为什么不直接用 `DEBUG`**：`#Preview`（ContentView / SpoofGuideOverlay）包在
+`#if DEBUG` 里，而 `#Preview` 宏要 `swift-plugin-server` 展开；在受限环境
+（沙箱 / CI）里插件进程起不来，一开 `DEBUG` 就是每次 Debug 编译都报
+`PreviewsMacros.SwiftUIView could not be found`。所以用一个只服务于界面测试的
+条件，绕开 `#Preview` 那摊。
+
+## 二·九、底部卡片尺寸怎么量
+
+`LayoutAndAppearanceUITests.testBottomPanelFloatsWith12ptInset`：卡片本身没有
+可访问性元素，只能从**卡片里那颗占满整行的主按钮**反推 ——
+
+```
+卡片左沿 = 主按钮.minX - 14（卡片内边距）
+卡片右沿 = 主按钮.maxX + 14
+```
+
+期望左右各留 12pt。下边不直接量卡片底（够不着），改成钉
+「主按钮完全躲开 Home 指示条那 34pt」：`屏幕高 - 主按钮.maxY > 34`。
+浮标的位置（卡片正上方、贴右侧）同理用 `图层` / `实时位置` 两颗按钮的 frame 断言。
+
+这条也顺带钉住了**安全区高度必须读对**：`bottomPanelContentInset` 读成 0 时
+（SwiftUI 的 `GeometryReader` 在 ignore 过安全区的视图里恒返回 0，
+见 `MapHomeView.refreshBottomSafeInset`），主按钮离下沿只剩 26pt，
+这条断言立刻变红。
+
 ## 三、写完的新用例放哪
 
 `Tests/FlocUITests/*.swift`。注意 `Tests/check_swift_sources.py` 的

@@ -154,7 +154,7 @@ struct ThemedBackground: View {
 /// —— 实拍一眼就看出来了。
 ///
 /// **为什么不改成 `ThemeStore.shared.accent`**：那样视图不会因为主题变化
-/// 重新求值（`GlassSegmentButton` 这种叶子视图的入参没变，SwiftUI 会跳过
+/// 重新求值（`FavoriteChip` 这种叶子视图的入参没变，SwiftUI 会跳过
 /// 它的 body）。走环境值最稳：值一变，**只有真正读了它的视图**重新求值。
 ///
 /// 默认值是系统蓝，和以前的外观完全一致。

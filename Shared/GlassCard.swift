@@ -144,8 +144,13 @@ struct MapGlassSurfaceModifier<S: Shape>: ViewModifier {
 
 /// 贴底 sheet 的形状：**只圆上沿两个角，下沿是直角**。
 ///
-/// 底部的面板要一直铺到屏幕物理下沿（背景从 Home 指示条底下穿过去），
-/// 这时候四个角都圆就会在屏幕下方两个角上切出缺口，露出一块地图。
+/// 用途是「面板要一直铺到屏幕物理下沿」那一类贴底 sheet（背景从 Home
+/// 指示条底下穿过去）：这时四个角都圆就会在屏幕下方两个角上切出缺口，
+/// 露出一块地图。
+///
+/// **1.0.13 起底部卡片改成四周留边 12pt 的悬浮卡片，改用标准的
+/// `RoundedRectangle`，这里暂时没有调用点** —— 和 `mapGlassSheet()` 一起留着，
+/// 见那边的说明。
 ///
 /// 为什么不用系统的 `UnevenRoundedRectangle`：那是 iOS 16 才有的 API，
 /// 本工程最低支持 15.0（见 `Tests/check_swift_sources.py` 第 9 项）。
@@ -223,9 +228,11 @@ extension View {
 
     /// 贴底 sheet 的玻璃外观：**只圆上沿两个角**。
     ///
-    /// 底部面板用它。和 `mapGlassSurface()` 是同一套材质/描边/投影，
-    /// 只是把形状换成 `MapBottomSheetShape` —— 面板要一直铺到屏幕物理下沿，
-    /// 下沿再圆就会在屏幕下面两个角切出缺口。
+    /// 1.0.12 的底部面板用它。1.0.13 起面板改成**四周留边 12pt、四角全圆**
+    /// 的悬浮大卡片（走 `mapGlassSurface(cornerRadius: mapPanelCornerRadius)`），
+    /// 所以**目前没有调用点** —— 留着是因为它和 `MapBottomSheetShape` 是一对
+    /// 完整的形状实现，将来真要做贴底 sheet（比如可拖拽的面板）直接拿来用，
+    /// 不必再写一遍「上圆下方」的路径与材质。
     ///
     /// 面板永远是「直接贴在地图上」的那一层，所以 `nested` 恒为 false。
     func mapGlassSheet(topCornerRadius: CGFloat = GlassMetrics.mapPanelCornerRadius) -> some View {
@@ -396,36 +403,3 @@ enum GlassMetrics {
     static let mapCapsuleTint: Double = 0.12
 }
 
-/// 玻璃胶囊按钮组里的单个按钮。
-///
-/// 抽出来是因为「选中态填充 + 未选中态留白」这套状态在标准/卫星/混合
-/// 三个按钮之间完全一致，写在循环里比复制三遍更不容易走形。
-struct GlassSegmentButton: View {
-
-    let systemImage: String
-    let accessibilityLabel: String
-    let isSelected: Bool
-    /// 单个按钮的尺寸。横向排列时用扁一点，纵向排列时用方一点。
-    var itemSize: CGSize = CGSize(width: 38, height: 32)
-    let action: () -> Void
-
-    /// 选中态的底色跟着主题走。
-    @Environment(\.themeAccent) private var accent
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.7))
-                .frame(width: itemSize.width, height: itemSize.height)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(isSelected ? accent : Color.clear)
-                )
-                .contentShape(Capsule(style: .continuous))
-        }
-        .glassPressEffect(scale: 0.88)
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-    }
-}

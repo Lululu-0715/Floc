@@ -201,6 +201,88 @@ final class MapControlsUITests: XCTestCase {
         attach(app, name: "06-地图点击后")
     }
 
+    /// 图层浮标点得动 → 向左弹出菜单 → 选一项就收起并且当前图层跟着变。
+    ///
+    /// 1.0.12 及以前图层切换是右下角竖排三个方块按钮，点一下就换，没有菜单。
+    /// 1.0.13 改成一颗圆浮标 + 自绘菜单（菜单圆角走 `menuCornerRadius`），
+    /// 这条把「弹得出、收得回、选得中」三件事一起钉住。
+    func testLayerButtonOpensMenuAndSwitchesMapType() throws {
+        let app = XCUIApplication()
+        app.launch()
+        try requireMainScreen(app)
+
+        let layer = app.buttons["图层"]
+        XCTAssertTrue(layer.waitForExistence(timeout: 10), "找不到「图层」浮标")
+        XCTAssertTrue(layer.isHittable, "「图层」浮标存在但不可点（被别的视图盖住了）")
+
+        // 没点之前菜单不该在。三个选项都是菜单里的按钮，用的是图层名做标签。
+        XCTAssertFalse(app.buttons["卫星"].exists, "还没点「图层」，菜单就已经展开了")
+        let before = layer.value as? String
+        print("[DUMP] 图层浮标 value=\(before ?? "（空）") frame=\(layer.frame)")
+
+        layer.tap()
+        // 模拟器偶发丢首击：录屏里看得到玻璃按下高亮又回弹，但按钮的动作没触发
+        // ——点完菜单没出来、地图也没收到这一下（坐标纹丝不动），几何逐位相同、
+        // 单跑必过。属于「模拟器偶发」那一类，按工程惯例补点，最多三次。
+        if !app.buttons["卫星"].waitForExistence(timeout: 3) {
+            print("[DUMP] 第一次点「图层」没有弹出菜单，补点一次")
+            layer.tap()
+        }
+        XCTAssertTrue(app.buttons["卫星"].waitForExistence(timeout: 5),
+                      "点了「图层」浮标没有弹出菜单")
+        attach(app, name: "07-图层菜单")
+
+        app.buttons["卫星"].tap()
+        XCTAssertTrue(app.buttons["卫星"].waitForNonExistence(timeout: 5),
+                      "选完图层菜单没有收起")
+
+        // 菜单收起之后，浮标自己的 `value` 应该变成刚选的那一项。
+        let after = layer.value as? String
+        print("[DUMP] 选完之后图层浮标 value=\(after ?? "（空）")")
+        XCTAssertEqual(after, "卫星", "选完「卫星」之后浮标上的当前图层没有更新")
+        XCTAssertNotEqual(after, before, "菜单选了但当前图层没变（一直是 \(after ?? "空")）")
+        attach(app, name: "08-切到卫星图")
+    }
+
+    /// 引导弹窗：出得来、「不再提示」关得掉、而且**重启后不再弹**。
+    ///
+    /// 真实触发路径是「开启虚拟定位成功」，而模拟器上开虚拟定位要 Wi-Fi 代理
+    /// 加上证书信任，会先弹「证书尚未被信任」，端到端跑不通。所以走 DEBUG
+    /// 编译下留的两个启动参数注入（见 `MapHomeView.applyUITestLaunchArguments`），
+    /// 否则这条用例只能常年 `XCTSkip`，等于没测。
+    ///
+    /// 后半段就是用户要的「记忆功能」：第二次启动**不重置**，弹窗必须不出现。
+    func testSpoofGuideShowsAndRemembersDismissal() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTestResetGuideAndShow"]
+        app.launch()
+        try requireMainScreen(app)
+
+        let title = app.staticTexts["虚拟定位已开启"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10), "注入之后引导弹窗没有弹出来")
+        XCTAssertTrue(app.buttons["去设置"].exists, "引导弹窗里找不到「去设置」")
+        let dismiss = app.buttons["不再提示"]
+        XCTAssertTrue(dismiss.exists, "引导弹窗里找不到「不再提示」")
+        print("[DUMP] 引导弹窗「不再提示」frame=\(dismiss.frame)")
+        attach(app, name: "07-引导弹窗")
+
+        dismiss.tap()
+        XCTAssertTrue(title.waitForNonExistence(timeout: 5),
+                      "点了「不再提示」弹窗没有关掉")
+
+        // 重启一次（这次不重置）：点过「不再提示」就该永远不再弹。
+        app.terminate()
+        let relaunched = XCUIApplication()
+        relaunched.launchArguments = ["-uiTestShowGuideIfNeeded"]
+        relaunched.launch()
+        try requireMainScreen(relaunched)
+        // 真要弹的话这一会儿足够弹出来了。
+        Thread.sleep(forTimeInterval: 2.5)
+        XCTAssertFalse(relaunched.staticTexts["虚拟定位已开启"].exists,
+                       "用户点过「不再提示」之后，重启又弹了一次引导")
+        attach(relaunched, name: "08-重启后不再弹")
+    }
+
     // MARK: - 辅助
 
     /// 面板上那两行坐标文案。没有选点时返回 nil。
