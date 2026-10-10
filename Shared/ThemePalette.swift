@@ -7,10 +7,12 @@ import SwiftUI
 ///   2. **强调色** —— 全局 `.tint`，决定按钮文字、选中态、图标底色；
 ///   3. **名字** —— 走本地化查表（`nameKey` 就是简体中文原文）。
 ///
-/// 色值直接取参考图里的十六进制，不做二次调色：用户是拿着那张图来的，
-/// 看到的颜色必须和图里一致。唯一例外是 `accentHex` —— 它要在白色玻璃上
-/// 当文字色用，原色（比如 #ff3d58、#fca731）对比度不够，所以另给一个
-/// 略深的值。渐变用的仍是原色。
+/// 色值取自参考图的十六进制，**1.0.16 起整体 ×0.88 压深一档**（见 `all`
+/// 的说明）：参考色偏亮，大面积铺开有点晃眼。除这一处缩放外不做二次调色。
+///
+/// 另一个例外是 `accentHex` —— 它要在白色玻璃上当文字色用，原色
+/// （比如 #e0364d、#de932b）对比度仍然不够，所以另给一个更深的值。
+/// 渐变用的仍是渐变三色本身。
 struct ThemePalette: Identifiable, Equatable, Hashable {
 
     let id: String
@@ -63,11 +65,20 @@ enum ThemeCatalog {
 
     static let systemID = "system"
 
-    /// 「跟随系统」+ 参考图里的六套。
+    /// 「跟随系统」+ 参考图里的**五套**（1.0.16 删掉了「湖蓝淡粉」）。
     ///
     /// 默认给「跟随系统」而不是某一套彩色主题：没选过主题的用户升级上来
     /// 看到的必须还是原来的样子（1.0.10 及以前一直是系统蓝），
     /// 否则一次常规更新会突然把所有人的界面染成玫红。
+    ///
+    /// **1.0.16 起彩色主题整体压深一档（原色 ×0.88）**：用户反馈原色偏亮、
+    /// 铺开来有点晃眼，「能加深点吗」。只做 88% 的等比缩放，不动色相与
+    /// 饱和度关系 —— 换算法（降饱和、拉明度曲线）会改掉每套主题的性格，
+    /// 而用户是拿着参考图来对色的，要的只是「暗一点」。
+    ///
+    /// 三个梯度色与强调色**一起**参与缩放，否则色卡上会出现「渐变压暗了、
+    /// 强调色还是原亮度」的错位。**「跟随系统」这一档不参与**：它的
+    /// `#007aff` 是系统蓝，属于系统语义，不该被品牌色的调色算法碰。
     static let all: [ThemePalette] = [
         ThemePalette(id: systemID,
                      nameKey: "跟随系统",
@@ -76,33 +87,28 @@ enum ThemeCatalog {
 
         ThemePalette(id: "rose",
                      nameKey: "玫红雪白",
-                     gradientHexes: ["#ff3d58", "#ff9cab", "#f2f2f2"],
-                     accentHex: "#e8455f"),
+                     gradientHexes: ["#e0364d", "#e08996", "#d5d5d5"],
+                     accentHex: "#cc3d54"),
 
         ThemePalette(id: "mint",
                      nameKey: "薄荷孔雀绿",
-                     gradientHexes: ["#9fffc3", "#47dca7", "#00af83"],
-                     accentHex: "#00a37a"),
+                     gradientHexes: ["#8ce0ac", "#3ec293", "#009a73"],
+                     accentHex: "#008f6b"),
 
         ThemePalette(id: "night",
                      nameKey: "夜紫橙金",
-                     gradientHexes: ["#302235", "#8c6553", "#fca731"],
-                     accentHex: "#d98410"),
-
-        ThemePalette(id: "lake",
-                     nameKey: "湖蓝淡粉",
-                     gradientHexes: ["#27a6cc", "#80bdf4", "#fcc5c5"],
-                     accentHex: "#1f8fb5"),
+                     gradientHexes: ["#2a1e2f", "#7b5949", "#de932b"],
+                     accentHex: "#bf740e"),
 
         ThemePalette(id: "neon",
                      nameKey: "荧光水绿",
-                     gradientHexes: ["#3afff2", "#31ddb9", "#26af84"],
-                     accentHex: "#12a37c"),
+                     gradientHexes: ["#33e0d5", "#2bc2a3", "#219a74"],
+                     accentHex: "#108f6d"),
 
         ThemePalette(id: "electric",
                      nameKey: "电光蓝紫",
-                     gradientHexes: ["#00f6ff", "#2a8dde", "#18269e"],
-                     accentHex: "#1f76d0"),
+                     gradientHexes: ["#00d8e0", "#257cc3", "#15218b"],
+                     accentHex: "#1b68b7"),
     ]
 
     /// 按 id 取主题，取不到回落到系统默认。

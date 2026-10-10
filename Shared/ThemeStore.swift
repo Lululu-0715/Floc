@@ -29,7 +29,15 @@ final class ThemeStore: ObservableObject {
     init(defaults: UserDefaults = AppGroup.defaults) {
         self.defaults = defaults
         let stored = defaults.string(forKey: Key.themeID) ?? ThemeCatalog.systemID
-        palette = ThemeCatalog.palette(id: stored)
+        let resolved = ThemeCatalog.palette(id: stored)
+        palette = resolved
+        // 盘里存的主题在**这一版**里已经不存在了（比如某一套配色被删掉）：
+        // `palette(id:)` 会回落到「跟随系统」，这里把回落结果一并写回盘。
+        // 不回写也不会出错（界面读的是内存里的 `palette`），但盘里会一直
+        // 留着一个取不到的 id —— 数据是脏的，而且永远清不掉。
+        if resolved.id != stored {
+            defaults.set(resolved.id, forKey: Key.themeID)
+        }
     }
 
     /// 全局强调色。

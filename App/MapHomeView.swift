@@ -372,8 +372,9 @@ struct MapHomeView: View {
     /// 1.0.13 初版是从按钮**左边**横向弹出的卡片（168pt 宽，每行「图标 + 文字
     /// + 勾」）。用户的原话是「这样往左有点丑，我要的是点开他会往上展开一个
     /// 胶囊然后选择」—— 方向改成向上（与按钮同一列，视觉上就是从这颗圆钮里
-    /// 抽出来），**文字全去掉**，只留图标；当前生效的那一颗用主题色 + 一层
-    /// 主题色淡底点亮，不然三个图标看不出选了哪个。
+    /// 抽出来），**文字全去掉**，只留图标；当前生效的那一颗用主题色 + 一圈
+    /// 同心细环点亮（1.0.16 从「主题色淡底大盘」改过来，见下面 `background`
+    /// 里的说明），不然三个图标看不出选了哪个。
     ///
     /// **不用系统 `Menu`**：它的形状与圆角由系统定，给不了胶囊，样式也不跟
     /// 配色主题走。自绘一颗竖胶囊反而能和其他浮层是一套东西。
@@ -393,11 +394,29 @@ struct MapHomeView: View {
                         .foregroundStyle(mapType == option ? theme.accent : Color.primary)
                         .frame(width: 44, height: 44)
                         .background(
-                            Circle().fill(mapType == option
-                                          ? theme.accent.opacity(0.18)
-                                          : Color.clear)
+                            // **同心圆环**（1.0.16）：1.0.14/1.0.15 这里是
+                            // 44pt 的 `accent.opacity(0.18)` 实心大盘 —— 它几乎
+                            // 撑满整条 44pt 宽的胶囊，而里面的图标才 17pt，
+                            // 观感就是「一个大浅色盘子扣着个小图标」，用户的
+                            // 原话是「背景好丑、大小还很违和」。
+                            //
+                            // 现在缩到 32pt：**1.5pt 主题色细环 + 8% 极淡底**，
+                            // 图标本身也染主题色。关键是去掉「大色块」这件事
+                            // 本身 —— 违和感主要来自面积，不是颜色。
+                            // 尺寸写死 32 而不是跟 icon 走：它是**选中态**的
+                            // 视觉锚点，三颗必须一样大。
+                            Circle()
+                                .strokeBorder(theme.accent, lineWidth: 1.5)
+                                .background(Circle().fill(theme.accent.opacity(0.08)))
+                                .frame(width: 32, height: 32)
+                                .opacity(mapType == option ? 1 : 0)
                         )
-                        .contentShape(Circle())
+                        // **矩形而不是圆圈**：命中区按 44×44 整块算。
+                        // 1.0.16 之前是 `Circle()`，四个角约 22% 的面积是死区；
+                        // 44pt 的触摸目标本来就不需要再收一圈，而这一条也是
+                        // iOS 16 上「三个选项点不中」的投诉之一（见 `GlassCard`
+                        // 里关于装饰描边的那段，那才是主因）。
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(option.displayName)

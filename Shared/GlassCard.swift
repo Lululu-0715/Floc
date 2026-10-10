@@ -61,7 +61,16 @@ struct GlassCardModifier: ViewModifier {
             content
                 .background(shape.fill(.ultraThinMaterial))
                 .overlay(
+                    // **装饰描边绝不能参与命中测试。**
+                    //
+                    // `.overlay` 的内容盖在 `content` **之上**，只要它可命中，
+                    // 落在它身上的触摸就被它收走，下面的按钮一个都收不到 ——
+                    // 这正是 1.0.16 修的「iOS 16 上玻璃容器里的按钮点不动」：
+                    // 搜索结果第一行、搜索框的清除 ✕、图层菜单三个选项，
+                    // 三处都是「玻璃套容器、容器里再放 Button」。
+                    // 这圈 0.5pt 的高光边纯粹是装饰，显式让开。
                     shape.stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+                        .allowsHitTesting(false)
                 )
                 .shadow(color: .black.opacity(0.15), radius: shadowRadius, y: 4)
         }
@@ -110,7 +119,11 @@ struct MapGlassSurfaceModifier<S: Shape>: ViewModifier {
                     .overlay(
                         // 用 `stroke` 而不是 `strokeBorder`：形状参数是泛型
                         // `S: Shape`，`strokeBorder` 只在 `InsettableShape` 上有。
+                        //
+                        // 同样要 `allowsHitTesting(false)`：理由见 `GlassCardModifier`。
+                        // 这一档虽然只在 iOS 26 走，但没有理由让装饰挡事。
                         shape.stroke(Color.white.opacity(0.45), lineWidth: 1)
+                            .allowsHitTesting(false)
                     )
                     // 见 `mapGlassSurface` 的说明：整块浮层都要挡住触摸。
                     .contentShape(shape)
@@ -134,7 +147,11 @@ struct MapGlassSurfaceModifier<S: Shape>: ViewModifier {
                     }
                 )
                 .overlay(
+                    // 理由见 `GlassCardModifier`：装饰描边不该参与命中，
+                    // 否则会盖住容器里的按钮。这一条正是 iOS 15~18 上
+                    // 「玻璃容器里的按钮点不动」的主修点。
                     shape.stroke(Color.white.opacity(0.18), lineWidth: 0.5)
+                        .allowsHitTesting(false)
                 )
                 .shadow(color: .black.opacity(0.18), radius: GlassMetrics.mapShadowRadius, y: 4)
                 .contentShape(shape)
