@@ -956,9 +956,13 @@ struct MapHomeView: View {
     /// 运行日志与诊断入口。
     ///
     /// 图标跟着**虚拟定位的生效结论**染色：已生效时整颗钮的符号变绿，
-    /// 与设置 → 意见反馈里那个同名入口、以及卡片上的生效校验行同一个信号。
+    /// 与诊断页「当前配置 → 虚拟定位」、以及卡片上的生效校验行同一个信号
+    /// （都是 `SpoofEffectVerifier.shared`）。
     /// 其余状态（未生效 / 验证中 / 未验证 / 开关关着）保持原来的次要色 ——
     /// 绿色只留给「确实生效了」这一种情况，不然这个提示就没意义了。
+    ///
+    /// 设置 → 意见反馈里那个同名入口**不染色**：它只是「进诊断页」的入口，
+    /// 绿色应该出现在诊断页的取值上，而不是一个入口行上。
     private func diagnosticsCircle(size: CGFloat) -> some View {
         mapCircleButton(
             systemImage: "doc.text.magnifyingglass",
