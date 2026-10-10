@@ -1229,6 +1229,30 @@ struct MapHomeView: View {
         } else if arguments.contains("-uiTestShowGuideIfNeeded") {
             presentGuideIfNeeded()
         }
+
+        // 注入三条假搜索结果。
+        //
+        // 「搜索结果第一行点不动」是用户实拍报的第三条（另两条是清除 ✕ 和图层
+        // 菜单），三处是同一个形态：**玻璃套住一个容器、容器里再放 Button**。
+        // 而结果列表本来要靠 MapKit 联网搜，模拟器上既慢又可能返回空 ——
+        // 拿它当测试前置条件等于把命中测试挂在外网上。所以注入一组固定数据。
+        //
+        // 故意**不改 `searchText`**：改了会触发 `onChange` 的防抖联网搜索，
+        // 把注进去的结果覆盖掉；只要 `searchResults` 非空，列表就会显示。
+        if arguments.contains("-uiTestInjectSearchResults") {
+            searchResults = (1...3).map { index in
+                let offset = Double(index) * 0.001
+                return SearchResult(
+                    name: "测试结果 \(index)",
+                    subtitle: "北京市东城区测试地点 \(index)",
+                    pair: CoordinateConverter.CoordinatePair(
+                        wgs84: .init(latitude: 39.9087 + offset, longitude: 116.3975),
+                        gcj02: .init(latitude: 39.9100 + offset, longitude: 116.4039)
+                    )
+                )
+            }
+            RuntimeLogger.info("APP", "Home", "界面测试注入：3 条假搜索结果")
+        }
     }
     #endif
 

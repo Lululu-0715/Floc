@@ -159,6 +159,54 @@ final class MapControlsUITests: XCTestCase {
         attach(app, name: "04-清除后")
     }
 
+    /// 搜索结果列表的**第一行**点得动 → 点完搜索框里变成该结果的名字。
+    ///
+    /// 用户报的第三条「看得见点不动」：搜一个地名出来好几条，**第一行**怎么点
+    /// 都没反应（另外两条是清除 ✕ 和图层菜单的三个选项）。三处同形 ——
+    /// 「玻璃（`mapGlassSurface` / `mapGlassCapsule`）**套住**一个容器，容器里
+    /// 再放 SwiftUI `Button`」，而对照结构「按钮在外、玻璃只是它的底板」
+    /// （设置圆钮 / 图层圆钮 / 实时位置）一直正常。
+    ///
+    /// 结果列表本来要靠 MapKit 联网搜，模拟器上既慢又可能返回空，所以走
+    /// Debug 下的启动参数注入三条固定结果（见 `applyUITestLaunchArguments`）——
+    /// 这条用例只测「点不点得动」，不测搜索结果本身。
+    func testFirstSearchResultRowIsTappable() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTestInjectSearchResults"]
+        app.launch()
+        try requireMainScreen(app)
+
+        // 结果行的可访问性标签由行内两段文字拼出来（「测试结果 1，北京市…」），
+        // 所以按「包含」匹配，别写等号。
+        let first = app.buttons
+            .matching(NSPredicate(format: "label CONTAINS %@", "测试结果 1"))
+            .firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 10),
+                      "注入的三条搜索结果没有出现在列表里")
+        print("[DUMP] 搜索结果第一行 frame=\(first.frame) hittable=\(first.isHittable)")
+        XCTAssertTrue(waitForHittable(first),
+                      "搜索结果第一行存在但不可点（被玻璃层吃掉了）")
+        attach(app, name: "13-搜索结果列表")
+
+        first.tap()
+
+        // `applySearchResult` 会把结果名写回搜索框，所以「这一下真的命中按钮了」
+        // 最直接的证据就是搜索框的值变成了这条结果的名字。
+        let field = app.textFields.firstMatch
+        let deadline = Date().addingTimeInterval(5)
+        var value = (field.value as? String) ?? ""
+        while Date() < deadline {
+            value = (field.value as? String) ?? ""
+            if value == "测试结果 1" { break }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        print("[DUMP] 点完之后搜索框的值=\(value)")
+        XCTAssertEqual(value, "测试结果 1",
+                       "点了搜索结果第一行没有被应用（搜索框还是「\(value)」）"
+                       + "—— 这一下没落到按钮上")
+        attach(app, name: "14-点了搜索结果第一行")
+    }
+
     /// 底部面板不能把点击漏给下面的地图。
     ///
     /// 用户反馈的第 3 条：「开启虚拟定位按钮那一大块面板也会穿透然后选点」。

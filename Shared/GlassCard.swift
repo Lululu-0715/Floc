@@ -141,20 +141,35 @@ struct MapGlassSurfaceModifier<S: Shape>: ViewModifier {
         } else {
             content
                 .background(
+                    // **玻璃的「视觉」与「接住穿透点击」都在背景层里做，
+                    // 不给 `content` 加 `.contentShape(shape)`。**
+                    //
+                    // 1.0.11 当初是给 `content` 加 contentShape 的，为的是
+                    // 「浮层空白处的点击别穿透到地图」。但那种写法等于在**整个
+                    // 内容外面**罩了一层整体命中区；iOS 16 上这会连
+                    // `ScrollView` 的**内部行**一起盖住 —— 用户实拍：
+                    // 搜索结果列表的第一行看得见、按下去毫无反应（图层菜单的
+                    // VStack、搜索框的 ✕ 都不含 ScrollView，所以只有它中招）。
+                    //
+                    // 把命中区挪到**内容之下**的背景层：既照旧接住空白处的
+                    // 点击（能命中的视图本身就会挡住下层的触摸 —— 这正是
+                    // `.allowsHitTesting(false)` 存在的原因，不需要再加手势），
+                    // 又永远不可能盖住内容里的按钮。
+                    //
+                    // **别在这里加 `.onTapGesture { }`**：玻璃经常被当成
+                    // 「按钮自己的 label 底板」（图层浮标、设置圆钮、实时位置），
+                    // 那时这个手势在按钮**内部**，会抢走外层按钮的点击 ——
+                    // 实测加过之后图层浮标点不开了。
                     ZStack {
                         shape.fill(.regularMaterial)
                         shape.fill(Color(.systemBackground).opacity(GlassMetrics.mapSurfaceTint))
+                        // 装饰描边留在背景层的最上面：它与内容的留边不重叠，
+                        // 观感与原来放在 `.overlay` 里时一致。
+                        shape.stroke(Color.white.opacity(0.18), lineWidth: 0.5)
                     }
-                )
-                .overlay(
-                    // 理由见 `GlassCardModifier`：装饰描边不该参与命中，
-                    // 否则会盖住容器里的按钮。这一条正是 iOS 15~18 上
-                    // 「玻璃容器里的按钮点不动」的主修点。
-                    shape.stroke(Color.white.opacity(0.18), lineWidth: 0.5)
-                        .allowsHitTesting(false)
+                    .contentShape(shape)
                 )
                 .shadow(color: .black.opacity(0.18), radius: GlassMetrics.mapShadowRadius, y: 4)
-                .contentShape(shape)
         }
     }
 }
