@@ -954,11 +954,17 @@ struct MapHomeView: View {
     }
 
     /// 运行日志与诊断入口。
+    ///
+    /// 图标跟着**虚拟定位的生效结论**染色：已生效时整颗钮的符号变绿，
+    /// 与设置 → 意见反馈里那个同名入口、以及卡片上的生效校验行同一个信号。
+    /// 其余状态（未生效 / 验证中 / 未验证 / 开关关着）保持原来的次要色 ——
+    /// 绿色只留给「确实生效了」这一种情况，不然这个提示就没意义了。
     private func diagnosticsCircle(size: CGFloat) -> some View {
         mapCircleButton(
             systemImage: "doc.text.magnifyingglass",
             accessibilityLabel: AppLocalization.string("运行日志与诊断"),
-            size: size
+            size: size,
+            iconColor: verifier.isEffective ? .green : .secondary
         ) {
             activeSheet = .logs
         }
@@ -967,18 +973,24 @@ struct MapHomeView: View {
     /// 选点卡片与状态行共用的小圆钮。
     ///
     /// `badge` 为 0 时不画角标——收藏夹空着还挂个「0」只是噪声。
+    ///
+    /// `iconColor` 只染符号本身，**不动玻璃底**：玻璃入口锁死在
+    /// `Shared/GlassCard.swift` 的四个函数里（静态检查第 9 项），
+    /// 而「已生效」这类状态提示只需要符号变色就够醒目。默认值就是原来的
+    /// 次要色，收藏钮的观感一点没变。
     private func mapCircleButton(
         systemImage: String,
         accessibilityLabel: String,
         size: CGFloat,
         badge: Int = 0,
+        iconColor: Color = .secondary,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: systemImage)
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(iconColor)
                     .frame(width: size, height: size)
                     .mapGlassCapsule()
                     .contentShape(Circle())
@@ -996,6 +1008,8 @@ struct MapHomeView: View {
             }
         }
         .glassPressEffect(scale: 0.9)
+        // 生效结论变化时符号颜色平滑过渡，不要一闪一下。
+        .animation(.easeInOut(duration: 0.25), value: iconColor)
         .accessibilityLabel(accessibilityLabel)
     }
 

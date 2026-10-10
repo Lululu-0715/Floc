@@ -451,3 +451,7 @@
 "把定位服务总开关关掉，等 5 秒以上" = "Turn the Location Services switch off and wait at least 5 seconds";
 "再打开总开关，回到本应用" = "Turn it back on, then return to this app";
 "定位服务把上一次的坐标缓存在系统里，关开一次才会重新取。一次不行就多试几次。" = "Location Services caches the previous fix, so it only re-reads after you toggle it. If once is not enough, try again a few times.";
+
+// Help text behind the question mark next to "Proxy status" on the Diagnostics screen
+"这一行说的是本机内置的代理服务（监听 127.0.0.1:8888）。它只在「应用内代理」模式下工作；切到「第三方代理」时不走这条路，代理不会启动，显示「未启动」是正常的。" = "This row reports the built-in proxy service on this device (listening on 127.0.0.1:8888). It only runs in In-app proxy mode; in Third-party proxy mode nothing goes through it, so the proxy does not start and Not started is expected.";
+"知道了" = "Got it";

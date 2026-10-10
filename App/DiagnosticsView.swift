@@ -8,6 +8,9 @@ struct DiagnosticsView: View {
     @ObservedObject private var proxy = ProxyManager.shared
     @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
     @ObservedObject private var runtimeMode = RuntimeModeStore.shared
+    /// 虚拟定位的生效校验结论。「当前配置」里那一行显示它，与设置页
+    /// 「连接状态」、地图页底部卡片读的是**同一个单例**，三处永远不会打架。
+    @ObservedObject private var verifier = SpoofEffectVerifier.shared
 
     @Environment(\.dismiss) private var dismiss
 
@@ -139,12 +142,27 @@ struct DiagnosticsView: View {
     private var configurationSection: some View {
         Section {
             KeyValueRow(AppLocalization.string("运行模式"), value: runtimeMode.mode.displayName)
-            KeyValueRow(AppLocalization.string("代理状态"), value: proxy.status.displayText)
+            // 「代理状态」报的是**本机内置代理服务**（Go 核，监听 127.0.0.1:8888）
+            // 的启停状态。切到第三方代理后这条路不走，本机代理压根不启动，
+            // 于是恒为「未启动」—— 不是故障，但光看这一行会误判，所以挂个问号
+            // 就地解释。这一行的取值**故意不跟运行模式分流**：内置模式下它必须
+            // 如实反映本机代理，第三方模式下则由问号说明它此刻没有意义。
+            KeyValueRow(
+                AppLocalization.string("代理状态"),
+                value: proxy.status.displayText,
+                help: AppLocalization.string(
+                    "这一行说的是本机内置代理服务（监听 127.0.0.1:8888）。它只在「内置应用代理」模式下工作；切到「第三方代理」时不走这条路，本机代理不会启动，显示「未启动」是正常的。"
+                )
+            )
+            // 「虚拟定位」显示**生效结论**而不是开关快照。写「已开启」等于把
+            // 「开关亮着但其实没生效」这个最该被看见的状态盖住 —— 与设置页
+            // 「连接状态」同一套口径（`SettingsView.virtualLocationSummary`）。
             KeyValueRow(
                 AppLocalization.string("虚拟定位"),
                 value: state.isEnabled
-                    ? AppLocalization.string("已开启")
-                    : AppLocalization.string("已关闭")
+                    ? verifier.status.pillText
+                    : AppLocalization.string("已关闭"),
+                valueColor: state.isEnabled ? verifier.status.pillColor : .secondary
             )
             if let pair = state.selection {
                 KeyValueRow(

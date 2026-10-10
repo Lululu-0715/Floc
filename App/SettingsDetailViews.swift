@@ -1141,6 +1141,10 @@ struct FeedbackView: View {
 
     @ObservedObject var state: MapLocationState
 
+    /// 虚拟定位的生效校验结论。诊断入口跟着它染色 —— 已生效时整行变绿，
+    /// 跟地图页那颗诊断圆钮是同一个信号、同一个单例。
+    @ObservedObject private var verifier = SpoofEffectVerifier.shared
+
     @State private var showBugReport = false
     @State private var showDiagnostics = false
 
@@ -1160,10 +1164,15 @@ struct FeedbackView: View {
                 Button {
                     showDiagnostics = true
                 } label: {
+                    // 图标徽章跟着虚拟定位的生效结论染色（已生效变绿），
+                    // **文字保持设置页一贯的次要灰** —— 这一页其余入口的文字
+                    // 都是灰的，单独一行变绿会显得像另一种层级的控件。
+                    // 绿色只出现在「确实生效了」这一种情况。
                     SettingsLabel(
                         systemImage: "doc.text.magnifyingglass",
                         title: AppLocalization.string("运行日志与诊断"),
-                        isSecondary: true
+                        isSecondary: true,
+                        tint: verifier.isEffective ? .green : .blue
                     )
                 }
             } header: {
