@@ -95,6 +95,7 @@ final class MapControlsUITests: XCTestCase {
         let shown = legal.first { app.staticTexts[$0].firstMatch.exists }
         print("[DUMP] 诊断页虚拟定位取值=\(shown ?? "（一个合法取值都没找到）")")
         XCTAssertNotNil(shown, "「虚拟定位」的取值不在生效结论的合法集合里")
+        attach(app, name: "11-诊断页当前配置")
 
         let help = app.buttons["说明"].firstMatch
         XCTAssertTrue(help.waitForExistence(timeout: 5), "「代理状态」那一行没有问号入口")
@@ -103,7 +104,7 @@ final class MapControlsUITests: XCTestCase {
 
         XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5),
                       "点了问号没有弹出说明")
-        attach(app, name: "11-诊断页代理状态说明")
+        attach(app, name: "12-诊断页代理状态说明")
     }
 
     /// 搜索结果出来之后，点 X 能清空搜索框。
