@@ -63,6 +63,49 @@ final class MapControlsUITests: XCTestCase {
         attach(app, name: "02-设置面板")
     }
 
+    /// 诊断页：底部卡片那颗圆钮点得动，且「当前配置」里的「虚拟定位」
+    /// 显示的是**生效结论**而不是开关快照；「代理状态」那一行的问号能弹说明。
+    ///
+    /// 这条盯的是两件容易悄悄退回去的事：
+    ///   1. 「虚拟定位」被写回 `state.isEnabled` 的「已开启」——那等于把
+    ///      「开关亮着但其实没生效」这个最该被看见的状态盖住；
+    ///   2. 问号的命中区被 `List` 的行吃掉（跟 1.0.10 那两条「看得见点不动」
+    ///      是同一类问题，`XCUIElement.tap()` 走真实 hit-test，盖住了就点不到）。
+    ///
+    /// 界面测试里没法让虚拟定位真的生效，所以不去断言具体是哪一档，
+    /// 只断言它落在合法取值里、且旧的「已开启」必须消失。
+    func testDiagnosticsShowsVerificationVerdictAndProxyStatusHelp() throws {
+        let app = XCUIApplication()
+        app.launch()
+        try requireMainScreen(app)
+
+        let circle = app.buttons["运行日志与诊断"].firstMatch
+        XCTAssertTrue(circle.waitForExistence(timeout: 15), "地图页找不到「运行日志与诊断」圆钮")
+        XCTAssertTrue(waitForHittable(circle), "「运行日志与诊断」圆钮存在但不可点")
+        circle.tap()
+
+        let verdictTitle = app.staticTexts["虚拟定位"].firstMatch
+        XCTAssertTrue(verdictTitle.waitForExistence(timeout: 10),
+                      "诊断页没打开，或者「当前配置」里没有「虚拟定位」这一行")
+
+        XCTAssertFalse(app.staticTexts["已开启"].exists,
+                       "「虚拟定位」还在显示开关快照「已开启」，应当显示生效结论")
+
+        let legal = ["未验证", "验证中", "已生效", "未生效", "已关闭"]
+        let shown = legal.first { app.staticTexts[$0].firstMatch.exists }
+        print("[DUMP] 诊断页虚拟定位取值=\(shown ?? "（一个合法取值都没找到）")")
+        XCTAssertNotNil(shown, "「虚拟定位」的取值不在生效结论的合法集合里")
+
+        let help = app.buttons["说明"].firstMatch
+        XCTAssertTrue(help.waitForExistence(timeout: 5), "「代理状态」那一行没有问号入口")
+        XCTAssertTrue(waitForHittable(help), "问号存在但不可点（被 List 的行吃掉了？）")
+        help.tap()
+
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5),
+                      "点了问号没有弹出说明")
+        attach(app, name: "11-诊断页代理状态说明")
+    }
+
     /// 搜索结果出来之后，点 X 能清空搜索框。
     func testSearchClearButtonClearsQuery() throws {
         let app = XCUIApplication()

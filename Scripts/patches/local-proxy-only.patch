@@ -52,7 +52,7 @@ index 090cadc..4aa2d8b 100644
  
          lines.append("")
 diff --git a/App/DiagnosticsView.swift b/App/DiagnosticsView.swift
-index 63c5722..d825f6c 100644
+index 7962721..97e08bd 100644
 --- a/App/DiagnosticsView.swift
 +++ b/App/DiagnosticsView.swift
 @@ -6,8 +6,6 @@ struct DiagnosticsView: View {
@@ -61,18 +61,34 @@ index 63c5722..d825f6c 100644
      @ObservedObject private var proxy = ProxyManager.shared
 -    @ObservedObject private var thirdParty = ThirdPartyProxyManager.shared
 -    @ObservedObject private var runtimeMode = RuntimeModeStore.shared
- 
-     @Environment(\.dismiss) private var dismiss
- 
-@@ -138,7 +136,6 @@ struct DiagnosticsView: View {
+     /// 虚拟定位的生效校验结论。「当前配置」里那一行显示它，与设置页
+     /// 「连接状态」、地图页底部卡片读的是**同一个单例**，三处永远不会打架。
+     @ObservedObject private var verifier = SpoofEffectVerifier.shared
+@@ -141,22 +139,7 @@ struct DiagnosticsView: View {
  
      private var configurationSection: some View {
          Section {
 -            KeyValueRow(AppLocalization.string("运行模式"), value: runtimeMode.mode.displayName)
-             KeyValueRow(AppLocalization.string("代理状态"), value: proxy.status.displayText)
+-            // 「代理状态」报的是**本机内置代理服务**（Go 核，监听 127.0.0.1:8888）
+-            // 的启停状态。切到第三方代理后这条路不走，本机代理压根不启动，
+-            // 于是恒为「未启动」—— 不是故障，但光看这一行会误判，所以挂个问号
+-            // 就地解释。这一行的取值**故意不跟运行模式分流**：内置模式下它必须
+-            // 如实反映本机代理，第三方模式下则由问号说明它此刻没有意义。
+-            KeyValueRow(
+-                AppLocalization.string("代理状态"),
+-                value: proxy.status.displayText,
+-                help: AppLocalization.string(
+-                    "这一行说的是本机内置代理服务（监听 127.0.0.1:8888）。它只在「内置应用代理」模式下工作；切到「第三方代理」时不走这条路，本机代理不会启动，显示「未启动」是正常的。"
+-                )
+-            )
+-            // 「虚拟定位」显示**生效结论**而不是开关快照。写「已开启」等于把
+-            // 「开关亮着但其实没生效」这个最该被看见的状态盖住 —— 与设置页
+-            // 「连接状态」同一套口径（`SettingsView.virtualLocationSummary`）。
++            KeyValueRow(AppLocalization.string("代理状态"), value: proxy.status.displayText)
              KeyValueRow(
                  AppLocalization.string("虚拟定位"),
-@@ -248,34 +245,23 @@ struct DiagnosticsView: View {
+                 value: state.isEnabled
+@@ -266,34 +249,23 @@ struct DiagnosticsView: View {
              detail: selfCheck
          ))
  
@@ -125,7 +141,7 @@ index 63c5722..d825f6c 100644
          environmentChecks = results
          reload()
 diff --git a/App/MapHomeView.swift b/App/MapHomeView.swift
-index af3fd52..4f790aa 100644
+index 4221ce3..7d4b2ca 100644
 --- a/App/MapHomeView.swift
 +++ b/App/MapHomeView.swift
 @@ -19,8 +19,6 @@ struct MapHomeView: View {
@@ -137,7 +153,7 @@ index af3fd52..4f790aa 100644
      @ObservedObject private var remoteConfiguration = AppRemoteConfigurationStore.shared
      /// 配色主题。主按钮的强调色、玻璃的染色都从这里取。
      @ObservedObject private var theme = ThemeStore.shared
-@@ -764,38 +762,24 @@ struct MapHomeView: View {
+@@ -807,38 +805,24 @@ struct MapHomeView: View {
      private var statusRow: some View {
          HStack(spacing: 8) {
              StatusPill(
@@ -189,7 +205,7 @@ index af3fd52..4f790aa 100644
                  )
              }
  
-@@ -1100,9 +1084,7 @@ struct MapHomeView: View {
+@@ -1159,9 +1143,7 @@ struct MapHomeView: View {
  
          // 进入主界面就刷新一次环境状态，让用户立刻看到还差什么。
          Task {
@@ -200,7 +216,7 @@ index af3fd52..4f790aa 100644
                  await proxy.verifyCertificateTrust()
                  await proxy.verifyWiFiProxy()
              }
-@@ -1171,32 +1153,23 @@ struct MapHomeView: View {
+@@ -1230,32 +1212,23 @@ struct MapHomeView: View {
      /// 注意 MapLocationState 初始化时会把 isEnabled 置为 false，
      /// 这里处理的是「同一次运行中从设置页返回」这种情况。
      private func restoreActiveState(pair: CoordinateConverter.CoordinatePair) async {
@@ -248,7 +264,7 @@ index af3fd52..4f790aa 100644
          }
      }
  
-@@ -1216,7 +1189,7 @@ struct MapHomeView: View {
+@@ -1275,7 +1248,7 @@ struct MapHomeView: View {
              // 进后台前的最后一次自救。音频一旦被别的应用抢走，播放停掉，
              // 进程随后就被系统挂起——那一刻之后我们再也跑不了任何代码，
              // 所以「检查播放是否还活着」只能放在这里。
@@ -257,7 +273,7 @@ index af3fd52..4f790aa 100644
              BackgroundKeepAlive.shared.resumeIfNeeded()
  
          case .active:
-@@ -1258,7 +1231,7 @@ struct MapHomeView: View {
+@@ -1317,7 +1290,7 @@ struct MapHomeView: View {
      /// 变成 `.stopped`，所以这里必须实际探一次代理是否还活着，不能只看状态。
      /// 保活同理——`isAlive` 问的是播放器，而不是我们记的布尔标志。
      private func recoverAfterForeground() {
@@ -266,7 +282,7 @@ index af3fd52..4f790aa 100644
  
          if !BackgroundKeepAlive.shared.isAlive {
              RuntimeLogger.warn("APP", "KeepAlive", "回前台时保活已失效，重新拉起")
-@@ -1273,7 +1246,7 @@ struct MapHomeView: View {
+@@ -1332,7 +1305,7 @@ struct MapHomeView: View {
              proxy.stop()
  
              // 停掉之后 `status` 变成 `.stopped`，`restoreActiveState` 会把它重新拉起来。
@@ -275,7 +291,7 @@ index af3fd52..4f790aa 100644
              await restoreActiveState(pair: pair)
  
              await proxy.verifyWiFiProxy()
-@@ -1379,67 +1352,49 @@ struct MapHomeView: View {
+@@ -1438,67 +1411,49 @@ struct MapHomeView: View {
      #endif
  
      private func startSpoofing(pair: CoordinateConverter.CoordinatePair) async {
@@ -379,7 +395,7 @@ index af3fd52..4f790aa 100644
          }
      }
  
-@@ -1462,29 +1417,21 @@ struct MapHomeView: View {
+@@ -1521,29 +1476,21 @@ struct MapHomeView: View {
          // 绿色的「已生效」，而位置早就放开了）。
          verifier.reset()
  
@@ -728,7 +744,7 @@ index d85c6ed..8e55adf 100644
 -    }
 -}
 diff --git a/App/SettingsDetailViews.swift b/App/SettingsDetailViews.swift
-index 3e69249..dc15924 100644
+index 44b56f4..6933fe2 100644
 --- a/App/SettingsDetailViews.swift
 +++ b/App/SettingsDetailViews.swift
 @@ -7,67 +7,6 @@ import SwiftUI
@@ -1541,7 +1557,7 @@ index 17cd364..8095486 100644
      }
  }
 diff --git a/Resources/en.lproj/Localizable.strings b/Resources/en.lproj/Localizable.strings
-index 05e11ef..f1e0d94 100644
+index 893ffff..9a472d5 100644
 --- a/Resources/en.lproj/Localizable.strings
 +++ b/Resources/en.lproj/Localizable.strings
 @@ -24,16 +24,11 @@
@@ -1716,7 +1732,7 @@ index 458a1e9..7d8cfb0 100644
 +  "_note": "应用启动时拉取本文件，用于「不发版也能改行为」。blockedFromSystemVersion 写 \"27.0\" 这样的版本号，命中时界面会给兼容性警示；announcement 挂一条公告，announcementExpiresAt 到期后自动不再展示。三项都可以留空。1.0.8 起只剩应用内代理，原来的 moduleBaseURL 与 scriptVersion 已随第三方模式一起删除。"
  }
 diff --git a/Resources/zh-Hans.lproj/Localizable.strings b/Resources/zh-Hans.lproj/Localizable.strings
-index c474dca..706685c 100644
+index 1ac2aac..5a7c8c2 100644
 --- a/Resources/zh-Hans.lproj/Localizable.strings
 +++ b/Resources/zh-Hans.lproj/Localizable.strings
 @@ -24,16 +24,11 @@
@@ -1878,7 +1894,7 @@ index c474dca..706685c 100644
  "这里会显示作者的邮箱与公众号。发布前请在 Shared/AppContact.swift 里补上，否则用户想购买时找不到入口。" = "这里会显示作者的邮箱与公众号。发布前请在 Shared/AppContact.swift 里补上，否则用户想购买时找不到入口。";
  
 diff --git a/Resources/zh-Hant.lproj/Localizable.strings b/Resources/zh-Hant.lproj/Localizable.strings
-index 0e4e705..27d5cc7 100644
+index ed04e96..65feffb 100644
 --- a/Resources/zh-Hant.lproj/Localizable.strings
 +++ b/Resources/zh-Hant.lproj/Localizable.strings
 @@ -24,16 +24,11 @@
