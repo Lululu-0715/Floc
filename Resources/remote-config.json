@@ -2,9 +2,9 @@
   "scriptVersion": "1.0.0",
   "moduleBaseURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules",
   "update": {
-    "latestVersion": "1.0.27",
-    "notes": "",
-    "ipaURL": "https://github.com/Lululu-0715/Floc/releases/download/v1.0.27/Floc-1.0.27-unsigned.ipa",
-    "sizeInBytes": 3942409
+    "latestVersion": "1.0.31",
+    "notes": "修「检查更新」取不到版本信息：现在会读安装包里自带的配置，也不会再把当天的检查吃掉。代理链路没有改动。",
+    "ipaURL": "https://github.com/Lululu-0715/Floc/releases/download/v1.0.31/Floc-1.0.31-unsigned.ipa",
+    "sizeInBytes": 3998468
   }
 }
