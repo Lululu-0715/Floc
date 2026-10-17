@@ -1,4 +1,10 @@
 {
   "scriptVersion": "1.0.0",
-  "moduleBaseURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules"
+  "moduleBaseURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules",
+  "update": {
+    "latestVersion": "1.0.27",
+    "notes": "",
+    "ipaURL": "https://github.com/Lululu-0715/Floc/releases/download/v1.0.27/Floc-1.0.27-unsigned.ipa",
+    "sizeInBytes": 3942409
+  }
 }
