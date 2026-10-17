@@ -1,0 +1,9 @@
+{
+  "version": "1.0.31",
+  "build": 35,
+  "url": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.31-b35.bin",
+  "size": 3998468,
+  "sha256": "f9bac42e8f6e54efc0c978b98132d32b56caf7851f2a3cdf5873c0855b096f09",
+  "date": "2026-10-17",
+  "notes": "修「检查更新」取不到版本信息：现在会读安装包里自带的配置，也不会再把当天的检查吃掉。代理链路没有改动。"
+}
