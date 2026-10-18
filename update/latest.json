@@ -1,9 +1,9 @@
 {
-  "version": "1.0.37",
-  "build": 41,
-  "url": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.37-b41.bin",
-  "size": 4006983,
-  "sha256": "c70fae3582df5242bdbb6a3d1c9d7b6da1c97a914482f938518cc312f7ea4f7c",
+  "version": "1.0.38",
+  "build": 42,
+  "url": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.38-b42.bin",
+  "size": 4020859,
+  "sha256": "ab2ae2512d006d0141e7d8919ef92084c620b9efa22e5ae581a2501684bf340b",
   "date": "2026-10-18",
-  "notes": "实时位置视野放宽到 500 米；地图定位点改为固定大小的主题色圆点，不再随地图缩放变大。"
+  "notes": "更新流程重做：点「立即更新」后台下载，完成后弹系统分享，选轻松签或巨魔即可安装。另统一了底部面板间距。"
 }
