@@ -1,9 +1,9 @@
 {
-  "version": "1.0.33",
-  "build": 37,
-  "url": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.33-b37.bin",
-  "size": 4001565,
-  "sha256": "065b4ff66e3a84aa1528515a47f0389947069f65fd516c225f3932106ade4fc4",
+  "version": "1.0.34",
+  "build": 38,
+  "url": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.34-b38.bin",
+  "size": 4003505,
+  "sha256": "9d227da9ad5145652864512db927e90fe71aad06a2b1c756c66b753a9c7b234b",
   "date": "2026-10-18",
-  "notes": "定位持久性优化：校验改为账本优先，不再频繁回读定位，虚拟位置更不容易被真实位置顶掉；地图实时跟随可在地图页元素里关闭；代理异常告警接入诊断日志。"
+  "notes": "修复「关于 Floc」页点更新没反应的问题：现在点「检查更新」查到新版会直接弹出更新页。另调整主界面选点卡片排版：地址行字体加大，地址与坐标、两行坐标之间的间距重新分级。"
 }
