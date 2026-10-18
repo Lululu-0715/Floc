@@ -1,9 +1,9 @@
 {
   "version": "1.0.39",
-  "build": 44,
-  "url": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.39-b44.bin",
-  "size": 4019644,
-  "sha256": "34091ddba788760a913c15da9749fe4d775a84e805eca0c60b50e680f5dcdac7",
+  "build": 45,
+  "url": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.39-b45.bin",
+  "size": 4019651,
+  "sha256": "30efb570f26859562591b0fc6c46441204bb8ffe11fcf91fea45ef8aa87f6341",
   "date": "2026-10-18",
   "notes": "实时位置视野从 500 米收到 300 米，兼顾街区相对位置与定位精度。"
 }
