@@ -2,11 +2,11 @@
   "scriptVersion": "1.0.0",
   "moduleBaseURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules",
   "update": {
-    "latestVersion": "1.0.36",
-    "notes": "选点卡片数值定稿：地址行与坐标、两行坐标的间距重新分级，星标与复制图标调整；校验结论并入状态行，重新验证缩为刷新图标，面板更紧凑。",
-    "ipaURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.36-b40.bin",
-    "sizeInBytes": 4003732,
-    "build": 40,
-    "sha256": "3ee71d6207929849b6c14bc36131f0ca908f562f3ba6e8a69f5d4bf976cc82d9"
+    "latestVersion": "1.0.37",
+    "notes": "实时位置视野放宽到 500 米；地图定位点改为固定大小的主题色圆点，不再随地图缩放变大。",
+    "ipaURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.37-b41.bin",
+    "sizeInBytes": 4006983,
+    "build": 41,
+    "sha256": "c70fae3582df5242bdbb6a3d1c9d7b6da1c97a914482f938518cc312f7ea4f7c"
   }
 }
