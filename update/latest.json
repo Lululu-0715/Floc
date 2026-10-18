@@ -1,9 +1,9 @@
 {
-  "version": "1.0.38",
-  "build": 42,
-  "url": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.38-b42.bin",
-  "size": 4020859,
-  "sha256": "ab2ae2512d006d0141e7d8919ef92084c620b9efa22e5ae581a2501684bf340b",
+  "version": "1.0.39",
+  "build": 43,
+  "url": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.39-b43.bin",
+  "size": 4020795,
+  "sha256": "82f11d3c4dd77fa16033c844d2deadaa02f0db6a811312172a29c05f653db2ad",
   "date": "2026-10-18",
-  "notes": "更新流程重做：点「立即更新」后台下载，完成后弹系统分享，选轻松签或巨魔即可安装。另统一了底部面板间距。"
+  "notes": "实时位置视野从 500 米收到 300 米，兼顾街区相对位置与定位精度。"
 }
