@@ -3,7 +3,7 @@
   "moduleBaseURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules",
   "update": {
     "latestVersion": "1.0.41",
-    "notes": "新增动态流光背景：八套色板，设置页与地图玻璃浮层都铺上缓慢流动的柔光。",
+    "notes": "流光背景补全：色板改两列选择，新增卡片透明度滑块，地图玻璃浮层透光程度可调。",
     "ipaURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.41-b47.bin",
     "sizeInBytes": 4099797,
     "build": 47,
