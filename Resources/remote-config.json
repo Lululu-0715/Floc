@@ -2,11 +2,11 @@
   "scriptVersion": "1.0.0",
   "moduleBaseURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules",
   "update": {
-    "latestVersion": "1.0.40",
+    "latestVersion": "1.0.41",
     "notes": "新增动态流光背景：八套色板，设置页与地图玻璃浮层都铺上缓慢流动的柔光。",
-    "ipaURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.40-b46.bin",
-    "sizeInBytes": 4085804,
-    "build": 46,
-    "sha256": "af9b95ab35715aec34ce93906bd635ac704d499074fcdd072c98c9d9c23bb2e9"
+    "ipaURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.41-b47.bin",
+    "sizeInBytes": 4099797,
+    "build": 47,
+    "sha256": "6794798bd1f7208e572d273b9db274ab2a6484fa0048b4a88202627b1e29dd06"
   }
 }
