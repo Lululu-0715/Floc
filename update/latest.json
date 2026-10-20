@@ -1,9 +1,9 @@
 {
-  "version": "1.0.44",
-  "build": 50,
-  "url": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.44-b50.bin",
-  "size": 4132217,
-  "sha256": "1f4713a08dace6f1ba45ae9bae060024056715c4ff2c4b083e357b255fcf0adf",
+  "version": "1.0.45",
+  "build": 51,
+  "url": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.45-b51.bin",
+  "size": 4137972,
+  "sha256": "2ec831a502d80a8da6733710b132dc78ca83f5b947f5b2ec3354963c209e0fa6",
   "date": "2026-10-20",
-  "notes": "黑白主题改为真黑白（玻璃与背景走中性底）、设置页图标跟随主题配色、配色主题新增玻璃透明度滑块。"
+  "notes": "玻璃透明度真实生效（设置页卡片同步变透、iOS 26 玻璃层可调）、三个浮标按钮命中区修正、检查更新有明确反馈且分享面板不再卡住。"
 }
