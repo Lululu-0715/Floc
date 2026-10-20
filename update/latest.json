@@ -1,9 +1,9 @@
 {
-  "version": "1.0.41",
-  "build": 47,
-  "url": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.41-b47.bin",
-  "size": 4099797,
-  "sha256": "6794798bd1f7208e572d273b9db274ab2a6484fa0048b4a88202627b1e29dd06",
+  "version": "1.0.42",
+  "build": 48,
+  "url": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.42-b48.bin",
+  "size": 4100469,
+  "sha256": "93b9f3e1f1f559431f3f2861fcc4044bdc7dd9c5317e3ee8b8106898af489f3c",
   "date": "2026-10-20",
   "notes": "流光背景补全：色板改两列选择，新增卡片透明度滑块，地图玻璃浮层透光程度可调。"
 }
