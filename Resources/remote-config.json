@@ -2,11 +2,11 @@
   "scriptVersion": "1.0.0",
   "moduleBaseURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules",
   "update": {
-    "latestVersion": "1.0.42",
+    "latestVersion": "1.0.43",
     "notes": "修复地图玻璃浮层的流光不显示，烤图缓存优化，滚动展开期间零重烤。",
-    "ipaURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.42-b48.bin",
-    "sizeInBytes": 4100469,
-    "build": 48,
-    "sha256": "93b9f3e1f1f559431f3f2861fcc4044bdc7dd9c5317e3ee8b8106898af489f3c"
+    "ipaURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.43-b49.bin",
+    "sizeInBytes": 4123683,
+    "build": 49,
+    "sha256": "8691ddb43117b25e63b7125adb17e4b300ca28d9544a477e53fc7a7b3ae9c9ce"
   }
 }
