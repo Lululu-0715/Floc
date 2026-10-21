@@ -2,11 +2,11 @@
   "scriptVersion": "1.0.0",
   "moduleBaseURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules",
   "update": {
-    "latestVersion": "1.0.46",
-    "notes": "修复「点立即更新下载失败 / 一直卡在下载中」：临时文件被系统回收后才去搬的真因已改，另加超时提示、按真实原因提示失败、重开面板不丢已下好的包。",
-    "ipaURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.46-b52.bin",
-    "sizeInBytes": 4141052,
-    "build": 52,
-    "sha256": "390ae956eefe8648303a167a9bba52e1886979f37714ec70147e85e86e36ba35"
+    "latestVersion": "1.0.47",
+    "notes": "维护版（1.0.47）：界面与功能没有变化，可以不更新。修的是构建侧问题——「仅内置代理」派生包恢复可出包、编译警告清零、单测在最低支持版本上恢复全绿。",
+    "ipaURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.47-b53.bin",
+    "sizeInBytes": 4140971,
+    "build": 53,
+    "sha256": "59f8d4d75fd4a3f687dd929c6d932b9c5f2fb5ed2d048f5ca7b359fa7d023b87"
   }
 }
