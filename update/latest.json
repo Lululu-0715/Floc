@@ -1,9 +1,9 @@
 {
-  "version": "1.0.49",
-  "build": 55,
-  "url": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.49-b55.bin",
-  "size": 4177790,
-  "sha256": "45cd1c38da13232abcd054392e35922a3ab02ff89c40f2e1caa935df89f65799",
+  "version": "1.0.51",
+  "build": 57,
+  "url": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.51-b57.bin",
+  "size": 4186987,
+  "sha256": "39e3ac672582b7775f24e3fb0d46e03d72df158675de05b2e9f5f59bbe2efcf5",
   "date": "2026-10-22",
   "notes": "这一版没有新功能，专门修了一轮毛病并做了提速：写日志快约 10 倍、界面文字查表快约 4.7 倍、拖动地图不再额外干活、冷启动少一次联网探测、打开设置页不再重复拉配置。同时修掉 13 处交互问题，比如更新面板的分享会重复弹、自定义模块地址一保存就被冲掉、代理开关连点会叠出两个启动、切模式后代理还在跑、收藏页高亮不跟手。"
 }
