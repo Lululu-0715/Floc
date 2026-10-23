@@ -2,11 +2,11 @@
   "scriptVersion": "1.0.0",
   "moduleBaseURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules",
   "update": {
-    "latestVersion": "1.0.51",
+    "latestVersion": "1.0.52",
     "notes": "专门修「改完位置一会儿又跳回真实位置」：地图上的实时位置蓝点会不停叫醒 GPS，GPS 一算出结果就会把虚拟位置顶掉；切回 App 时还会重跑一轮校验，同样在叫醒 GPS。这一版在虚拟定位开着时不再挂蓝点订阅，也不在切回来时反复回读。另外，「实时位置跟随」开关从「外观 → 地图页元素」搬到了「设置 → 连接状态」，就在「虚拟定位」那行下面。",
-    "ipaURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.51-b57.bin",
-    "sizeInBytes": 4186987,
-    "build": 57,
-    "sha256": "39e3ac672582b7775f24e3fb0d46e03d72df158675de05b2e9f5f59bbe2efcf5"
+    "ipaURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.52-b58.bin",
+    "sizeInBytes": 4187652,
+    "build": 58,
+    "sha256": "1fc796fb7fc8856efdcb0986d1e141613d410b68bb0ad4c15dd6a87386120e79"
   }
 }
