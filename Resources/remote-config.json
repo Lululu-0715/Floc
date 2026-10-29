@@ -2,11 +2,11 @@
   "scriptVersion": "1.0.0",
   "moduleBaseURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules",
   "update": {
-    "latestVersion": "1.0.63",
-    "notes": "定位策略修正：运动状态模拟从「每次请求在半径内随机取一个点」改成「随时间连续漂移」。原来的实现里相邻两次采样最坏相差 2 倍半径（20 米档合 144 km/h），而且同一时刻两个 App 会拿到不同坐标——这两条都是伪造特征。现在轨迹是时间的连续函数，20 米档峰值 0.65 m/s，同刻读取完全一致。另外诊断页「当前配置」从九行收到四行（精度/运动模拟/坐标体系折进「更多参数」，坐标两行合一，日志条数移到日志卡）；「动态流光背景」从设置首页退回「外观」；柔光/流动两款风格改成并排缩略图。",
-    "ipaURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.63-b69.bin",
-    "sizeInBytes": 4263136,
-    "build": 69,
-    "sha256": "fe8077a71b57af375a7fe85a874ca92c1a51afb6b9846c8702ea07f5aa23169a"
+    "latestVersion": "1.0.67",
+    "notes": "修掉「检查更新」把旧配置当成功的问题：jsDelivr 的 @main 别名对分支有最长 12 小时缓存，连续几次发版都吐回了旧内容，而客户端「第一个成功的源就收」——HTTP 200 加合法 JSON 就算成功，排在后面的 GitHub raw 永远走不到，于是永远显示「已是最新」。现在请求带 10 分钟分片版本戳，并按构建号判断陈旧：比手上这份旧就继续问下一个源，全部源都旧才回退接受并记警告。顺带让配置日志带上源站与构建号。",
+    "ipaURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.67-b73.bin",
+    "sizeInBytes": 4265075,
+    "build": 73,
+    "sha256": "020e22dbe0bd284c328828ea019ea51592c50ce209168d50ae141189df8da6b6"
   }
 }
