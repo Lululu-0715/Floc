@@ -2,11 +2,11 @@
   "scriptVersion": "1.0.0",
   "moduleBaseURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules",
   "update": {
-    "latestVersion": "1.0.68",
+    "latestVersion": "1.0.69",
     "notes": "修掉「检查更新」把旧配置当成功的问题：jsDelivr 的 @main 别名对分支有最长 12 小时缓存，连续几次发版都吐回旧内容，而客户端「第一个成功的源就收」——HTTP 200 加合法 JSON 就算成功，后面的 GitHub raw 永远走不到，于是永远显示「已是最新」。现在按构建号判陈旧：比手上这份旧就继续问下一个源；所有源都只给旧配置时保留本地这份，不再被旧配置覆盖。顺带让配置日志带上源站与构建号。",
-    "ipaURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.68-b74.bin",
-    "sizeInBytes": 4265044,
-    "build": 74,
-    "sha256": "a50f35ba4d245583908a6a0480a2a16147392ab57e36d2bf070a236434ac0177"
+    "ipaURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.69-b75.bin",
+    "sizeInBytes": 4265103,
+    "build": 75,
+    "sha256": "a20db13ea0e42362357fd3966a531b219cc1dbaa1efe63f32dcf129811298550"
   }
 }
