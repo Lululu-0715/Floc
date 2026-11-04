@@ -2,11 +2,11 @@
   "scriptVersion": "1.0.0",
   "moduleBaseURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/ThirdParty/ProxyScripts/modules",
   "update": {
-    "latestVersion": "1.0.70",
-    "notes": "把上一版没做完的补完：设置树里所有可以点的行现在都跟随流光浓度。上一版只修了关于页两处，同类问题还有 25 处——包括你发现的「重置引导流程」。根因是卡片背景只对列表的直接行生效，行内内容包在按钮里时那次设置会被系统忽略，那一行就保持死白；只读行因为组件内部已设过，所以一直正常，一透一白摆在同一张卡片里就是上下两截颜色。这一版把 25 处补齐，涉及关于、反馈、定位与模块、代理与证书、更新面板、收藏列表；个人资料、问题报告、卡密页没有流光页面背景，未改动。",
-    "ipaURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.70-b76.bin",
-    "sizeInBytes": 4270747,
-    "build": 76,
-    "sha256": "4b59563d43ddaca7176f33e6d1a80522fc9de0ebaf363a4b2e056460106c69f3"
+    "latestVersion": "1.0.71",
+    "notes": "三件事。一是「动态流光背景」在外观页单独成卡：主行直接是开关，副行显示当前风格、色板与卡片透明度，不用点进去才知道开没开。二是修掉「玻璃透明度」在流光关闭时对黑白、蓝白主题完全无效的问题——那条分支漏乘了这个因子，iOS 15～18 上滑块一点作用都没有，iOS 26 上只剩 50% 处换材质那一跳。三是两个透明度滑块同时拉满时，设置页卡片会整层消失、文字浮在流光上，现在给卡片留了 4% 的薄底，仍然接近全透但字站得住。玻璃透明度 0 档的观感与之前逐像素一致。",
+    "ipaURL": "https://cdn.jsdelivr.net/gh/Lululu-0715/Floc@main/update/Floc-1.0.71-b77.bin",
+    "sizeInBytes": 4274972,
+    "build": 77,
+    "sha256": "aa975f9c3b68b3514f877af71dd6aef8dac81be08e3db5cd1a1b910d48b34efd"
   }
 }
